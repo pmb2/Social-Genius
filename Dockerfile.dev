@@ -1,0 +1,32 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Install dependencies including those needed for document processing
+RUN apk add --no-cache libc6-compat py3-pip
+
+# Copy package files
+COPY package.json package-lock.json ./
+
+# Install dependencies
+RUN npm ci
+# Ensure mammoth is installed properly
+RUN npm list mammoth || npm install mammoth
+
+# Copy the rest of the application
+COPY . .
+
+# Create .env.local file to override Next.js environment variables
+RUN echo "NEXT_PUBLIC_DATABASE_URL=$DATABASE_URL" > .env.local
+RUN echo "NEXT_PUBLIC_GROQ_API_KEY=$GROQ_API_KEY" >> .env.local
+RUN echo "NEXT_PUBLIC_EXA_API_KEY=$EXA_API_KEY" >> .env.local
+RUN echo "NEXT_PUBLIC_OPENAI_API_KEY=$OPENAI_API_KEY" >> .env.local
+
+# Create and set permissions for temp directory (for PDF processing)
+RUN mkdir -p /tmp && chmod 777 /tmp
+
+# Expose port
+EXPOSE 3000
+
+# Start the development server
+CMD ["npm", "run", "dev"]

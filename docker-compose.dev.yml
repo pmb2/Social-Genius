@@ -1,0 +1,72 @@
+version: '3.8'
+services:
+  # Development mode for Next.js app with hot reloading
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3001:3000"
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
+      GROQ_API_KEY: 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
+      EXA_API_KEY: f5c132ea-a9ae-4977-a59b-f79ee13ea44f
+      OPENAI_API_KEY: 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
+      # Add Next.js specific env vars with NEXT_PUBLIC_ prefix for client-side access
+      NEXT_PUBLIC_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
+      NEXT_PUBLIC_GROQ_API_KEY: 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
+      NEXT_PUBLIC_EXA_API_KEY: f5c132ea-a9ae-4977-a59b-f79ee13ea44f
+      NEXT_PUBLIC_OPENAI_API_KEY: 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
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - social_genius_network
+    command: npm run dev
+
+  # PostgreSQL with pgvector for unified database
+  postgres:
+    image: pgvector/pgvector:pg14
+    ports:
+      - "5435:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: socialgenius
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - social_genius_network
+
+  # pgAdmin for database management (optional)
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@socialgenius.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - social_genius_network
+
+networks:
+  social_genius_network:
+    driver: bridge
+
+volumes:
+  postgres_data:

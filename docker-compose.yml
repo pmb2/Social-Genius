@@ -1,0 +1,49 @@
+version: '3.8'
+services:
+  # Frontend and API application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # These are build-time environment variables
+        DATABASE_URL: postgresql://postgres:postgres@postgres:5435/socialgenius
+    depends_on:
+      - postgres
+    ports:
+      - "3000:3000"
+    environment:
+      # Runtime environment variables
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5435/socialgenius
+      # Add other environment variables from .env file here or use env_file
+    restart: unless-stopped
+    networks:
+      - social_genius_network
+
+  # PostgreSQL with pgvector for unified database
+  postgres:
+    image: pgvector/pgvector:pg14
+    ports:
+      - "5435:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: socialgenius
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - social_genius_network
+
+networks:
+  social_genius_network:
+    driver: bridge
+
+volumes:
+  postgres_data:

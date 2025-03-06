@@ -1,0 +1,69 @@
+version: '3.8'
+services:
+  # NGINX for SSL termination and reverse proxy
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf:/etc/nginx/conf.d
+      - ./nginx/certbot/conf:/etc/letsencrypt
+      - ./nginx/certbot/www:/var/www/certbot
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - social_genius_network
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+
+  # Certbot for Let's Encrypt SSL certificates
+  certbot:
+    image: certbot/certbot
+    restart: unless-stopped
+    volumes:
+      - ./nginx/certbot/conf:/etc/letsencrypt
+      - ./nginx/certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+  # Frontend and API application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/socialgenius
+      - NEXTAUTH_URL=https://${DOMAIN:-localhost}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-social-genius-auth-secret-key-replace-in-production}
+    restart: unless-stopped
+    networks:
+      - social_genius_network
+
+  # PostgreSQL with pgvector for unified database
+  postgres:
+    image: pgvector/pgvector:pg14
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: socialgenius
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - social_genius_network
+
+networks:
+  social_genius_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
