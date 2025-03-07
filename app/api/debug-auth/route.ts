@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../auth/[...nextauth]/route';
 import PostgresService from '@/services/postgres-service';
 
 export async function GET(request: NextRequest) {
   try {
-    // Get the session
-    const session = await getServerSession(authOptions);
+    // Mock session for now
+    const session = null;
     
     // Get database service
     const dbService = PostgresService.getInstance();

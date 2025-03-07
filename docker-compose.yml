@@ -1,22 +1,36 @@
 version: '3.8'
 services:
+  # HTTPS reverse proxy
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./ssl:/etc/nginx/ssl
+    restart: unless-stopped
+    depends_on:
+      - app
+    networks:
+      - social_genius_network
+
   # Frontend and API application
   app:
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        # These are build-time environment variables
         DATABASE_URL: postgresql://postgres:postgres@postgres:5435/socialgenius
     depends_on:
       - postgres
     ports:
       - "3000:3000"
     environment:
-      # Runtime environment variables
       NODE_ENV: production
       DATABASE_URL: postgresql://postgres:postgres@postgres:5435/socialgenius
-      # Add other environment variables from .env file here or use env_file
+      NEXTAUTH_URL: https://localhost
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-your-secure-nextauth-secret}
     restart: unless-stopped
     networks:
       - social_genius_network

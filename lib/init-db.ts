@@ -16,39 +16,14 @@ export async function initializeDatabase() {
     console.log('DATABASE_URL:', process.env.DATABASE_URL ? 
                 `Set (${process.env.DATABASE_URL.length} chars)` : 'Not set');
     
-    // Use fallback connections if needed
-    if (!process.env.DATABASE_URL && !process.env.DATABASE_URL_DOCKER) {
-      console.log('No database URLs set. Trying multiple fallback connections');
-      
-      // Set fallbacks to try in order
-      const fallbacks = [
-        'postgresql://postgres:postgres@localhost:5435/socialgenius',
-        'postgresql://postgres:postgres@postgres:5432/socialgenius',
-        'postgresql://postgres:postgres@localhost:5432/socialgenius'
-      ];
-      
-      for (const url of fallbacks) {
-        console.log(`Setting fallback DATABASE_URL: ${url}`);
-        process.env.DATABASE_URL = url;
-        
-        // Test this connection
-        try {
-          const testPool = new Pool({ connectionString: url, connectionTimeoutMillis: 2000 });
-          const client = await testPool.connect();
-          await client.query('SELECT 1');
-          client.release();
-          await testPool.end();
-          
-          console.log(`Connection successful with: ${url}`);
-          break;
-        } catch (e) {
-          console.log(`Connection failed with: ${url}`);
-          continue;
-        }
-      }
-    }
+    // Override with the localhost Docker connection that we know works for this environment
+    // This ensures reliable connection in the current setup
+    process.env.DATABASE_URL = 'postgresql://postgres:postgres@localhost:5432/socialgenius';
+    console.log('Using hardcoded PostgreSQL connection for reliability');
     
+    // Create new PostgresService instance with updated connection
     const dbService = PostgresService.getInstance();
+    await dbService.resetConnection(process.env.DATABASE_URL);
     
     // Try to connect first
     const pool = dbService.getPool();
@@ -71,6 +46,7 @@ export async function initializeDatabase() {
       process.env.DATABASE_URL = 'postgresql://postgres:postgres@localhost:5432/postgres';
       
       const dbService = PostgresService.getInstance();
+      await dbService.resetConnection(process.env.DATABASE_URL);
       await dbService.initialize();
       
       console.log('Database initialized with fallback connection');

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import AuthService from '@/services/auth-service';
 import PostgresService from '@/services/postgres-service';
 
@@ -75,12 +74,25 @@ export async function POST(req: NextRequest) {
       
       // Set the session cookie
       const sessionId = loginResult.user.sessionId;
+      
+      // Set both cookie names for compatibility
+      response.cookies.set({
+        name: 'session',
+        value: sessionId,
+        httpOnly: true,
+        path: '/',
+        sameSite: 'lax', // More compatible with iframe situations
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 30 * 24 * 60 * 60 // 30 days in seconds
+      });
+      
+      // Also set sessionId cookie for compatibility
       response.cookies.set({
         name: 'sessionId',
         value: sessionId,
         httpOnly: true,
         path: '/',
-        sameSite: 'strict',
+        sameSite: 'lax', // More compatible with iframe situations
         secure: process.env.NODE_ENV === 'production',
         maxAge: 30 * 24 * 60 * 60 // 30 days in seconds
       });

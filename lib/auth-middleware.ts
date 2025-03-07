@@ -8,8 +8,8 @@ export async function authMiddleware(
 ): Promise<NextResponse> {
   const authService = AuthService.getInstance();
   
-  // Get the session ID from cookies
-  const sessionId = req.cookies.get('sessionId')?.value;
+  // Get the session ID from cookies - check both "session" and "sessionId" for compatibility
+  const sessionId = req.cookies.get('session')?.value || req.cookies.get('sessionId')?.value;
   
   if (!sessionId) {
     // Return proper JSON response

@@ -9,15 +9,30 @@ export default function HomePage() {
     const { user, loading } = useAuth();
     
     useEffect(() => {
+        console.log("Home page useEffect running, loading state:", loading);
+        
+        // Immediately redirect if not loading
         if (!loading) {
             if (user) {
-                // If logged in, redirect to dashboard
-                router.push('/dashboard');
+                console.log("User authenticated, redirecting to dashboard");
+                router.replace('/dashboard');
             } else {
-                // If not logged in, redirect to auth page
-                router.push('/auth');
+                console.log("User not authenticated, redirecting to auth page");
+                router.replace('/auth');
             }
+            return; // Skip the timer if we already redirected
         }
+        
+        // Force redirect after 2 seconds if still loading
+        const redirectTimer = setTimeout(() => {
+            // If after 2 seconds we still don't know auth state, make a sensible default
+            if (loading) {
+                console.log("Still loading after timeout, redirecting to auth");
+                router.replace('/auth');
+            }
+        }, 2000);
+        
+        return () => clearTimeout(redirectTimer);
     }, [user, loading, router]);
 
     // Display a loading state during the redirect

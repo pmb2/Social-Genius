@@ -34,19 +34,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Check if the user is already logged in when the app loads
   useEffect(() => {
-    // Set loading to false and user to null to force login screen
-    setLoading(false);
-    setUser(null);
+    console.log("AuthProvider: Starting initial auth check");
+    
+    const initAuth = async () => {
+      try {
+        // Add debug for fetch status
+        console.log("AuthProvider: Checking session status...");
+        const sessionActive = await checkSession();
+        
+        if (sessionActive) {
+          console.log("AuthProvider: Valid session found, user is authenticated");
+        } else {
+          console.log("AuthProvider: No valid session found");
+          setUser(null);
+        }
+      } catch (error) {
+        console.error("AuthProvider: Error during initial auth check:", error);
+        setUser(null);
+      } finally {
+        console.log("AuthProvider: Auth check complete, setting loading to false");
+        setLoading(false);
+      }
+    };
+    
+    // Short timeout to ensure state updates properly
+    setTimeout(() => {
+      initAuth();
+    }, 500);
   }, []);
 
   // Function to check the current session
   const checkSession = async (): Promise<boolean> => {
     try {
-      setLoading(true);
+      // Don't set loading true here as we're already in loading state
+      // and this would cause an infinite loop if errors occur
       
       // Check if we have a session
       try {
-        const response = await fetch('/api/auth/session');
+        console.log("Fetching session from API...");
+        
+        // Add a cache-busting parameter to ensure fresh results
+        const timestamp = new Date().getTime();
+        const url = `/api/auth/session?t=${timestamp}`;
+        
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+          },
+          // Important for cookies - using simpler mode 
+          // to ensure it works across different environments
+          credentials: 'same-origin', 
+        });
+        
         // Check if response is ok before trying to parse JSON
         if (!response.ok) {
           console.error('Session API returned error:', response.status);
@@ -54,6 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         
         const text = await response.text();
+        console.log("Session API response:", text.substring(0, 100) + (text.length > 100 ? '...' : ''));
         
         // Make sure we have valid JSON before parsing
         if (!text) {
@@ -62,11 +105,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         
         const data = JSON.parse(text);
+        console.log("Session data parsed:", data);
         
         if (data.authenticated && data.user) {
+          console.log("Valid user found in session:", data.user);
           setUser(data.user);
           return true;
         } else {
+          console.log("No authenticated user in session");
           setUser(null);
           return false;
         }
@@ -78,9 +124,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('Session check error:', error);
       setUser(null);
       return false;
-    } finally {
-      setLoading(false);
     }
+    // Don't set loading false here, it should be done in the calling function
   };
 
   // Login function
@@ -141,7 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('Login error:', error);
       return {
         success: false,
-        error: 'An unexpected error occurred. Please try again.',
+        error: 'An unexpected error occurred. Please try again.'
       };
     } finally {
       setLoading(false);
@@ -172,7 +217,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         
         console.log('Register API response status:', response.status);
-        console.log('Register API response headers:', JSON.stringify(Array.from(response.headers.entries())));
         
         // Get the raw text first, then try to parse it
         const responseText = await response.text();

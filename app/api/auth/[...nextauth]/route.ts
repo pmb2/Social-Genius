@@ -1,88 +1,44 @@
-import { NextAuthOptions } from "next-auth";
+import { AuthOptions } from "next-auth";
 import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { randomBytes, scryptSync } from 'crypto';
 import PostgresService from '@/services/postgres-service';
+import AuthService from '@/services/auth-service';
 
 // Specify that this route runs on the Node.js runtime, not Edge
 export const runtime = 'nodejs';
 
-// Utility functions for password hashing
-function hashPassword(password: string): string {
-  const salt = randomBytes(16).toString('hex');
-  const hash = scryptSync(password, salt, 64).toString('hex');
-  return `${salt}:${hash}`;
-}
-
-function comparePassword(password: string, storedHash: string): boolean {
-  try {
-    // Extract the salt and hash
-    const [salt, hash] = storedHash.split(':');
-    
-    // Hash the password with the same salt
-    const hashBuffer = scryptSync(password, salt, 64);
-    const storedHashBuffer = Buffer.from(hash, 'hex');
-    
-    // Compare the hashes using timing-safe comparison
-    return hashBuffer.length === storedHashBuffer.length && 
-      Buffer.compare(hashBuffer, storedHashBuffer) === 0;
-  } catch (err) {
-    console.error('Error comparing passwords:', err);
-    return false;
-  }
-}
-
-export const authOptions: NextAuthOptions = {
+export const authOptions: AuthOptions = {
   providers: [
     CredentialsProvider({
       name: "Credentials",
       credentials: {
-        email: { label: "Email", type: "email" },
+        email: { label: "Email", type: "email", placeholder: "Enter your email" },
         password: { label: "Password", type: "password" }
       },
       async authorize(credentials) {
         try {
           if (!credentials?.email || !credentials?.password) {
+            console.log("Missing credentials");
             return null;
           }
 
-          // Get database instance
-          const dbService = PostgresService.getInstance();
+          // Use our existing AuthService for login
+          const authService = AuthService.getInstance();
+          const result = await authService.login(credentials.email, credentials.password);
           
-          // Get user by email
-          const user = await dbService.getUserByEmail(credentials.email);
-          
-          if (!user) {
-            console.log(`No user found with email: ${credentials.email}`);
+          if (!result.success) {
+            console.log(`Login failed for ${credentials.email}: ${result.error}`);
             return null;
           }
           
-          console.log('Found user:', { 
-            id: user.id, 
-            email: user.email, 
-            hasPasswordHash: !!user.password_hash 
-          });
-
-          // Check password
-          const isValidPassword = comparePassword(credentials.password, user.password_hash);
-          
-          if (!isValidPassword) {
-            console.log(`Invalid password for user: ${credentials.email}`);
-            return null;
-          }
-          
-          // Update last login
-          await dbService.updateLastLogin(user.id);
-          
-          // Return the user object
+          // Return the user object for NextAuth
           return {
-            id: user.id.toString(),
-            email: user.email,
-            name: user.name || undefined,
-            password: user.password_hash // Map password_hash to password for NextAuth
+            id: result.user.id.toString(),
+            email: result.user.email,
+            name: result.user.name || undefined
           };
         } catch (error) {
-          console.error("Error in authorization:", error);
+          console.error("Error in authorize:", error);
           return null;
         }
       }
@@ -90,7 +46,7 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async jwt({ token, user }) {
-      // If the user object is available, add it to the token
+      // If the user object is available (right after signing in)
       if (user) {
         token.id = user.id;
         token.email = user.email;
@@ -99,11 +55,11 @@ export const authOptions: NextAuthOptions = {
       return token;
     },
     async session({ session, token }) {
-      // Add user information to session
+      // Add user info to session from token
       if (token && session.user) {
         session.user.id = token.id as string;
         session.user.email = token.email as string;
-        session.user.name = token.name as string;
+        session.user.name = token.name as string || "";
       }
       return session;
     }
@@ -120,6 +76,6 @@ export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET || "social-genius-auth-secret",
 };
 
+// Create and export the handler
 const handler = NextAuth(authOptions);
-
 export { handler as GET, handler as POST };

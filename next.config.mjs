@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Don't use rewrites for favicon as it can cause issues
+  // Let Next.js handle favicon from the public directory normally
   images: {
     remotePatterns: [
       {
@@ -9,6 +11,7 @@ const nextConfig = {
         pathname: '/**',
       }
     ],
+    unoptimized: process.env.NODE_ENV === 'development',
   },
   // Enable output standalone mode for Docker support
   output: 'standalone',
@@ -23,21 +26,23 @@ const nextConfig = {
     // This is needed for NextAuth.js in the App Router
     serverComponentsExternalPackages: ["jose"]
   },
-  // Redirect all HTTP traffic to HTTPS
+  // Disable security headers in development to avoid HTTP issues
   async headers() {
-    return [
-      {
-        source: '/:path*',
-        headers: [
-          {
-            key: 'Strict-Transport-Security',
-            value: 'max-age=63072000; includeSubDomains; preload',
-          },
-        ],
-      },
-    ];
+    return process.env.NODE_ENV === 'production' 
+      ? [
+        {
+          source: '/:path*',
+          headers: [
+            {
+              key: 'Strict-Transport-Security',
+              value: 'max-age=63072000; includeSubDomains; preload',
+            },
+          ],
+        },
+      ]
+      : [];
   },
-  // Force HTTP to HTTPS redirect
+  // Only enable HTTPS redirect in production
   async redirects() {
     return [
       process.env.NODE_ENV === 'production' 

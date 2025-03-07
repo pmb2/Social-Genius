@@ -58,7 +58,11 @@ const TableHead = React.forwardRef<HTMLTableCellElement, React.HTMLAttributes<HT
 )
 TableHead.displayName = "TableHead"
 
-const TableCell = React.forwardRef<HTMLTableCellElement, React.HTMLAttributes<HTMLTableCellElement>>(
+interface TableCellProps extends React.HTMLAttributes<HTMLTableCellElement> {
+  colSpan?: number
+}
+
+const TableCell = React.forwardRef<HTMLTableCellElement, TableCellProps>(
   ({ className, ...props }, ref) => (
     <td ref={ref} className={cn("p-4 align-middle [&:has([role=checkbox])]:pl-0", className)} {...props} />
   ),

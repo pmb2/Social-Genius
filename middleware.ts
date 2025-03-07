@@ -1,28 +1,54 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-// Remove the database initialization from the middleware
-// import { initializeDatabase } from '@/lib/init-db';
 
-// We need to make sure the database is initialized once at application startup
-let dbInitialized = false;
+// Public routes that don't require authentication
+const publicRoutes = [
+  '/auth',
+  '/api/auth',
+  '/',
+  '/api/init-db',
+  '/api/env-check',
+  '/api/db-status',
+  '/favicon.ico',
+  '/check-db',
+  '/debug',
+  '/_next'
+];
 
 export async function middleware(request: NextRequest) {
-  // Database initialization moved to API routes with nodejs runtime
-  
   // Get path
-  const path = request.nextUrl.pathname;
+  const pathname = request.nextUrl.pathname;
   
-  // Let NextAuth handle authentication
-  // The protected routes will be handled by client-side redirects
+  // Check if the pathname starts with any of the public routes
+  const isPublicRoute = publicRoutes.some((route) => 
+    pathname === route || pathname.startsWith(`${route}/`)
+  );
   
-  // Continue with the request
+  if (isPublicRoute) {
+    return NextResponse.next();
+  }
+  
+  // Get session cookie
+  const sessionCookie = request.cookies.get('session')?.value;
+  
+  // If there's no session cookie and it's not a public route, redirect to auth page
+  if (!sessionCookie) {
+    const url = new URL('/auth', request.url);
+    url.searchParams.set('callbackUrl', pathname);
+    return NextResponse.redirect(url);
+  }
+  
+  // Session exists, allow the request to proceed
+  // The actual validation happens in the API routes
   return NextResponse.next();
 }
 
-// Paths to apply middleware to - exclude auth paths to avoid Edge runtime issues
+// Paths to apply middleware to
 export const config = {
   matcher: [
-    // Exclude auth endpoints from middleware to avoid Edge runtime issues
-    '/api/((?!auth|test-db|init-db|groq).*)',
+    // Skip all internal paths (_next) and other public paths
+    '/((?!_next|api/auth|favicon.ico).*)',
+    // Optional: Protect API routes except auth-related ones and utility routes
+    '/api/((?!auth|test-db|init-db|db-status|env-check|debug-auth).*)',
   ],
 };

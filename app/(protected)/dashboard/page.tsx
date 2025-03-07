@@ -39,8 +39,9 @@ export default function DashboardPage() {
         <div className="min-w-[800px]">
             <Header />
             <BusinessProfileDashboard/>
-            <FeedbackButton/>
-            
+            <div className="fixed bottom-6 right-6">
+                <FeedbackButton/>
+            </div>
         </div>
     )
 }

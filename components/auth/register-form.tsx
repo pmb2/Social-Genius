@@ -64,7 +64,7 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
         // Redirect to dashboard on successful registration and login
         window.location.href = '/dashboard';
       } else {
-        setError(result.error || 'Registration failed');
+        setError(result.error || "Registration failed. Please check the server connection and try again.");
       }
     } catch (error) {
       console.error('Registration error:', error);

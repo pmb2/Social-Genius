@@ -5,7 +5,7 @@ class AuthService {
   private static instance: AuthService;
   private db: PostgresService;
   private JWT_SECRET: string;
-  private SESSION_EXPIRY: number = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
+  private SESSION_EXPIRY: number = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds // 30 days in milliseconds
 
   private constructor() {
     this.db = PostgresService.getInstance();

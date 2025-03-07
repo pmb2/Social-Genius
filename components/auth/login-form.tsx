@@ -42,7 +42,7 @@ export function LoginForm() {
         // Login successful - redirect to dashboard
         window.location.href = '/dashboard';
       } else {
-        setError(result.error || 'Login failed');
+        setError(result.error || "Login failed. Please check the server connection and try again.");
       }
     } catch (error) {
       console.error('Login error:', error);

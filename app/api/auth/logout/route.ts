@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     const authService = AuthService.getInstance();
     
     // Get session ID from cookie
-    const sessionId = req.cookies.get('sessionId')?.value;
+    const sessionId = req.cookies.get('session')?.value;
     
     if (sessionId) {
       // Logout user (delete session)
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     
     // Clear session cookie by setting an expired date
     response.cookies.set({
-      name: 'sessionId',
+      name: 'session',
       value: '',
       expires: new Date(0),
       path: '/'

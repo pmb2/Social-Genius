@@ -116,7 +116,7 @@ class PostgresService {
             console.log('Successfully reconnected to PostgreSQL database');
             return true;
           } catch (reconnectError) {
-            console.log(`Failed to connect with this connection string: ${reconnectError.message}`);
+            console.log(`Failed to connect with this connection string: ${reconnectError instanceof Error ? reconnectError.message : String(reconnectError)}`);
             await this.pool.end().catch(() => {});
           }
         }
@@ -540,13 +540,13 @@ class PostgresService {
         // Also update the embedding if content changes
         const newEmbedding = await this.embeddings.embedQuery(updates.content);
         updateFields.push(`embedding = $${paramCount}`);
-        params.push(newEmbedding);
+        params.push(JSON.stringify(newEmbedding));
         paramCount++;
       }
       
       if (updates.isCompleted !== undefined) {
         updateFields.push(`is_completed = $${paramCount}`);
-        params.push(updates.isCompleted);
+        params.push(String(updates.isCompleted));
         paramCount++;
       }
       
@@ -560,7 +560,7 @@ class PostgresService {
       `;
       
       const result = await client.query(query, params);
-      return result.rowCount > 0;
+      return result.rowCount ? result.rowCount > 0 : false;
     } catch (error) {
       console.error('Error updating memory:', error);
       throw error;
@@ -580,7 +580,7 @@ class PostgresService {
         [memoryId, businessId]
       );
       
-      return result.rowCount > 0;
+      return result.rowCount ? result.rowCount > 0 : false;
     } catch (error) {
       console.error('Error deleting memory:', error);
       throw error;
@@ -728,7 +728,7 @@ class PostgresService {
         [userId]
       );
       
-      return result.rowCount > 0;
+      return result.rowCount ? result.rowCount > 0 : false;
     } catch (error) {
       console.error('Error updating last login:', error);
       throw error;
@@ -789,7 +789,7 @@ class PostgresService {
         [sessionId]
       );
       
-      return result.rowCount > 0;
+      return result.rowCount ? result.rowCount > 0 : false;
     } catch (error) {
       console.error('Error deleting session:', error);
       throw error;
@@ -879,7 +879,7 @@ class PostgresService {
         [status, businessId]
       );
       
-      return result.rowCount > 0;
+      return result.rowCount ? result.rowCount > 0 : false;
     } catch (error) {
       console.error('Error updating business status:', error);
       throw error;

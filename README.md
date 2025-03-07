@@ -1,21 +1,24 @@
-GBP Automation Pro
+# Social Genius
 
-GBP Automation Pro is an innovative web application designed to help businesses optimize and maintain their Google
-Business Profiles (GBP) with minimal effort. By automating key activities such as photo uploads, post creation, Q&A
-updates, and review responses, the tool ensures businesses stay relevant to customers and improve local SEO rankings.
-Utilizing AI-driven content generation and seamless scheduling, GBP Automation Pro provides a streamlined, compliant,
-and user-friendly solution for managing business profiles.
+Social Genius is an innovative web application designed to help businesses optimize and maintain their social media presence with minimal effort. By leveraging AI-powered content generation, competitor research, and compliance checking, the tool ensures businesses stay relevant to customers and improve brand engagement. Utilizing advanced AI-driven content generation and seamless scheduling, Social Genius provides a streamlined, compliant, and user-friendly solution for managing business social media presence.
 
-Table of Contents
+## Authentication with Hanko
 
-	•	Key Features
-	•	All-in-One Dashboard
-	•	Hands-Off Email System
-	•	User Workflow
-	•	Technical Considerations
-	•	Additional Considerations
-	•	Next Steps
-	•	Ideal For
+The application now uses Hanko for secure, passwordless authentication. Hanko provides:
+
+- Passwordless email authentication
+- Passkey support for biometric login
+- JWT-based session management
+- User profile management
+- WebAuthn support for enhanced security
+
+## Table of Contents
+
+- [Key Features](#key-features)
+- [Authentication](#authentication-with-hanko)
+- [Getting Started](#getting-started)
+- [Technical Considerations](#technical-considerations)
+- [Deployment](#deployment-guide)
 
 Key Features
 

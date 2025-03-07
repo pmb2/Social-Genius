@@ -43,7 +43,9 @@ export function BusinessProfileDashboard() {
       setIsLoading(true);
       setError(null);
       
-      const response = await fetch('/api/businesses');
+      const response = await fetch('/api/businesses', {
+        credentials: 'include' // Include cookies for authentication
+      });
       
       if (!response.ok) {
         throw new Error('Failed to fetch businesses');
@@ -80,6 +82,7 @@ export function BusinessProfileDashboard() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include', // Include cookies for authentication
         body: JSON.stringify({
           name: businessName,
           type: businessType,
@@ -120,11 +123,9 @@ export function BusinessProfileDashboard() {
               <Image
                 src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Group%20362-rvrX4OJ5ZH5Nbk05Br5thefaRKSJih.png"
                 alt="Brand Logo"
-                className="h-48 w-auto"
                 width={220}
                 height={120}
                 priority={true}
-                style={{ width: "auto", height: "auto" }}
               />
             </div>
 
@@ -195,24 +196,7 @@ export function BusinessProfileDashboard() {
                       </div>
                     </TableCell>
                   </TableRow>
-                ) : error ? (
-                  <TableRow className="cursor-pointer hover:bg-gray-50" onClick={handleAddBusinessClick}>
-                    <TableCell colSpan={2} className="text-center py-10">
-                      <div className="flex flex-col items-center">
-                        <div className="bg-gradient-to-r from-[#FFAB1A] via-[#FF1681] to-[#0080FF] p-[2px] rounded-lg mb-4">
-                          <div className="bg-white px-8 py-4 rounded-lg">
-                            <h3 className="text-xl font-semibold bg-gradient-to-r from-[#FFAB1A] via-[#FF1681] to-[#0080FF] inline-block text-transparent bg-clip-text">
-                              Let's get started!
-                            </h3>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-center space-x-1">
-                          <span className="text-gray-500 font-medium">Add your first business</span>
-                        </div>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ) : businesses.length === 0 ? (
+                ) : error || businesses.length === 0 ? (
                   <TableRow className="cursor-pointer hover:bg-gray-50" onClick={handleAddBusinessClick}>
                     <TableCell colSpan={2} className="text-center py-10">
                       <div className="flex flex-col items-center">
@@ -250,6 +234,8 @@ export function BusinessProfileDashboard() {
           </div>
         </div>
       </div>
+
+      {/* No floating add button - using the one in the table header instead */}
 
       {/* Business Profile Modal */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
