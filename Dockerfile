@@ -8,6 +8,7 @@ WORKDIR /app
 # Copy package files
 COPY package.json package-lock.json ./
 RUN npm ci
+RUN npm install @radix-ui/react-dropdown-menu
 
 # Rebuild the source code only when needed
 FROM base AS builder

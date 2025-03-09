@@ -10,6 +10,7 @@ COPY package.json package-lock.json ./
 
 # Install dependencies
 RUN npm ci
+RUN npm install @radix-ui/react-dropdown-menu
 # Ensure mammoth is installed properly
 RUN npm list mammoth || npm install mammoth
 
