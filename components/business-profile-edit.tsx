@@ -9,11 +9,20 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { X } from "lucide-react"
 
-interface BusinessProfileEditProps {
-  onClose: () => void
+interface Business {
+  id: number;
+  businessId: string;
+  name: string;
+  status: string;
+  createdAt: string;
 }
 
-export default function BusinessProfileEdit({ onClose }: BusinessProfileEditProps) {
+interface BusinessProfileEditProps {
+  business: Business | null;
+  onClose: () => void;
+}
+
+export default function BusinessProfileEdit({ business, onClose }: BusinessProfileEditProps) {
   // Use client-side only rendering to avoid hydration issues
   const [isMounted, setIsMounted] = useState(false)
 
@@ -55,7 +64,7 @@ export default function BusinessProfileEdit({ onClose }: BusinessProfileEditProp
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="businessName">Business Name</Label>
-                  <Input id="businessName" placeholder="Enter business name" defaultValue="Business Profile Account" />
+                  <Input id="businessName" placeholder="Enter business name" defaultValue={business?.name || "Business Profile Account"} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="website">Website</Label>

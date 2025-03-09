@@ -10,11 +10,26 @@ import { BrandAlignmentTab } from "./brand-alignment-tab"
 import { CompetitorResearchTab } from "./competitor-research-tab"
 import Image from "next/image"
 
-export default function BusinessProfileModal({ onClose }: { onClose: () => void }) {
+interface Business {
+  id: number;
+  businessId: string;
+  name: string;
+  status: string;
+  createdAt: string;
+}
+
+export default function BusinessProfileModal({ 
+  business, 
+  onClose 
+}: { 
+  business: Business | null; 
+  onClose: () => void 
+}) {
   // Use client-side only rendering to avoid hydration issues
   const [isMounted, setIsMounted] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
-  const [businessId] = useState(1) // Mock business ID
+  // Use the actual business ID if available
+  const businessId = business?.id || 1
 
   useEffect(() => {
     setIsMounted(true)
@@ -25,7 +40,7 @@ export default function BusinessProfileModal({ onClose }: { onClose: () => void 
     return (
       <div className="flex flex-col h-full bg-white rounded-xl">
         <div className="px-6 py-4 flex justify-between items-center border-b relative">
-          <h2 className="text-lg font-medium">Business Profile Account</h2>
+          <h2 className="text-lg font-medium">{business ? business.name : 'Business Profile Account'}</h2>
           <Button variant="ghost" size="icon" className="h-8 w-8">
             <Image
               src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/pencil-dU5dMJDm9paKGUCdBJX5awBEHoRhXl.png"
@@ -49,13 +64,13 @@ export default function BusinessProfileModal({ onClose }: { onClose: () => void 
   }
 
   if (isEditing) {
-    return <BusinessProfileEdit onClose={() => setIsEditing(false)} />
+    return <BusinessProfileEdit business={business} onClose={() => setIsEditing(false)} />
   }
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-xl">
-      <div className="px-6 py-4 flex justify-between items-center border-b relative">
-        <h2 className="text-lg font-medium">Business Profile Account</h2>
+    <div className="flex flex-col h-full min-h-[700px] max-h-full bg-white rounded-xl">
+      <div className="px-6 py-4 flex justify-between items-center border-b relative shrink-0">
+        <h2 className="text-lg font-medium">{business ? business.name : 'Business Profile Account'}</h2>
         <Button
           variant="ghost"
           size="icon"
@@ -80,17 +95,17 @@ export default function BusinessProfileModal({ onClose }: { onClose: () => void 
         </Button>
       </div>
 
-      <Tabs defaultValue="compliance" className="flex flex-col flex-1">
-        <div className="flex-1 overflow-auto">
-          <TabsContent value="compliance">
+      <Tabs defaultValue="compliance" className="flex flex-col flex-1 h-full">
+        <div className="flex-1 overflow-auto h-[calc(100%-64px)]">
+          <TabsContent value="compliance" className="h-full">
             <ComplianceTab businessId={businessId} />
           </TabsContent>
 
-          <TabsContent value="brand">
+          <TabsContent value="brand" className="h-full">
             <BrandAlignmentTab />
           </TabsContent>
 
-          <TabsContent value="competitor">
+          <TabsContent value="competitor" className="h-full">
             <CompetitorResearchTab />
           </TabsContent>
         </div>

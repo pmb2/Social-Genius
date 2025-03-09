@@ -1,8 +1,36 @@
 import PostgresService from '@/services/postgres-service';
+import AuthService from '@/services/auth-service';
 import { Pool } from 'pg';
 
 // Set this to know if we've initialized
 let dbInitialized = false;
+
+// Detect if running in Docker environment
+function detectDockerEnvironment() {
+  // Check if we're likely running inside Docker based on env or filesystem
+  try {
+    // Set environment variable that the PostgresService will check
+    const inDocker = process.env.RUNNING_IN_DOCKER === 'true' || 
+                    (typeof process.env.DOCKER_CONTAINER !== 'undefined') || 
+                    (typeof process.env.KUBERNETES_SERVICE_HOST !== 'undefined');
+    
+    if (inDocker) {
+      process.env.RUNNING_IN_DOCKER = 'true';
+      console.log('Detected Docker environment');
+      return true;
+    }
+    
+    // Not in Docker
+    process.env.RUNNING_IN_DOCKER = 'false';
+    console.log('Detected non-Docker environment');
+    return false;
+  } catch (error) {
+    console.error('Error detecting Docker environment:', error);
+    // Default to non-Docker
+    process.env.RUNNING_IN_DOCKER = 'false';
+    return false;
+  }
+}
 
 export async function initializeDatabase() {
   try {
@@ -16,45 +44,56 @@ export async function initializeDatabase() {
     console.log('DATABASE_URL:', process.env.DATABASE_URL ? 
                 `Set (${process.env.DATABASE_URL.length} chars)` : 'Not set');
     
-    // Override with the localhost Docker connection that we know works for this environment
-    // This ensures reliable connection in the current setup
-    process.env.DATABASE_URL = 'postgresql://postgres:postgres@localhost:5432/socialgenius';
-    console.log('Using hardcoded PostgreSQL connection for reliability');
+    // Detect Docker environment and set appropriate connection strings
+    const inDocker = detectDockerEnvironment();
     
-    // Create new PostgresService instance with updated connection
+    if (inDocker) {
+      // Inside Docker container - use container network
+      if (!process.env.DATABASE_URL_DOCKER) {
+        process.env.DATABASE_URL_DOCKER = 'postgresql://postgres:postgres@postgres:5432/socialgenius';
+      }
+      console.log('Using Docker network database connection');
+    } else {
+      // External to Docker - use host mapping
+      if (!process.env.DATABASE_URL) {
+        process.env.DATABASE_URL = 'postgresql://postgres:postgres@localhost:5435/socialgenius';
+      }
+      console.log('Using host machine database connection');
+    }
+    
+    // Create PostgresService instance and let it handle connection details
     const dbService = PostgresService.getInstance();
-    await dbService.resetConnection(process.env.DATABASE_URL);
     
-    // Try to connect first
-    const pool = dbService.getPool();
-    const client = await pool.connect();
+    // Test connection with multiple attempts
+    console.log('Testing database connection...');
+    const isConnected = await dbService.testConnection();
+    
+    if (!isConnected) {
+      console.error('Failed to connect to database after multiple attempts');
+      return false;
+    }
+    
     console.log('Successfully connected to database');
-    client.release();
     
-    // Now initialize tables
+    // Initialize tables
+    console.log('Initializing database tables...');
     await dbService.initialize();
-    console.log('Database initialized successfully');
+    console.log('Database tables initialized successfully');
+    
+    // Initialize the Auth service
+    console.log('Initializing Auth service...');
+    const authService = AuthService.getInstance();
+    
+    // Clean up any expired sessions
+    console.log('Cleaning up expired sessions...');
+    const cleanedSessions = await authService.cleanupSessions();
+    console.log(`Cleaned up ${cleanedSessions} expired sessions`);
     
     dbInitialized = true;
+    console.log('✅ Database successfully initialized and ready');
     return true;
   } catch (error) {
     console.error('Error initializing database:', error);
-    
-    // Try with a fallback connection string
-    try {
-      console.log('Trying with fallback localhost connection...');
-      process.env.DATABASE_URL = 'postgresql://postgres:postgres@localhost:5432/postgres';
-      
-      const dbService = PostgresService.getInstance();
-      await dbService.resetConnection(process.env.DATABASE_URL);
-      await dbService.initialize();
-      
-      console.log('Database initialized with fallback connection');
-      dbInitialized = true;
-      return true;
-    } catch (fallbackError) {
-      console.error('Failed with fallback connection too:', fallbackError);
-      return false;
-    }
+    return false;
   }
 }

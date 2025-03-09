@@ -2,8 +2,8 @@
 
 import type React from "react"
 
-import { useState } from "react"
-import { Dialog, DialogContent, DialogClose } from "@/components/ui/dialog"
+import { useState, useEffect } from "react"
+import { Dialog, DialogContent, DialogClose, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -14,6 +14,7 @@ import { X, Upload, AlertCircle, Lightbulb, MessageCircle } from "lucide-react"
 interface FeedbackModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  defaultType?: FeedbackType
 }
 
 type FeedbackType = "bug" | "feature" | "feedback"
@@ -46,9 +47,16 @@ const feedbackTypes: FeedbackTypeOption[] = [
   },
 ]
 
-export default function FeedbackModal({ open, onOpenChange }: FeedbackModalProps) {
-  const [type, setType] = useState<FeedbackType>("bug")
+export default function FeedbackModal({ open, onOpenChange, defaultType = "bug" }: FeedbackModalProps) {
+  const [type, setType] = useState<FeedbackType>(defaultType)
   const [files, setFiles] = useState<File[]>([])
+  
+  // Update type when defaultType changes
+  useEffect(() => {
+    if (open) {
+      setType(defaultType);
+    }
+  }, [defaultType, open])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -64,7 +72,11 @@ export default function FeedbackModal({ open, onOpenChange }: FeedbackModalProps
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl p-0">
+      <DialogContent className="max-w-xl p-0 max-h-[90vh]" aria-describedby="feedback-modal-description">
+        <DialogTitle className="sr-only">Submit Feedback</DialogTitle>
+        <div id="feedback-modal-description" className="sr-only">
+          Form to submit bug reports, feature requests, or general feedback
+        </div>
         <div className="flex flex-col h-full bg-white rounded-xl overflow-hidden">
           <div className="px-6 py-4 flex justify-between items-center border-b relative">
             <h2 className="text-lg font-medium">Submit Feedback</h2>
@@ -85,7 +97,7 @@ export default function FeedbackModal({ open, onOpenChange }: FeedbackModalProps
               <div className="space-y-3">
                 <Label>What type of feedback do you have?</Label>
                 <RadioGroup
-                  defaultValue="bug"
+                  value={type}
                   onValueChange={(value) => setType(value as FeedbackType)}
                   className="grid grid-cols-3 gap-4"
                 >
@@ -137,7 +149,7 @@ export default function FeedbackModal({ open, onOpenChange }: FeedbackModalProps
                         ? "Describe the feature you'd like to see. What problem would it solve?"
                         : "Tell us what's on your mind"
                   }
-                  className="min-h-[150px]"
+                  className="min-h-[120px]"
                 />
               </div>
 

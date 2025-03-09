@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomBytes, scryptSync } from 'crypto';
 import PostgresService from '@/services/postgres-service';
+import AuthService from '@/services/auth-service';
+import { initializeDatabase } from '@/lib/init-db';
 
 // Specify that this route runs on the Node.js runtime, not Edge
 export const runtime = 'nodejs';
@@ -17,12 +19,27 @@ export async function POST(req: NextRequest) {
   try {
     console.log('Register API called with content-type:', req.headers.get('content-type'));
     
+    // Initialize database first to ensure tables exist
+    console.log('Ensuring database is initialized...');
+    const dbInitialized = await initializeDatabase();
+    
+    if (!dbInitialized) {
+      console.error('Database initialization failed');
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Database initialization failed. Please check database configuration.' 
+      }, { status: 500 });
+    }
+    
     // Get database service
     const dbService = PostgresService.getInstance();
     
     // Ensure database connection is available
     try {
-      await dbService.testConnection();
+      const isConnected = await dbService.testConnection();
+      if (!isConnected) {
+        throw new Error('Database connection failed after multiple attempts');
+      }
       console.log('Database connection successful');
     } catch (dbError) {
       console.error('Database connection error:', dbError);
@@ -63,44 +80,33 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
     
-    // Check if user already exists
+    // Use AuthService for registration (which handles database interactions properly)
+    const authService = AuthService.getInstance();
+    
     try {
-      const existingUser = await dbService.getUserByEmail(email);
-      if (existingUser) {
+      // Use the AuthService register method
+      const result = await authService.register(email, password, name);
+      
+      if (!result.success) {
         return NextResponse.json({ 
           success: false, 
-          error: 'Email already registered' 
+          error: result.error || 'Registration failed'
         }, { status: 400 });
       }
-    } catch (userCheckError) {
-      console.error('Error checking if user exists:', userCheckError);
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Error checking user records' 
-      }, { status: 500 });
-    }
-    
-    // Create password hash
-    const salt = randomBytes(16).toString('hex');
-    const hash = scryptSync(password, salt, 64).toString('hex');
-    const passwordHash = `${salt}:${hash}`;
-    
-    // Register user in database
-    try {
-      const userId = await dbService.registerUser(email, passwordHash, name);
-      console.log(`User registered with ID: ${userId}`);
+      
+      console.log(`User registered with ID: ${result.userId}`);
       
       // Return success response
       return NextResponse.json({
         success: true,
         message: 'Registration successful. Please log in.',
-        userId
+        userId: result.userId
       }, { status: 201 });
     } catch (registerError) {
-      console.error('Error registering user:', registerError);
+      console.error('Error during user registration:', registerError);
       return NextResponse.json({ 
         success: false, 
-        error: 'Failed to create user account' 
+        error: 'Failed to create user account. Please try again.' 
       }, { status: 500 });
     }
   } catch (error) {

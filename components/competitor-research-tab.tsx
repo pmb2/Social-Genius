@@ -175,7 +175,7 @@ export function CompetitorResearchTab() {
   }
 
   return (
-    <div className="h-[calc(95vh-120px)] m-0 p-6 overflow-auto">
+    <div className="h-full min-h-[600px] m-0 p-6 overflow-auto">
       <div className="flex justify-between items-start mb-4">
         <div className="flex-1">
           <h3 className="text-4xl font-bold">Competitor Research</h3>

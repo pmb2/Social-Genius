@@ -9,6 +9,7 @@ const publicRoutes = [
   '/api/init-db',
   '/api/env-check',
   '/api/db-status',
+  '/api/direct-db-test',
   '/favicon.ico',
   '/check-db',
   '/debug',
@@ -49,6 +50,6 @@ export const config = {
     // Skip all internal paths (_next) and other public paths
     '/((?!_next|api/auth|favicon.ico).*)',
     // Optional: Protect API routes except auth-related ones and utility routes
-    '/api/((?!auth|test-db|init-db|db-status|env-check|debug-auth).*)',
+    '/api/((?!auth|test-db|init-db|db-status|env-check|debug-auth|direct-db-test).*)',
   ],
 };

@@ -21,6 +21,11 @@ export async function authMiddleware(
   
   // Verify session
   const session = await authService.verifySession(sessionId);
+  
+  // Debug session verification
+  console.log(`Auth middleware - Session verification result:`, 
+    session ? `Valid session for user ${session.user_id}` : 'Invalid session');
+  
   if (!session) {
     // Return proper JSON response for invalid session
     return NextResponse.json({

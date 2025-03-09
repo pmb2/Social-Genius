@@ -14,14 +14,25 @@ class PostgresService {
       console.log('DATABASE_URL_DOCKER:', 
                  process.env.DATABASE_URL_DOCKER ? 'Set (length: ' + process.env.DATABASE_URL_DOCKER.length + ')' : 'Not set');
       
-      // Try DATABASE_URL first, then fallback to DATABASE_URL_DOCKER
-      const connectionString = process.env.DATABASE_URL || process.env.DATABASE_URL_DOCKER;
+      // Determine the connection string based on environment
+      let connectionString;
       
-      // Check if any connection URL is set
-      if (!connectionString) {
-        console.error('No database connection URL is set! Please set DATABASE_URL or DATABASE_URL_DOCKER');
-        throw new Error('Database connection is not configured');
+      // Check if we're running inside Docker or not
+      const inDocker = process.env.RUNNING_IN_DOCKER === 'true';
+      console.log(`Running in Docker: ${inDocker}`);
+      
+      if (inDocker) {
+        // Inside Docker container - use container-to-container communication
+        connectionString = process.env.DATABASE_URL_DOCKER || 'postgresql://postgres:postgres@postgres:5432/socialgenius';
+        console.log('Using Docker container network connection');
+      } else {
+        // Outside Docker container - use host to container communication
+        connectionString = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5435/socialgenius';
+        console.log('Using host machine connection');
       }
+      
+      // Always log which connection we're using
+      console.log(`PostgresService: Connecting to database with connection string: ${connectionString.split('@')[0]}@***`);
       
       this.pool = new Pool({
         connectionString,
@@ -51,9 +62,17 @@ class PostgresService {
     } catch (error) {
       console.error('Error initializing PostgresService:', error);
       // Create a minimal pool to prevent application crashes
+      const fallbackConnection = process.env.RUNNING_IN_DOCKER === 'true' 
+        ? 'postgresql://postgres:postgres@postgres:5432/postgres'
+        : 'postgresql://postgres:postgres@localhost:5435/postgres';
+        
+      console.log(`Using fallback connection: ${fallbackConnection.split('@')[0]}@***`);
+      
       this.pool = new Pool({
-        connectionString: 'postgresql://postgres:postgres@localhost:5432/postgres'
+        connectionString: fallbackConnection,
+        connectionTimeoutMillis: 8000,
       });
+      
       // Still create embeddings
       this.embeddings = new OpenAIEmbeddings({
         openAIApiKey: process.env.OPENAI_API_KEY || '',
@@ -65,71 +84,94 @@ class PostgresService {
   // Test database connection
   public async testConnection(): Promise<boolean> {
     let client;
-    try {
-      client = await this.pool.connect();
-      
-      // Try a simple query to really verify the connection
-      const result = await client.query('SELECT 1 as connection_test');
-      
-      if (result.rows.length > 0 && result.rows[0].connection_test === 1) {
-        console.log('Successfully connected to PostgreSQL database and verified query execution');
-        return true;
-      } else {
-        console.error('Connected to PostgreSQL database but query returned unexpected result');
-        return false;
-      }
-    } catch (error) {
-      console.error('Failed to connect to PostgreSQL database:', error);
-      
-      // Try to recreate the pool with a different connection string
+    const maxRetries = 3;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        console.log('Attempting to reconnect with alternate configuration...');
+        console.log(`Database connection attempt ${attempt}/${maxRetries}...`);
+        client = await this.pool.connect();
         
-        // Close the existing pool
-        await this.pool.end();
+        // Try a simple query to really verify the connection
+        const result = await client.query('SELECT 1 as connection_test');
         
-        // Try different connection options
-        const connectionOptions = [
-          process.env.DATABASE_URL,
-          'postgresql://postgres:postgres@localhost:5435/socialgenius',
-          'postgresql://postgres:postgres@localhost:5432/socialgenius',
-          'postgresql://postgres:postgres@postgres:5432/socialgenius'
-        ];
+        if (result.rows.length > 0 && result.rows[0].connection_test === 1) {
+          console.log('✅ Successfully connected to PostgreSQL database and verified query execution');
+          return true;
+        } else {
+          console.error('Connected to PostgreSQL database but query returned unexpected result');
+          if (attempt === maxRetries) return false;
+        }
+      } catch (error) {
+        console.error(`Failed to connect to PostgreSQL database (attempt ${attempt}/${maxRetries}):`, error);
         
-        for (const connectionString of connectionOptions) {
-          if (!connectionString) continue;
-          
-          console.log(`Trying connection string: ${connectionString.substring(0, connectionString.indexOf('@'))}@***`);
-          
-          this.pool = new Pool({
-            connectionString,
-            ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
-            connectionTimeoutMillis: 5000,
-            idleTimeoutMillis: 30000,
-            max: 20
-          });
-          
+        if (attempt === maxRetries) {
+          // On final attempt, try different connection strings
           try {
-            const testClient = await this.pool.connect();
-            await testClient.query('SELECT 1 as connection_test');
-            testClient.release();
-            console.log('Successfully reconnected to PostgreSQL database');
-            return true;
-          } catch (reconnectError) {
-            console.log(`Failed to connect with this connection string: ${reconnectError instanceof Error ? reconnectError.message : String(reconnectError)}`);
-            await this.pool.end().catch(() => {});
+            console.log('Final attempt: Trying different connection strings...');
+            
+            // Close the existing pool
+            await this.pool.end().catch(e => console.log('Error closing pool:', e));
+            
+            // Try different connections based on environment
+            const inDocker = process.env.RUNNING_IN_DOCKER === 'true';
+            
+            const connectionOptions = inDocker 
+              ? [
+                  // Docker container connection options
+                  'postgresql://postgres:postgres@postgres:5432/socialgenius',
+                  'postgresql://postgres:postgres@postgres:5432/postgres',
+                  'postgresql://postgres:postgres@postgres:5432/template1'
+                ]
+              : [
+                  // Host machine connection options
+                  'postgresql://postgres:postgres@localhost:5435/socialgenius',
+                  'postgresql://postgres:postgres@127.0.0.1:5435/socialgenius',
+                  'postgresql://postgres:postgres@localhost:5435/postgres',
+                  'postgresql://postgres:postgres@127.0.0.1:5435/postgres'
+                ];
+            
+            for (const connectionString of connectionOptions) {
+              console.log(`Trying connection string: ${connectionString.split('@')[0]}@***`);
+              
+              this.pool = new Pool({
+                connectionString,
+                ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+                connectionTimeoutMillis: 8000,
+                idleTimeoutMillis: 30000,
+                max: 20
+              });
+              
+              try {
+                const testClient = await this.pool.connect();
+                await testClient.query('SELECT 1 as connection_test');
+                testClient.release();
+                console.log('✅ Successfully reconnected to PostgreSQL database with alternative connection string');
+                return true;
+              } catch (reconnectError) {
+                console.log(`Failed to connect with ${connectionString.split('@')[0]}@***: ${reconnectError instanceof Error ? reconnectError.message : String(reconnectError)}`);
+                await this.pool.end().catch(() => {});
+              }
+            }
+            
+            console.error('❌ All connection attempts failed');
+            return false;
+          } catch (retryError) {
+            console.error('Error during reconnection attempts:', retryError);
+            return false;
           }
         }
         
-        console.error('All connection attempts failed');
-        return false;
-      } catch (retryError) {
-        console.error('Error during reconnection attempts:', retryError);
-        return false;
+        // If not the final attempt, wait before retrying
+        if (attempt < maxRetries) {
+          console.log(`Waiting ${attempt * 2}s before next attempt...`);
+          await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+        }
+      } finally {
+        if (client) client.release();
       }
-    } finally {
-      if (client) client.release();
     }
+    
+    return false;
   }
 
   public static getInstance(): PostgresService {

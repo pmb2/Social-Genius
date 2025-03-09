@@ -43,15 +43,22 @@ export function BusinessProfileDashboard() {
       setIsLoading(true);
       setError(null);
       
+      console.log('Fetching businesses...');
+      
+      // Use the regular endpoint
       const response = await fetch('/api/businesses', {
         credentials: 'include' // Include cookies for authentication
       });
+      
+      console.log('Businesses API response status:', response.status);
       
       if (!response.ok) {
         throw new Error('Failed to fetch businesses');
       }
       
       const data = await response.json();
+      console.log('Businesses API response data:', data);
+      
       setBusinesses(data.businesses || []);
     } catch (err) {
       console.error('Error fetching businesses:', err);
@@ -61,8 +68,10 @@ export function BusinessProfileDashboard() {
     }
   };
   
-  const handleRowClick = () => {
-    // We're not using accountId parameter to avoid the ESLint warning
+  const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null)
+  
+  const handleRowClick = (business: Business) => {
+    setSelectedBusiness(business)
     setIsModalOpen(true)
   }
 
@@ -131,7 +140,9 @@ export function BusinessProfileDashboard() {
 
             {/* Stats */}
             <div className="text-center">
-              <div className="text-7xl font-bold text-black mb-[14px]">5</div>
+              <div className="text-7xl font-bold text-black mb-[14px]">
+                {businesses.filter(b => b.status === 'noncompliant').length}
+              </div>
               <div className="flex justify-center">
                 <StatusIndicator status="noncompliant" />
               </div>
@@ -139,7 +150,9 @@ export function BusinessProfileDashboard() {
             </div>
 
             <div className="text-center">
-              <div className="text-7xl font-bold text-black mb-[14px]">2</div>
+              <div className="text-7xl font-bold text-black mb-[14px]">
+                {businesses.filter(b => b.status === 'compliant').length}
+              </div>
               <div className="flex justify-center">
                 <StatusIndicator status="compliant" />
               </div>
@@ -147,7 +160,9 @@ export function BusinessProfileDashboard() {
             </div>
 
             <div className="text-center">
-              <div className="text-7xl font-bold text-black mb-[14px]">1</div>
+              <div className="text-7xl font-bold text-black mb-[14px]">
+                {businesses.filter(b => b.status === 'active').length}
+              </div>
               <div className="flex justify-center">
                 <StatusIndicator status="active" />
               </div>
@@ -218,7 +233,7 @@ export function BusinessProfileDashboard() {
                     <TableRow
                       key={business.id}
                       className="cursor-pointer hover:bg-gray-50"
-                      onClick={handleRowClick}
+                      onClick={() => handleRowClick(business)}
                     >
                       <TableCell className="text-black py-4">{business.name}</TableCell>
                       <TableCell className="text-right py-4 pr-8">
@@ -239,24 +254,24 @@ export function BusinessProfileDashboard() {
 
       {/* Business Profile Modal */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="p-0" aria-describedby="profile-modal-description">
+        <DialogContent className="p-0 max-w-[1200px] w-[95vw] h-[95vh] max-h-[980px]" aria-describedby="profile-modal-description">
           <DialogTitle className="sr-only">Business Profile Details</DialogTitle>
           <div id="profile-modal-description" className="sr-only">
             Business profile details and management interface
           </div>
-          <BusinessProfileModal onClose={handleClose} />
+          <BusinessProfileModal business={selectedBusiness} onClose={handleClose} />
         </DialogContent>
       </Dialog>
       
       {/* Add Business Modal - Enhanced Version */}
       <Dialog open={isAddBusinessModalOpen} onOpenChange={setIsAddBusinessModalOpen}>
-        <DialogContent className="max-w-md p-6" aria-describedby="add-business-description">
+        <DialogContent className="max-w-sm p-6 max-h-[90vh]" aria-describedby="add-business-description">
           <DialogTitle className="text-xl font-semibold mb-2">Add Business</DialogTitle>
           <DialogDescription id="add-business-description">
             Add a new business to manage through Social Genius.
           </DialogDescription>
           
-          <div className="py-6 space-y-5">
+          <div className="py-4 space-y-4">
             {/* Option Selection */}
             <div className="space-y-4">
               <h3 className="text-sm font-medium">Select an option:</h3>

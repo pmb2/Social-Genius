@@ -672,7 +672,7 @@ export function BrandAlignmentTab() {
 
   return (
     <div 
-      className="h-[calc(95vh-120px)] m-0 p-6 overflow-hidden relative"
+      className="h-full min-h-[600px] flex flex-col m-0 p-4 overflow-hidden relative"
       onDragEnter={handleGlobalDrag}
       onDragOver={handleGlobalDrag}
       onDragLeave={handleGlobalDrag}
@@ -688,8 +688,8 @@ export function BrandAlignmentTab() {
           </div>
         </div>
       )}
-      <div className="grid grid-cols-[250px_1fr] gap-6 h-full">
-        <div className="bg-[#F3F4F6] rounded-xl p-6 space-y-6 flex flex-col h-full">
+      <div className="grid grid-cols-[250px_1fr] gap-6 h-full max-h-full min-h-0">
+        <div className="bg-[#F3F4F6] rounded-xl p-6 space-y-4 flex flex-col h-full max-h-full">
           <div>
             <h3 className="text-xl font-semibold mb-2">Brand Alignment</h3>
           </div>
@@ -1043,9 +1043,9 @@ export function BrandAlignmentTab() {
 
           {/* Document list summary */}
           {processedDocuments.length > 0 && (
-            <div className="mt-4">
+            <div className="mt-4 overflow-hidden">
               <h4 className="text-sm font-medium mb-2">Documents ({processedDocuments.length})</h4>
-              <div className="space-y-1 max-h-[150px] overflow-y-auto">
+              <div className="space-y-1 max-h-[120px] overflow-y-auto">
                 {processedDocuments.slice(0, 5).map((doc) => (
                   <div key={doc.id} className="text-xs text-gray-600 truncate">
                     {getDocumentIcon(doc.type)} {doc.name}
@@ -1059,7 +1059,7 @@ export function BrandAlignmentTab() {
           )}
           
           {/* File Upload Info - Bottom of Sidebar */}
-          <div className="mt-auto pt-[33rem]">
+          <div className="mt-auto">
             <div className="bg-white rounded-md border border-gray-200 px-3 py-2 flex items-center gap-2">
               <Upload className="h-3.5 w-3.5 text-[#FF1681]" />
               <p className="text-xs text-gray-600">Drag files anywhere to upload</p>
@@ -1068,8 +1068,8 @@ export function BrandAlignmentTab() {
         </div>
 
         {/* Main Chat Area */}
-        <div className="border rounded-xl flex flex-col overflow-hidden">
-          <div className="flex-1 p-6 overflow-y-auto" ref={chatContainerRef}>
+        <div className="border rounded-xl flex flex-col overflow-hidden h-full min-h-0 max-h-full">
+          <div className="flex-1 p-4 overflow-y-auto min-h-0" ref={chatContainerRef}>
             {messages.map((message, index) => (
               <div key={index} className={`flex gap-4 mb-6 ${message.role === "user" ? "flex-row-reverse justify-start" : ""} animate-in fade-in-10 slide-in-from-bottom-5 duration-300`}>
                 <div className={`flex-shrink-0 w-10 h-10 rounded-full ${message.role === "user" ? "bg-transparent" : "bg-black"} overflow-hidden flex items-center justify-center`}>
@@ -1161,7 +1161,7 @@ export function BrandAlignmentTab() {
 
 
           {/* Input Area */}
-          <div className="p-6 border-t">
+          <div className="p-4 border-t shrink-0">
             <div className="flex gap-4 items-center">
               <Textarea
                 placeholder="Describe your Brand tone..."
