@@ -11,7 +11,8 @@ const nextConfig = {
         pathname: '/**',
       }
     ],
-    unoptimized: process.env.NODE_ENV === 'development',
+    formats: ['image/avif', 'image/webp'],
+    minimumCacheTTL: 60,
   },
   // Enable output standalone mode for Docker support
   output: 'standalone',

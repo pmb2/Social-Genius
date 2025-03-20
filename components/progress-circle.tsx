@@ -1,9 +1,17 @@
 "use client"
 
-export function ProgressCircle({ value }: { value: number }) {
+import { memo, useMemo } from 'react'
+
+export function ProgressCircleComponent({ value }: { value: number }) {
+  // Constants that don't need to be recalculated
   const radius = 46
   const circumference = 2 * Math.PI * radius
-  const offset = circumference - (value / 100) * circumference
+  
+  // Memoize the offset calculation
+  const offset = useMemo(() => 
+    circumference - (value / 100) * circumference,
+    [value, circumference]
+  )
 
   return (
     <div className="relative inline-flex items-center justify-center">
@@ -32,6 +40,9 @@ export function ProgressCircle({ value }: { value: number }) {
     </div>
   )
 }
+
+// Memoize the component to prevent unnecessary re-renders
+export const ProgressCircle = memo(ProgressCircleComponent)
 
 export default ProgressCircle
 

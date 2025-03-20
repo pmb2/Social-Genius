@@ -8,10 +8,90 @@ export const runtime = 'nodejs';
 
 // Proper businesses API endpoints
 
+// Handle DELETE requests for businesses
+export const DELETE = createAuthRoute(async (req: NextRequest, userId: number) => {
+  try {
+    // Get business ID from the request URL
+    const url = new URL(req.url);
+    const businessId = url.searchParams.get('businessId');
+    
+    if (!businessId) {
+      return NextResponse.json({
+        success: false,
+        error: 'Business ID is required'
+      }, { status: 400 });
+    }
+    
+    console.log(`Deleting business ${businessId} for user ID: ${userId}`);
+    
+    // Get auth service
+    const authService = AuthService.getInstance();
+    
+    // Delete the business
+    const result = await authService.deleteBusiness(userId, businessId);
+    
+    if (!result.success) {
+      return NextResponse.json({
+        success: false,
+        error: result.error || 'Failed to delete business'
+      }, { status: 500 });
+    }
+    
+    // Clear cache for this user to ensure fresh data on next fetch
+    businessesCache.delete(userId);
+    
+    // Return success
+    return NextResponse.json({
+      success: true,
+      message: 'Business deleted successfully'
+    }, { 
+      status: 200,
+      headers: {
+        // Add cache control headers to prevent browser caching
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
+  } catch (error) {
+    console.error('Error deleting business:', error);
+    return NextResponse.json({
+      success: false,
+      error: 'Internal server error'
+    }, { status: 500 });
+  }
+});
+
 // Get businesses for the authenticated user
+// Cache for businesses data (in-memory cache for development, would use Redis in production)
+const CACHE_TTL = 60 * 1000; // 1 minute in milliseconds
+const businessesCache = new Map<number, { data: any, timestamp: number }>();
+
 export const GET = createAuthRoute(async (req: NextRequest, userId: number) => {
   try {
-    console.log(`Fetching businesses for user ID: ${userId}`);
+    // Parse pagination parameters
+    const { searchParams } = new URL(req.url);
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const limit = parseInt(searchParams.get('limit') || '50', 10);
+    
+    // Check cache first
+    const cacheKey = userId;
+    const cachedData = businessesCache.get(cacheKey);
+    const now = Date.now();
+    
+    if (cachedData && (now - cachedData.timestamp < CACHE_TTL)) {
+      // Return cached data if it's fresh
+      return NextResponse.json({
+        success: true,
+        businesses: cachedData.data.businesses || [],
+        cached: true
+      }, { 
+        status: 200,
+        headers: {
+          'Cache-Control': 'max-age=60', // Browser caching
+        }
+      });
+    }
     
     // Get auth service
     const authService = AuthService.getInstance();
@@ -26,11 +106,22 @@ export const GET = createAuthRoute(async (req: NextRequest, userId: number) => {
       }, { status: 500 });
     }
     
-    // Return businesses list
+    // Store in cache
+    businessesCache.set(cacheKey, {
+      data: result,
+      timestamp: now
+    });
+    
+    // Return businesses list with cache headers
     return NextResponse.json({
       success: true,
       businesses: result.businesses || []
-    }, { status: 200 });
+    }, { 
+      status: 200,
+      headers: {
+        'Cache-Control': 'max-age=60' // Browser caching
+      }
+    });
   } catch (error) {
     console.error('Error getting businesses:', error);
     return NextResponse.json({
@@ -83,11 +174,22 @@ export const POST = createAuthRoute(async (req: NextRequest, userId: number) => 
         }, { status: 500 });
       }
       
+      // Clear cache for this user to ensure fresh data on next fetch
+      businessesCache.delete(userId);
+      
       // Return success with the new business ID
       return NextResponse.json({
         success: true,
         businessId: result.businessId
-      }, { status: 201 });
+      }, { 
+        status: 201,
+        headers: {
+          // Add cache control headers to prevent browser caching
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      });
     } catch (error) {
       console.error('Error adding business:', error);
       return NextResponse.json({

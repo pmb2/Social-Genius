@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect, useRef } from "react"
-import { X, Upload, Edit, Trash, Plus, Check, FileText, FileCode, File, Link as LinkIcon, FileImage } from "lucide-react"
+import { X, Upload, Edit, Trash, Plus, Check, FileText, FileCode, File, Link as LinkIcon, FileImage, Settings, ChevronDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogClose, DialogContent, DialogTrigger, DialogTitle, DialogDescription } from "@/components/ui/dialog"
@@ -14,6 +14,14 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuLabel, 
+  DropdownMenuSeparator, 
+  DropdownMenuTrigger 
+} from "@/components/ui/dropdown-menu"
 import axios from "axios"
 import Image from "next/image"
 
@@ -68,7 +76,6 @@ export function BrandAlignmentTab() {
   };
   // State variables
   const [isMemoriesOpen, setIsMemoriesOpen] = useState(false)
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [memories, setMemories] = useState<Memory[]>([
     {
       id: "mem-1",
@@ -694,100 +701,90 @@ export function BrandAlignmentTab() {
             <h3 className="text-xl font-semibold mb-2">Brand Alignment</h3>
           </div>
 
-          {/* Settings Dialog */}
-          <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-            <DialogTrigger asChild>
-              {/*<Button*/}
-              {/*  className="w-full bg-white border-2 border-black text-black hover:bg-gray-50"*/}
-              {/*  onClick={() => setIsSettingsOpen(true)}*/}
-              {/*>*/}
-              {/*  Agent Settings*/}
-              {/*</Button>*/}
-            </DialogTrigger>
-            <DialogContent 
-              className="max-w-md p-0" 
-              onInteractOutside={() => setIsSettingsOpen(false)}
-              aria-describedby="settings-description"
-            >
-              <DialogTitle className="sr-only">Agent Settings</DialogTitle>
-              <DialogDescription id="settings-description" className="sr-only">Configure agent settings and preferences</DialogDescription>
-              <div className="flex flex-col h-full bg-white rounded-xl">
-                <div className="px-6 py-4 flex justify-between items-center border-b relative">
-                  <h2 className="text-lg font-medium">Agent Settings</h2>
-                  <DialogClose asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 rounded-full absolute -right-3 -top-3 bg-white border shadow-md hover:bg-gray-50 z-50 translate-x-1/2 -translate-y-1/2"
-                      onClick={() => setIsSettingsOpen(false)}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </DialogClose>
-                </div>
-
-                <div className="p-6 space-y-6 overflow-y-auto max-h-[60vh]">
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="model-selection">Model Selection</Label>
-                      <Select
-                        value={settings.modelVersion}
-                        onValueChange={(value) => setSettings({ ...settings, modelVersion: value })}
-                      >
-                        <SelectTrigger id="model-selection">
-                          <SelectValue placeholder="Select model" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="deepseek-r1-distill-llama-70b">deepseek-r1-distill-llama-70b</SelectItem>
-                          <SelectItem value="llama3-70b-8192">llama3-70b-8192</SelectItem>
-                          <SelectItem value="mixtral-8x7b-32768">mixtral-8x7b-32768</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="rag-toggle">Enable RAG Mode</Label>
-                      <Switch
-                        id="rag-toggle"
-                        checked={settings.ragEnabled}
-                        onCheckedChange={(checked) => setSettings({ ...settings, ragEnabled: checked })}
-                      />
-                    </div>
-
-                    {settings.ragEnabled && (
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <Label htmlFor="similarity-threshold">Document Similarity Threshold</Label>
-                          <span className="text-sm text-gray-500">{settings.similarityThreshold.toFixed(1)}</span>
-                        </div>
-                        <Slider
-                          id="similarity-threshold"
-                          min={0}
-                          max={1}
-                          step={0.1}
-                          value={[settings.similarityThreshold]}
-                          onValueChange={(value) => setSettings({ ...settings, similarityThreshold: value[0] })}
-                          className="w-full"
-                        />
-                        <p className="text-xs text-gray-500">
-                          Lower values will return more documents but might be less relevant.
-                        </p>
-                      </div>
-                    )}
-
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="web-search-toggle">Enable Web Search Fallback</Label>
-                      <Switch
-                        id="web-search-toggle"
-                        checked={settings.useWebSearch}
-                        onCheckedChange={(checked) => setSettings({ ...settings, useWebSearch: checked })}
-                      />
-                    </div>
-                  </div>
-                </div>
+          {/* Settings Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                className="w-full bg-white border-2 border-black text-black hover:bg-gray-50 flex justify-between items-center"
+              >
+                <span className="flex items-center">
+                  <Settings className="w-4 h-4 mr-2" />
+                  Agent Settings
+                </span>
+                <ChevronDown className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-[280px]" align="start">
+              <DropdownMenuLabel>Settings</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              
+              {/* Model Selection */}
+              <div className="px-2 py-1.5 space-y-1.5">
+                <Label htmlFor="model-selection" className="text-xs font-medium">Model Selection</Label>
+                <Select
+                  value={settings.modelVersion}
+                  onValueChange={(value) => setSettings({ ...settings, modelVersion: value })}
+                >
+                  <SelectTrigger id="model-selection" className="w-full text-sm">
+                    <SelectValue placeholder="Select model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="deepseek-r1-distill-llama-70b">deepseek-r1-distill-llama-70b</SelectItem>
+                    <SelectItem value="llama3-70b-8192">llama3-70b-8192</SelectItem>
+                    <SelectItem value="mixtral-8x7b-32768">mixtral-8x7b-32768</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-            </DialogContent>
-          </Dialog>
+              
+              <DropdownMenuSeparator />
+              
+              {/* RAG Toggle */}
+              <div className="px-2 py-1.5 flex items-center justify-between">
+                <Label htmlFor="rag-toggle" className="text-sm">Enable RAG Mode</Label>
+                <Switch
+                  id="rag-toggle"
+                  checked={settings.ragEnabled}
+                  onCheckedChange={(checked) => setSettings({ ...settings, ragEnabled: checked })}
+                  className="data-[state=checked]:bg-[#FF1681]"
+                />
+              </div>
+              
+              {/* Similarity Threshold (Only visible when RAG is enabled) */}
+              {settings.ragEnabled && (
+                <div className="px-2 py-1.5 space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <Label htmlFor="similarity-threshold" className="text-xs font-medium">Similarity Threshold</Label>
+                    <span className="text-xs text-gray-500">{settings.similarityThreshold.toFixed(1)}</span>
+                  </div>
+                  <Slider
+                    id="similarity-threshold"
+                    min={0}
+                    max={1}
+                    step={0.1}
+                    value={[settings.similarityThreshold]}
+                    onValueChange={(value) => setSettings({ ...settings, similarityThreshold: value[0] })}
+                    className="w-full"
+                  />
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    Lower values will return more documents but might be less relevant.
+                  </p>
+                </div>
+              )}
+              
+              <DropdownMenuSeparator />
+              
+              {/* Web Search Toggle */}
+              <div className="px-2 py-1.5 flex items-center justify-between">
+                <Label htmlFor="web-search-toggle" className="text-sm">Web Search Fallback</Label>
+                <Switch
+                  id="web-search-toggle"
+                  checked={settings.useWebSearch}
+                  onCheckedChange={(checked) => setSettings({ ...settings, useWebSearch: checked })}
+                  className="data-[state=checked]:bg-[#FF1681]"
+                />
+              </div>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {/* Memories Dialog (Document Manager) */}
           <Dialog open={isMemoriesOpen} onOpenChange={setIsMemoriesOpen}>
@@ -800,7 +797,7 @@ export function BrandAlignmentTab() {
               </Button>
             </DialogTrigger>
             <DialogContent 
-              className="max-w-md p-0" 
+              className="max-w-md p-0 overflow-visible h-auto" 
               onInteractOutside={() => setIsMemoriesOpen(false)}
               aria-describedby="memories-description"
             >
@@ -813,7 +810,7 @@ export function BrandAlignmentTab() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 rounded-full absolute -right-3 -top-3 bg-white border shadow-md hover:bg-gray-50 z-50 translate-x-1/2 -translate-y-1/2"
+                      className="h-8 w-8 rounded-full absolute right-2 top-2 bg-white border shadow-md hover:bg-gray-50 z-50"
                       onClick={() => setIsMemoriesOpen(false)}
                     >
                       <X className="h-4 w-4" />
@@ -905,10 +902,10 @@ export function BrandAlignmentTab() {
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-6 w-6 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
+                                    className="h-6 w-6 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[#FF1681]/10"
                                     onClick={() => deleteMemory(memory.id)}
                                   >
-                                    <Trash className="h-3 w-3 text-red-500" />
+                                    <Trash className="h-3 w-3 text-[#FF1681]" />
                                   </Button>
                                 </div>
                               </div>

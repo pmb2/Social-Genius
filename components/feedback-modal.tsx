@@ -72,7 +72,7 @@ export default function FeedbackModal({ open, onOpenChange, defaultType = "bug" 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl p-0 max-h-[90vh]" aria-describedby="feedback-modal-description">
+      <DialogContent className="max-w-xl p-0 h-auto max-h-[90vh] overflow-hidden" aria-describedby="feedback-modal-description">
         <DialogTitle className="sr-only">Submit Feedback</DialogTitle>
         <div id="feedback-modal-description" className="sr-only">
           Form to submit bug reports, feature requests, or general feedback
@@ -84,7 +84,7 @@ export default function FeedbackModal({ open, onOpenChange, defaultType = "bug" 
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 rounded-full absolute -right-3 -top-3 bg-white border shadow-md hover:bg-gray-50 z-50 translate-x-1/2 -translate-y-1/2"
+                className="h-8 w-8 rounded-full absolute right-2 top-2 bg-white border shadow-md hover:bg-gray-50 z-50"
               >
                 <X className="h-4 w-4" />
               </Button>

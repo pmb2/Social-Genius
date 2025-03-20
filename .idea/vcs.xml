@@ -2,8 +2,5 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/authentik-repo" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/clerk-template" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/hanko" vcs="Git" />
   </component>
 </project>

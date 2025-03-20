@@ -38,7 +38,11 @@ export async function POST(req: NextRequest) {
       const docsToStore = documents.map(doc => ({
         collection: collectionName,
         content: doc.pageContent,
-        metadata: doc.metadata || {}
+        metadata: {
+          ...(doc.metadata || {}),
+          // Add businessId to metadata if provided
+          ...(businessId ? { businessId } : {})
+        }
       }));
       
       // Store documents

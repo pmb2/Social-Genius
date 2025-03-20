@@ -863,18 +863,73 @@ class PostgresService {
   public async addBusinessForUser(userId: number, businessName: string, status: string = 'noncompliant'): Promise<string> {
     const client = await this.pool.connect();
     try {
+      console.log(`Adding business "${businessName}" for user ID: ${userId}`);
+      
+      // First, validate that the user exists
+      const userCheckResult = await client.query(
+        `SELECT id FROM users WHERE id = $1`,
+        [userId]
+      );
+      
+      if (userCheckResult.rowCount === 0) {
+        console.error(`User ID ${userId} not found when adding business`);
+        throw new Error('User not found');
+      }
+      
       // Generate a unique business ID
       const businessId = `biz_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
       
+      // Begin transaction for atomicity
+      await client.query('BEGIN');
+      
+      // Insert the business with proper user association
       const result = await client.query(
         `INSERT INTO businesses(business_id, name, user_id, status) 
          VALUES($1, $2, $3, $4) 
-         RETURNING business_id`,
+         RETURNING business_id, id`,
         [businessId, businessName, userId, status]
       );
       
-      return result.rows[0].business_id;
+      if (!result.rows[0]) {
+        throw new Error('Failed to insert business record');
+      }
+      
+      const dbBusinessId = result.rows[0].id;
+      const returnedBusinessId = result.rows[0].business_id;
+      
+      console.log(`Successfully added business: ID=${dbBusinessId}, business_id=${returnedBusinessId}, name="${businessName}", for user_id=${userId}`);
+      
+      // Create initial compliance records if needed
+      try {
+        // Check if business_compliance table exists and create a starter record
+        const tableExists = await client.query(
+          `SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = 'business_compliance'
+          )`
+        );
+        
+        if (tableExists.rows[0].exists) {
+          await client.query(
+            `INSERT INTO business_compliance(business_id, compliance_status, last_checked) 
+             VALUES($1, $2, CURRENT_TIMESTAMP)`,
+            [dbBusinessId, 'pending']
+          );
+          console.log(`Created initial compliance record for business ID ${dbBusinessId}`);
+        }
+      } catch (complianceError) {
+        // Log but don't fail the transaction
+        console.warn(`Error creating compliance record: ${complianceError.message}`);
+      }
+      
+      // Commit transaction
+      await client.query('COMMIT');
+      
+      return returnedBusinessId;
     } catch (error) {
+      // Rollback on error
+      await client.query('ROLLBACK').catch(e => console.error('Rollback error:', e));
       console.error('Error adding business for user:', error);
       throw error;
     } finally {

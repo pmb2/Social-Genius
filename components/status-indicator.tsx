@@ -1,18 +1,19 @@
-export function StatusIndicator({ status }: { status: string }) {
-  const getColors = (status: string) => {
-    switch (status) {
-      case "noncompliant":
-        return "#FF1681"
-      case "compliant":
-        return "#0080FF"
-      case "active":
-        return "#C939D6"
-      default:
-        return "#FF1681"
-    }
-  }
+import { memo, useMemo } from 'react';
 
-  const color = getColors(status)
+// Status color mapping - move outside component to prevent recreation
+const STATUS_COLORS = {
+  "noncompliant": "#FF1681",
+  "compliant": "#0080FF",
+  "active": "#C939D6",
+  "default": "#FF1681"
+};
+
+function StatusIndicatorComponent({ status }: { status: string }) {
+  // Use memoization to prevent recalculation of color on re-renders
+  const color = useMemo(() => 
+    STATUS_COLORS[status as keyof typeof STATUS_COLORS] || STATUS_COLORS.default, 
+    [status]
+  );
 
   return (
     <div
@@ -24,4 +25,7 @@ export function StatusIndicator({ status }: { status: string }) {
     />
   )
 }
+
+// Memoize the entire component to prevent unnecessary re-renders
+export const StatusIndicator = memo(StatusIndicatorComponent);
 

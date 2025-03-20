@@ -57,7 +57,7 @@ export function Header() {
 
       {/* Settings Modal */}
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="max-w-sm p-0 overflow-hidden mx-auto" aria-describedby="settings-modal-description">
+        <DialogContent className="max-w-sm p-0 overflow-visible h-auto mx-auto" aria-describedby="settings-modal-description">
           <DialogTitle className="sr-only">User Settings</DialogTitle>
           <div id="settings-modal-description" className="sr-only">
             User settings and account management options
@@ -69,7 +69,7 @@ export function Header() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 rounded-full absolute -right-3 -top-3 bg-white border shadow-md hover:bg-gray-50 z-50 translate-x-1/2 -translate-y-1/2"
+                  className="h-8 w-8 rounded-full absolute right-2 top-2 bg-white border shadow-md hover:bg-gray-50 z-50"
                 >
                   <X className="h-4 w-4" />
                 </Button>

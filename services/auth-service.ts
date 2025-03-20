@@ -338,6 +338,60 @@ class AuthService {
     }
   }
   
+  // Delete a business for user
+  public async deleteBusiness(userId: number, businessId: string): Promise<{ success: boolean, error?: string }> {
+    try {
+      const client = await this.db.getPool().connect();
+      
+      try {
+        // Begin transaction for atomicity
+        await client.query('BEGIN');
+        
+        // First check if the business belongs to the user
+        const userBusinesses = await this.getBusinesses(userId);
+        if (!userBusinesses.success) {
+          return { success: false, error: 'Failed to verify business ownership' };
+        }
+        
+        const businessExists = userBusinesses.businesses?.some(b => b.businessId === businessId);
+        if (!businessExists) {
+          return { success: false, error: 'Business not found or not owned by this user' };
+        }
+        
+        // Skip attempts to delete from related tables that might not exist
+        // The businesses table has ON DELETE CASCADE for user_id foreign key
+        // This will automatically handle deletion of child records if the relationships are set up properly
+        
+        // Delete the business directly
+        const result = await client.query(
+          `DELETE FROM businesses 
+           WHERE business_id = $1 AND user_id = $2
+           RETURNING id`,
+          [businessId, userId]
+        );
+        
+        // Commit transaction
+        await client.query('COMMIT');
+        
+        if (result.rowCount && result.rowCount > 0) {
+          return { success: true };
+        } else {
+          return { success: false, error: 'Business could not be deleted' };
+        }
+      } catch (txError) {
+        // Rollback on error
+        await client.query('ROLLBACK');
+        throw txError;
+      } finally {
+        // Always release client back to pool
+        client.release();
+      }
+    } catch (error) {
+      console.error('Delete business error:', error);
+      return { success: false, error: 'Failed to delete business' };
+    }
+  }
+  
   // Get database service for initialization
   public getDatabase(): PostgresService {
     return this.db;
