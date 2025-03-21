@@ -2,10 +2,12 @@
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { StatusIndicator } from "./status-indicator"
 import { steps } from "@/types/business-profile"
-import { triggerComplianceCheck, getComplianceReport } from "@/services/compliance-service"
-import { CheckCircle, AlertCircle, XCircle, RefreshCw } from "lucide-react"
+import { triggerComplianceCheck, getComplianceReport, resolveComplianceIssue } from "@/services/compliance-service"
+import { CheckCircle, AlertCircle, XCircle, RefreshCw, Lock } from "lucide-react"
 import Image from "next/image"
 
 interface ComplianceTabProps {
@@ -17,10 +19,19 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
   const [isRunningCheck, setIsRunningCheck] = useState(false)
   const [isCompliant, setIsCompliant] = useState(false)
   const [countdown, setCountdown] = useState({ minutes: 59, seconds: 59 })
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [authError, setAuthError] = useState("")
+  const [isSubmittingAuth, setIsSubmittingAuth] = useState(false)
+  const [currentIssueId, setCurrentIssueId] = useState<string | null>(null)
   const [issues, setIssues] = useState<{
+    id?: string;
     title: string;
     description: string;
     severity: "high" | "medium" | "low";
+    type?: string;
+    suggestedAction?: string;
   }[]>([
     {
       title: "Missing business hours",
@@ -123,6 +134,32 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
         retries++
       }
       
+      // Check if authentication is required
+      if (report.status === "AUTH_REQUIRED") {
+        // Find the auth_required issue
+        const authIssue = report.issues.find(issue => issue.type === "auth_required");
+        if (authIssue) {
+          // Set auth required issues
+          const mappedIssues = [{
+            id: authIssue.id || "auth-issue",
+            title: "Google Business Profile Login Required",
+            description: authIssue.description || "You need to login to your Google Business Profile",
+            severity: authIssue.severity as "high" | "medium" | "low",
+            type: "auth_required",
+            suggestedAction: authIssue.suggestedAction || "Please provide your Google Business Profile credentials"
+          }];
+          
+          setIssues(mappedIssues);
+          setIsCompliant(false);
+          
+          // Automatically show auth modal
+          setCurrentIssueId(mappedIssues[0].id);
+          setIsAuthModalOpen(true);
+          
+          return false;
+        }
+      }
+      
       // Use real compliance status from the API response
       const isCompliant = report.status === "PASS";
       setIsCompliant(isCompliant)
@@ -134,6 +171,7 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
       } else {
         // Map issues from API to component format with more detailed formatting
         const mappedIssues = report.issues.map(issue => ({
+          id: issue.id,
           title: issue.type
             .split('_')
             .map(word => word.charAt(0).toUpperCase() + word.slice(1))
@@ -141,7 +179,9 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
           description: issue.description || 
                       issue.suggestedAction || 
                       "Please fix this issue to improve your compliance score.",
-          severity: issue.severity as "high" | "medium" | "low"
+          severity: issue.severity as "high" | "medium" | "low",
+          type: issue.type,
+          suggestedAction: issue.suggestedAction
         }));
         
         console.log("Mapped compliance issues:", mappedIssues);
@@ -173,6 +213,135 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
     } finally {
       setIsRunningCheck(false)
     }
+  }
+  
+  // Function to handle GBP authentication form submission
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!email || !password) {
+      setAuthError("Please enter both email and password")
+      return
+    }
+    
+    setIsSubmittingAuth(true)
+    setAuthError("")
+    
+    try {
+      // Submit credentials to resolve the auth_required issue
+      const result = await resolveComplianceIssue(businessId, currentIssueId || "auth-issue", {
+        issueType: "auth_required",
+        email,
+        password
+      })
+      
+      if (result.success) {
+        // Close the auth modal
+        setIsAuthModalOpen(false)
+        
+        // Clear the credentials from state for security
+        setEmail("")
+        setPassword("")
+        
+        // Re-run the compliance check to get updated status
+        await performComplianceCheck(true)
+      } else {
+        setAuthError(result.error || "Authentication failed. Please try again.")
+      }
+    } catch (error) {
+      console.error("Error submitting authentication:", error)
+      setAuthError("An error occurred. Please try again.")
+    } finally {
+      setIsSubmittingAuth(false)
+    }
+  }
+  
+  // Function to render the auth modal
+  const renderAuthModal = () => {
+    if (!isAuthModalOpen) return null
+    
+    return (
+      <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50">
+        <div className="bg-white rounded-lg shadow-lg p-6 max-w-md w-full">
+          <div className="flex items-center mb-4">
+            <div className="bg-[#0080FF]/10 p-2 rounded-full mr-3">
+              <Lock className="h-6 w-6 text-[#0080FF]" />
+            </div>
+            <h3 className="text-xl font-semibold">Google Business Profile Login</h3>
+          </div>
+          
+          <p className="text-gray-600 mb-4">
+            Please enter your Google Business Profile credentials to continue with the compliance check.
+          </p>
+          
+          {authError && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md">
+              {authError}
+            </div>
+          )}
+          
+          <form onSubmit={handleAuthSubmit}>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="youremail@example.com"
+                  className="w-full mt-1"
+                  disabled={isSubmittingAuth}
+                />
+              </div>
+              
+              <div>
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full mt-1"
+                  disabled={isSubmittingAuth}
+                />
+              </div>
+              
+              <div className="flex justify-end space-x-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setIsAuthModalOpen(false)
+                    setEmail("")
+                    setPassword("")
+                    setAuthError("")
+                  }}
+                  disabled={isSubmittingAuth}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isSubmittingAuth}
+                  className={isSubmittingAuth ? "opacity-70" : ""}
+                >
+                  {isSubmittingAuth ? (
+                    <span className="flex items-center">
+                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></span>
+                      Authenticating...
+                    </span>
+                  ) : (
+                    "Submit"
+                  )}
+                </Button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    )
   }
 
   // Function to render the steps with loading animations
@@ -261,13 +430,40 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
                           
                           <div className="space-y-3 mt-2">
                             {issues.map((issue, idx) => (
-                              <div key={idx} className={`p-3 rounded-lg border ${
-                                issue.severity === "high" ? "border-[#FF1681]/20 bg-[#FF1681]/5" : 
-                                issue.severity === "medium" ? "border-[#C939D6]/20 bg-[#C939D6]/5" : 
-                                "border-[#FFAB1A]/20 bg-[#FFAB1A]/5"
-                              }`}>
+                              <div 
+                                key={idx} 
+                                className={`p-3 rounded-lg border ${
+                                  issue.severity === "high" ? "border-[#FF1681]/20 bg-[#FF1681]/5" : 
+                                  issue.severity === "medium" ? "border-[#C939D6]/20 bg-[#C939D6]/5" : 
+                                  "border-[#FFAB1A]/20 bg-[#FFAB1A]/5"
+                                } ${issue.type === "auth_required" ? "cursor-pointer hover:bg-opacity-80" : ""}`}
+                                onClick={() => {
+                                  // When clicking on an auth_required issue, open the auth modal
+                                  if (issue.type === "auth_required") {
+                                    setCurrentIssueId(issue.id || "auth-issue");
+                                    setIsAuthModalOpen(true);
+                                  }
+                                }}
+                              >
                                 <p className="font-medium">{issue.title}</p>
                                 <p className="text-sm text-gray-700">{issue.description}</p>
+                                {issue.type === "auth_required" && (
+                                  <div className="mt-2">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="text-[#0080FF] border-[#0080FF] hover:bg-[#0080FF]/10"
+                                      onClick={(e) => {
+                                        e.stopPropagation();  // Prevent the parent div's onClick
+                                        setCurrentIssueId(issue.id || "auth-issue");
+                                        setIsAuthModalOpen(true);
+                                      }}
+                                    >
+                                      <Lock className="w-4 h-4 mr-1" />
+                                      Enter Credentials
+                                    </Button>
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>
@@ -339,6 +535,9 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
           <span>Running compliance check...</span>
         </div>
       )}
+      
+      {/* Render auth modal when needed */}
+      {renderAuthModal()}
     </div>
   )
 }

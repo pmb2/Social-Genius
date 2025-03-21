@@ -15,6 +15,8 @@ const nextConfig = {
     minimumCacheTTL: 3600, // Increased cache TTL to 1 hour
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+    // COMPLETELY disable image optimization when using Bun to avoid worker_threads errors
+    unoptimized: true,
   },
   // Use standalone output for better performance
   output: 'standalone',
@@ -36,13 +38,17 @@ const nextConfig = {
     serverComponentsExternalPackages: ["jose", "playwright", "playwright-core"],
     // Enable optimizations
     optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
-    // Improved memory usage
-    memoryBasedWorkersCount: true,
+    // Disable worker-based features when using Bun
+    memoryBasedWorkersCount: process.env.USE_BUN !== 'true',
     // More efficient bundling
     optimisticClientCache: true,
+    // Disable worker pools with Bun
+    workerThreads: process.env.USE_BUN !== 'true',
+    // Disable turbotrace with Bun
+    turbotrace: process.env.USE_BUN !== 'true',
   },
   // Add webpack configuration for Node.js modules
-  webpack: (config, { isServer }) => {
+  webpack: (config, { dev, isServer }) => {
     // For Playwright/browser automation in Next.js
     if (!isServer) {
       // Handle Node.js modules in the browser
@@ -75,24 +81,66 @@ const nextConfig = {
         use: 'null-loader',
       });
       
-      // Optimize bundle size with SplitChunksPlugin
-      config.optimization.splitChunks = {
-        chunks: 'all',
-        maxInitialRequests: Infinity,
-        minSize: 20000,
-        cacheGroups: {
-          vendor: {
-            test: /[\\/]node_modules[\\/]/,
-            name(module) {
-              // Get the package name
-              const match = module.context && module.context.match(/[\\/]node_modules[\\/](.*?)([\\/]|$)/);
-              const packageName = match ? match[1] : '';
-              // Return a clean package name
-              return `npm.${packageName.replace('@', '')}`;
+      // Fix chunk loading errors in Bun environment
+      if (process.env.USE_BUN === 'true') {
+        // Use a simpler chunking strategy for Bun
+        config.optimization.splitChunks = {
+          chunks: 'all',
+          cacheGroups: {
+            default: false,
+            vendors: false,
+            // Bundle all core dependencies together
+            framework: {
+              name: 'framework',
+              test: /[\\/]node_modules[\\/](react|react-dom|scheduler|prop-types|use-subscription)[\\/]/,
+              priority: 40,
+              chunks: 'all',
+            },
+            // Single commons chunk
+            commons: {
+              name: 'commons',
+              minChunks: 2,
+              priority: 20,
+            },
+            // Bundle larger modules separately
+            lib: {
+              test: /[\\/]node_modules[\\/]/,
+              priority: 10,
+              name(module) {
+                // Get simplified lib name
+                const match = module.context && module.context.match(/[\\/]node_modules[\\/](.*?)(?:[\\/]|$)/);
+                const name = match && match[1] ? match[1] : 'vendor';
+                return `npm.${name.replace('@', '')}`;
+              },
+              minSize: 50000,
+            }
+          },
+        };
+
+        // Limit number of parallel requests for chunks
+        config.output.chunkLoadingGlobal = 'webpackChunkDist';
+        config.output.chunkLoading = 'jsonp';
+        config.output.chunkFormat = 'array-push';
+      } else {
+        // Use regular optimization for non-Bun environments
+        config.optimization.splitChunks = {
+          chunks: 'all',
+          maxInitialRequests: Infinity,
+          minSize: 20000,
+          cacheGroups: {
+            vendor: {
+              test: /[\\/]node_modules[\\/]/,
+              name(module) {
+                // Get the package name
+                const match = module.context && module.context.match(/[\\/]node_modules[\\/](.*?)([\\/]|$)/);
+                const packageName = match ? match[1] : '';
+                // Return a clean package name
+                return `npm.${packageName.replace('@', '')}`;
+              },
             },
           },
-        },
-      };
+        };
+      }
     }
     
     // Enable source maps in development but use faster options

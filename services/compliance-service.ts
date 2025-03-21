@@ -52,7 +52,23 @@ export const getComplianceReport = async (businessId: number) => {
       const cached = reportsCache.get(businessId.toString());
       
       // If the cached report has an error, return a formatted error report
-      if (cached.status === 'error') {
+      if (cached.status === 'error' || cached.status === 'auth_required') {
+        // Special handling for authentication required errors
+        if (cached.status === 'auth_required') {
+          return {
+            status: "AUTH_REQUIRED",
+            completionRate: 0,
+            issues: [
+              { 
+                type: "auth_required", 
+                severity: "high", 
+                description: cached.message || "Google Business Profile authentication required",
+                suggestedAction: "Please provide your Google Business Profile credentials" 
+              }
+            ],
+          };
+        }
+        
         return {
           status: "ERROR",
           completionRate: 0,
@@ -118,7 +134,36 @@ export const resolveComplianceIssue = async (businessId: number, issueId: string
   console.log(`Resolving issue ${issueId} for business ID: ${businessId} with data:`, data);
   
   try {
-    // Process the user input to resolve the issue
+    // Special handling for auth_required issue type
+    if (data.issueType === 'auth_required') {
+      const { handleBusinessAuthentication } = await import('@/lib/compliance/auth-service');
+      
+      // Process authentication with provided credentials
+      const authResult = await handleBusinessAuthentication(
+        businessId.toString(),
+        {
+          email: data.email,
+          password: data.password
+        }
+      );
+      
+      // If authentication was successful, remove cached report to force refresh
+      if (authResult.success) {
+        reportsCache.delete(businessId.toString());
+        
+        return {
+          success: true,
+          message: 'Google Business Profile authenticated successfully'
+        };
+      } else {
+        return {
+          success: false,
+          error: authResult.message || 'Authentication failed'
+        };
+      }
+    }
+    
+    // For other issue types, proceed with normal resolution
     const result = await supervisorAgent.processUserInput(
       businessId.toString(),
       issueId,
@@ -136,6 +181,43 @@ export const resolveComplianceIssue = async (businessId: number, issueId: string
     console.error(`Error resolving compliance issue for business ID: ${businessId}:`, error);
     return { 
       success: false, 
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+/**
+ * Handle Google Business Profile authentication
+ * 
+ * @param businessId The ID of the business
+ * @param credentials The user credentials (email and password)
+ * @returns Status of the authentication
+ */
+export const authenticateGBP = async (businessId: number, credentials: { email: string; password: string }) => {
+  console.log(`Authenticating GBP for business ID: ${businessId}`);
+  
+  try {
+    const { handleBusinessAuthentication } = await import('@/lib/compliance/auth-service');
+    
+    // Process authentication
+    const authResult = await handleBusinessAuthentication(
+      businessId.toString(),
+      credentials
+    );
+    
+    // If authentication was successful, remove cached report to force refresh
+    if (authResult.success) {
+      reportsCache.delete(businessId.toString());
+    }
+    
+    return {
+      success: authResult.success,
+      message: authResult.message || (authResult.success ? 'Authentication successful' : 'Authentication failed')
+    };
+  } catch (error) {
+    console.error(`Error authenticating GBP for business ID: ${businessId}:`, error);
+    return {
+      success: false,
       error: error instanceof Error ? error.message : String(error)
     };
   }
