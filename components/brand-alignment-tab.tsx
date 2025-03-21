@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState, useEffect, useRef } from "react"
-import { X, Upload, Edit, Trash, Plus, Check, FileText, FileCode, File, Link as LinkIcon, FileImage, Settings, ChevronDown } from "lucide-react"
+import { X, Upload, Edit, Trash, Plus, Check, FileText, FileCode, File, Link as LinkIcon, FileImage, Settings, ChevronDown, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogClose, DialogContent, DialogTrigger, DialogTitle, DialogDescription } from "@/components/ui/dialog"
@@ -676,10 +676,11 @@ export function BrandAlignmentTab() {
       setTimeout(() => setAlertMessage(null), 3000);
     }
   }
-
+  
   return (
     <div 
       className="h-full min-h-[600px] flex flex-col m-0 p-4 overflow-hidden relative"
+      data-tab="brand"
       onDragEnter={handleGlobalDrag}
       onDragOver={handleGlobalDrag}
       onDragLeave={handleGlobalDrag}
@@ -697,8 +698,25 @@ export function BrandAlignmentTab() {
       )}
       <div className="grid grid-cols-[250px_1fr] gap-6 h-full max-h-full min-h-0">
         <div className="bg-[#F3F4F6] rounded-xl p-6 space-y-4 flex flex-col h-full max-h-full">
-          <div>
-            <h3 className="text-xl font-semibold mb-2">Brand Alignment</h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xl font-semibold">Brand Alignment</h3>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 rounded-full border border-gray-300 hover:bg-gray-100"
+              onClick={() => {
+                // Clear the user input and add a welcome message
+                setUserInput("");
+                setMessages([{
+                  role: "assistant",
+                  content: "👋 Welcome! I'm here to help you develop a strong, consistent brand voice. Let's work together to define your brand's personality and tone."
+                }]);
+              }}
+              aria-label="Reset chat"
+              title="Reset chat"
+            >
+              <RefreshCw className="h-3.5 w-3.5 text-gray-700" />
+            </Button>
           </div>
 
           {/* Settings Dropdown */}

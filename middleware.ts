@@ -25,23 +25,50 @@ export async function middleware(request: NextRequest) {
     pathname === route || pathname.startsWith(`${route}/`)
   );
   
+  // Create the response object
+  let response;
+  
   if (isPublicRoute) {
-    return NextResponse.next();
+    response = NextResponse.next();
+  } else {
+    // Get session cookie
+    const sessionCookie = request.cookies.get('session')?.value;
+    
+    // If there's no session cookie and it's not a public route, redirect to auth page
+    if (!sessionCookie) {
+      const url = new URL('/auth', request.url);
+      url.searchParams.set('callbackUrl', pathname);
+      return NextResponse.redirect(url);
+    }
+    
+    // Session exists, allow the request to proceed
+    response = NextResponse.next();
   }
   
-  // Get session cookie
-  const sessionCookie = request.cookies.get('session')?.value;
-  
-  // If there's no session cookie and it's not a public route, redirect to auth page
-  if (!sessionCookie) {
-    const url = new URL('/auth', request.url);
-    url.searchParams.set('callbackUrl', pathname);
-    return NextResponse.redirect(url);
+  // Add cache control headers for static assets and optimize caching
+  if (
+    pathname.includes('/_next/static') || 
+    pathname.includes('/static/') ||
+    pathname.includes('/images/') ||
+    pathname.endsWith('.jpg') ||
+    pathname.endsWith('.png') ||
+    pathname.endsWith('.webp') ||
+    pathname.endsWith('.svg') ||
+    pathname.endsWith('.ico')
+  ) {
+    // Static assets - cache for 30 days
+    response.headers.set('Cache-Control', 'public, max-age=2592000, stale-while-revalidate=86400');
+  } else if (pathname.startsWith('/api/')) {
+    // API endpoints - default no caching
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+  } else if (isPublicRoute && pathname !== '/auth') {
+    // Public routes (except auth) - cache for a short time with revalidation
+    response.headers.set('Cache-Control', 'public, max-age=300, s-maxage=600, stale-while-revalidate=59');
   }
   
-  // Session exists, allow the request to proceed
-  // The actual validation happens in the API routes
-  return NextResponse.next();
+  return response;
 }
 
 // Paths to apply middleware to

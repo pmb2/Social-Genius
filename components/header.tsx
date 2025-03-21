@@ -38,17 +38,17 @@ export function Header() {
           <Button 
             variant="ghost" 
             size="icon" 
-            className="rounded-full p-0"
+            className="rounded-full p-0 h-auto w-auto hover:scale-105 transition-transform"
             title={user?.email || "User"}
             onClick={() => setSettingsOpen(true)}
           >
             <Image
               src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Mask%20group%20(2)%201-5RMiT8g4J4BzlQiRnu7aemEcs324uL.png"
               alt="Profile"
-              className="rounded-full w-10 h-10 object-cover"
-              width={40}
-              height={40}
-              style={{ width: "auto", height: "auto" }}
+              className="rounded-full w-12 h-12 object-cover border-2 border-white/40"
+              width={48}
+              height={48}
+              style={{ width: "48px", height: "48px" }}
               priority
             />
           </Button>
@@ -82,10 +82,10 @@ export function Header() {
                 <Image
                   src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Mask%20group%20(2)%201-5RMiT8g4J4BzlQiRnu7aemEcs324uL.png"
                   alt="Profile"
-                  className="rounded-full w-12 h-12 object-cover mr-3"
-                  width={48}
-                  height={48}
-                  style={{ width: "48px", height: "48px" }}
+                  className="rounded-full w-16 h-16 object-cover mr-3"
+                  width={64}
+                  height={64}
+                  style={{ width: "64px", height: "64px" }}
                 />
                 <div>
                   <p className="font-medium">{user?.name || "User"}</p>

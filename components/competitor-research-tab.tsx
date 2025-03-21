@@ -163,7 +163,12 @@ export function CompetitorResearchTab() {
       })
       const data = await response.json()
       if (response.ok) {
-        setResult(data.result || "Analysis complete. No specific insights found.")
+        // Handle both API response formats (with or without success property)
+        if (data.success === false) {
+          setResult(`Error: ${data.error || "Unknown error occurred"}`)
+        } else {
+          setResult(data.result || "Analysis complete. No specific insights found.")
+        }
       } else {
         setResult(`Error: ${data.error || "Unknown error occurred"}`)
       }
@@ -173,9 +178,9 @@ export function CompetitorResearchTab() {
       setLoading(false)
     }
   }
-
+  
   return (
-    <div className="h-full min-h-[600px] m-0 p-6 overflow-auto">
+    <div className="h-full min-h-[600px] m-0 p-6 overflow-auto scrollbar-hide" data-tab="competitor">
       <div className="flex justify-between items-start mb-4">
         <div className="flex-1">
           <h3 className="text-4xl font-bold">Competitor Research</h3>

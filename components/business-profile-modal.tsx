@@ -35,6 +35,8 @@ export default function BusinessProfileModal({
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  // State to track the active tab
+  const [activeTab, setActiveTab] = useState("compliance")
 
   useEffect(() => {
     setIsMounted(true)
@@ -86,6 +88,7 @@ export default function BusinessProfileModal({
     }
   }
 
+  
   // Don't render anything during SSR to avoid hydration mismatch
   if (!isMounted) {
     return (
@@ -161,44 +164,67 @@ export default function BusinessProfileModal({
         </Button>
       </div>
 
-      <Tabs defaultValue="compliance" className="flex flex-col flex-1 h-full">
-        <div className="flex-1 overflow-auto h-[calc(100%-64px)]">
-          <TabsContent value="compliance" className="h-full">
-            <ComplianceTab businessId={businessId} />
-          </TabsContent>
+      {/* Fixed layout structure with content and tab bar - using a single Tabs component */}
+      <div className="flex flex-col flex-1 h-[calc(100%-56px)]">
+        <Tabs 
+          value={activeTab} 
+          onValueChange={setActiveTab} 
+          className="h-full flex flex-col"
+        >
+          {/* Main scrollable content area */}
+          <div className="h-[calc(100%-64px)] overflow-hidden flex-1">
+            <div className="h-full overflow-y-auto scrollbar-hide">
+              <TabsContent 
+                value="compliance" 
+                className="h-full data-[state=active]:flex data-[state=active]:flex-col"
+                forceMount={activeTab === "compliance"}
+              >
+                <ComplianceTab businessId={businessId} />
+              </TabsContent>
 
-          <TabsContent value="brand" className="h-full">
-            <BrandAlignmentTab />
-          </TabsContent>
+              <TabsContent 
+                value="brand" 
+                className="h-full data-[state=active]:flex data-[state=active]:flex-col"
+                forceMount={activeTab === "brand"}
+              >
+                <BrandAlignmentTab />
+              </TabsContent>
 
-          <TabsContent value="competitor" className="h-full">
-            <CompetitorResearchTab />
-          </TabsContent>
-        </div>
-
-        <div className="mt-auto">
-          <TabsList className="w-full h-12 p-0.5 rounded-5 bg-[url('https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Rectangle%2059-OqgO1gTt9VhosZRulWgSNvGYu6KkRA.png')] bg-cover">
-            <TabsTrigger
-              value="compliance"
-              className="flex-1 h-full rounded-5 text-black data-[state=active]:bg-white data-[state=active]:text-black data-[state=inactive]:text-black/77"
-            >
-              Compliance
-            </TabsTrigger>
-            <TabsTrigger
-              value="brand"
-              className="flex-1 h-full rounded-5 text-black data-[state=active]:bg-white data-[state=active]:text-black data-[state=inactive]:text-black/77"
-            >
-              Brand Alignment
-            </TabsTrigger>
-            <TabsTrigger
-              value="competitor"
-              className="flex-1 h-full rounded-5 text-black data-[state=active]:bg-white data-[state=active]:text-black data-[state=inactive]:text-black/77"
-            >
-              Competitor Research
-            </TabsTrigger>
-          </TabsList>
-        </div>
-      </Tabs>
+              <TabsContent 
+                value="competitor" 
+                className="h-full data-[state=active]:flex data-[state=active]:flex-col"
+                forceMount={activeTab === "competitor"}
+              >
+                <CompetitorResearchTab />
+              </TabsContent>
+            </div>
+          </div>
+          
+          {/* Fixed position tab bar at bottom */}
+          <div className="h-[64px] shrink-0 flex items-center px-2 py-2 border-t mt-auto bg-white">
+            <TabsList className="w-full h-12 p-0.5 rounded-5 bg-[url('https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Rectangle%2059-OqgO1gTt9VhosZRulWgSNvGYu6KkRA.png')] bg-cover">
+              <TabsTrigger
+                value="compliance"
+                className="flex-1 h-full rounded-5 text-black data-[state=active]:bg-white data-[state=active]:text-black data-[state=inactive]:text-black/77"
+              >
+                Compliance
+              </TabsTrigger>
+              <TabsTrigger
+                value="brand"
+                className="flex-1 h-full rounded-5 text-black data-[state=active]:bg-white data-[state=active]:text-black data-[state=inactive]:text-black/77"
+              >
+                Brand Alignment
+              </TabsTrigger>
+              <TabsTrigger
+                value="competitor"
+                className="flex-1 h-full rounded-5 text-black data-[state=active]:bg-white data-[state=active]:text-black data-[state=inactive]:text-black/77"
+              >
+                Competitor Research
+              </TabsTrigger>
+            </TabsList>
+          </div>
+        </Tabs>
+      </div>
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>

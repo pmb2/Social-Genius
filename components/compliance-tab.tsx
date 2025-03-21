@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { StatusIndicator } from "./status-indicator"
 import { steps } from "@/types/business-profile"
 import { triggerComplianceCheck, getComplianceReport } from "@/services/compliance-service"
-import { CheckCircle, AlertCircle, XCircle } from "lucide-react"
+import { CheckCircle, AlertCircle, XCircle, RefreshCw } from "lucide-react"
 import Image from "next/image"
 
 interface ComplianceTabProps {
@@ -83,35 +83,80 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
     try {
       if (showProgress) {
         // Step 1: Gathering info
+        setActiveStep(0)
         await new Promise(resolve => setTimeout(resolve, 1500))
         setActiveStep(1)
       }
       
       // Step 2: Checking compliance
-      await triggerComplianceCheck(businessId)
+      console.log(`Triggering compliance check for business ID: ${businessId}`);
+      try {
+        const triggerResponse = await triggerComplianceCheck(businessId)
+        
+        if (!triggerResponse.success) {
+          console.error("Failed to trigger compliance check:", triggerResponse.error)
+          return false
+        }
+      } catch (error) {
+        console.error("Error triggering compliance check:", error)
+        // Continue anyway to show something to the user
+      }
+      
       if (showProgress) {
+        // Show progress for a minimum amount of time to avoid UI flickering
         await new Promise(resolve => setTimeout(resolve, 2000))
       }
       
-      // Step 3: Results
+      // Step 3: Results - Poll for results with timeout
       if (showProgress) {
         setActiveStep(2)
       }
-      const report = await getComplianceReport(businessId)
       
-      // Randomly set compliance status for demo
-      const randomCompliance = Math.random() > 0.7
-      setIsCompliant(randomCompliance)
+      // Wait for the report to be ready (with polling)
+      let retries = 0;
+      let report = await getComplianceReport(businessId);
       
-      // If we're compliant, clear issues and reset countdown
-      if (randomCompliance) {
-        setIssues([])
-        setCountdown({ minutes: 59, seconds: 59 })
+      // If we get a PENDING status, poll a few times
+      while (report.status === "PENDING" && retries < 5) {
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        report = await getComplianceReport(businessId)
+        retries++
       }
       
-      return randomCompliance
+      // Use real compliance status from the API response
+      const isCompliant = report.status === "PASS";
+      setIsCompliant(isCompliant)
+      
+      // If we're compliant, clear issues and reset countdown
+      if (isCompliant) {
+        setIssues([])
+        setCountdown({ minutes: 59, seconds: 59 })
+      } else {
+        // Map issues from API to component format with more detailed formatting
+        const mappedIssues = report.issues.map(issue => ({
+          title: issue.type
+            .split('_')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' '),
+          description: issue.description || 
+                      issue.suggestedAction || 
+                      "Please fix this issue to improve your compliance score.",
+          severity: issue.severity as "high" | "medium" | "low"
+        }));
+        
+        console.log("Mapped compliance issues:", mappedIssues);
+        setIssues(mappedIssues);
+      }
+      
+      return isCompliant
     } catch (error) {
       console.error("Error running compliance check:", error)
+      // Set default error issue when check fails
+      setIssues([{
+        title: "System Error",
+        description: "We encountered a problem while checking compliance. Please try again later.",
+        severity: "high"
+      }]);
       return false
     }
   }
@@ -255,10 +300,23 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
   }
 
   return (
-    <div className="m-0 p-6 h-full min-h-[600px] flex flex-col overflow-hidden">
+    <div className="m-0 p-6 h-full flex flex-col" data-tab="compliance">
       <div className="flex justify-between items-start mb-4">
         <div className="flex-1">
-          <h3 className="text-4xl font-bold">Compliance Check</h3>
+          <div className="flex items-center gap-3">
+            <h3 className="text-4xl font-bold">Compliance Check</h3>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`h-10 w-10 rounded-full border-2 flex-shrink-0 ${isRunningCheck ? 'border-[#0080FF] bg-[#0080FF]/10' : 'border-black hover:bg-[#0080FF]/5'}`}
+              onClick={startComplianceCheck}
+              disabled={isRunningCheck}
+              aria-label="Run compliance check"
+              title="Run compliance check"
+            >
+              <RefreshCw className={`h-5 w-5 ${isRunningCheck ? 'text-[#0080FF] animate-spin' : 'text-black'}`} />
+            </Button>
+          </div>
           <p className="text-gray-500 mt-1">We ensure your business profile meets all requirements</p>
         </div>
         <div className="flex flex-col items-end gap-1">
@@ -267,29 +325,20 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
         </div>
       </div>
 
-      {/* Scrollable content area */}
-      <div className="flex-1 overflow-y-auto pr-2">
-        <div className="py-6">
+      {/* Scrollable content area - with bottom padding to ensure content isn't cut off */}
+      <div className="flex-1 overflow-y-auto scrollbar-hide">
+        <div className="py-4 px-2 pb-6">
           {renderSteps()}
         </div>
       </div>
 
-      {/* Button area */}
-      <div className="mt-4 pt-2 flex justify-center">
-        {isRunningCheck ? (
-          <div className="flex items-center gap-2 py-2 px-4 bg-gray-100 rounded-md">
-            <div className="w-5 h-5 border-t-2 border-[#0080FF] border-solid rounded-full animate-spin"></div>
-            <span>Running compliance check...</span>
-          </div>
-        ) : (
-          <Button
-            onClick={startComplianceCheck}
-            className="bg-white border-2 border-black text-black hover:bg-[#0080FF]/5"
-          >
-            Run Compliance Check
-          </Button>
-        )}
-      </div>
+      {/* Loading indicator shown near the top, so we don't need a bottom button anymore */}
+      {isRunningCheck && (
+        <div className="fixed bottom-16 right-16 bg-white shadow-md border rounded-lg py-2 px-4 z-10 flex items-center gap-2 animate-in fade-in-50 slide-in-from-bottom-5">
+          <div className="w-5 h-5 border-t-2 border-[#0080FF] border-solid rounded-full animate-spin"></div>
+          <span>Running compliance check...</span>
+        </div>
+      )}
     </div>
   )
 }

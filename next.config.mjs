@@ -12,10 +12,18 @@ const nextConfig = {
       }
     ],
     formats: ['image/avif', 'image/webp'],
-    minimumCacheTTL: 60,
+    minimumCacheTTL: 3600, // Increased cache TTL to 1 hour
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
   },
-  // Enable output standalone mode for Docker support
+  // Use standalone output for better performance
   output: 'standalone',
+  // Enable memory cache
+  staticPageGenerationTimeout: 180, // 3 minutes timeout for static generation
+  reactStrictMode: true, // Helps catch bugs early
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production', // Remove console logs in production
+  },
   // Add console logging for debug information
   logging: {
     fetches: {
@@ -25,7 +33,80 @@ const nextConfig = {
   // Configure server-related options
   experimental: {
     // This is needed for NextAuth.js in the App Router
-    serverComponentsExternalPackages: ["jose"]
+    serverComponentsExternalPackages: ["jose", "playwright", "playwright-core"],
+    // Enable optimizations
+    optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
+    // Improved memory usage
+    memoryBasedWorkersCount: true,
+    // More efficient bundling
+    optimisticClientCache: true,
+  },
+  // Add webpack configuration for Node.js modules
+  webpack: (config, { isServer }) => {
+    // For Playwright/browser automation in Next.js
+    if (!isServer) {
+      // Handle Node.js modules in the browser
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        path: false,
+        util: false,
+        net: false,
+        tls: false,
+        crypto: false,
+        http: false,
+        https: false,
+        dns: false,
+        child_process: false,
+        os: false,
+        inspector: false,
+        readline: false,
+        tty: false,
+        zlib: false,
+        stream: false,
+        buffer: false,
+        events: false,
+        process: false,
+      };
+      
+      // Ignore specific modules in browser builds
+      config.module.rules.push({
+        test: /playwright|playwright-core|@playwright/,
+        use: 'null-loader',
+      });
+      
+      // Optimize bundle size with SplitChunksPlugin
+      config.optimization.splitChunks = {
+        chunks: 'all',
+        maxInitialRequests: Infinity,
+        minSize: 20000,
+        cacheGroups: {
+          vendor: {
+            test: /[\\/]node_modules[\\/]/,
+            name(module) {
+              // Get the package name
+              const match = module.context && module.context.match(/[\\/]node_modules[\\/](.*?)([\\/]|$)/);
+              const packageName = match ? match[1] : '';
+              // Return a clean package name
+              return `npm.${packageName.replace('@', '')}`;
+            },
+          },
+        },
+      };
+    }
+    
+    // Enable source maps in development but use faster options
+    if (process.env.NODE_ENV === 'development') {
+      config.devtool = 'eval-source-map';
+    }
+    
+    // Add tree shaking hint
+    config.module.rules.push({
+      test: /\.(js|mjs|jsx|ts|tsx)$/,
+      sideEffects: false,
+    });
+    
+    return config;
   },
   // Disable security headers in development to avoid HTTP issues
   async headers() {

@@ -47,12 +47,48 @@ export function BusinessProfileDashboard() {
     fetchBusinesses();
   }, []);
   
-  // Function to fetch businesses from API
+  // Function to fetch businesses from API with caching
   const fetchBusinesses = async () => {
     try {
       setIsLoading(true);
       setError(null);
       
+      // Generate cache key based on the current user (would be better with user ID)
+      const cacheKey = 'user_businesses_cache';
+      
+      // Try to get from session storage cache first (client-side only)
+      let cachedData = null;
+      if (typeof window !== 'undefined') {
+        try {
+          const cachedJson = sessionStorage.getItem(cacheKey);
+          if (cachedJson) {
+            const cached = JSON.parse(cachedJson);
+            // Use cache if it's less than 5 minutes old
+            if (cached && cached.timestamp && (Date.now() - cached.timestamp < 5 * 60 * 1000)) {
+              cachedData = cached.data;
+            }
+          }
+        } catch (e) {
+          console.warn('Error reading from cache:', e);
+        }
+      }
+      
+      // If we have valid cached data, use it
+      if (cachedData) {
+        console.log(`Using cached businesses data (${cachedData.businesses?.length || 0} items)`);
+        if (cachedData.businesses) {
+          // Sort businesses by creation date (newest first)
+          const sortedBusinesses = [...cachedData.businesses].sort((a, b) => {
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          });
+          
+          setBusinesses(sortedBusinesses);
+          setIsLoading(false);
+          return;
+        }
+      }
+      
+      // If no cache or expired, fetch from API
       console.log('Fetching businesses for current user...');
       
       // Add cache-busting parameter and cache control
@@ -73,6 +109,18 @@ export function BusinessProfileDashboard() {
       
       const data = await response.json();
       console.log(`Fetched ${data.businesses?.length || 0} businesses from API`);
+      
+      // Save to session storage cache
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify({
+            data,
+            timestamp: Date.now()
+          }));
+        } catch (e) {
+          console.warn('Error writing to cache:', e);
+        }
+      }
       
       if (data.businesses) {
         // Sort businesses by creation date (newest first)
@@ -335,7 +383,7 @@ export function BusinessProfileDashboard() {
           fetchBusinesses();
         }
       }}>
-        <DialogContent className="p-0 max-w-[1200px] w-[95vw] h-[95vh] max-h-[980px]" aria-describedby="profile-modal-description">
+        <DialogContent className="p-0 max-w-[1200px] w-[95vw] h-[95vh] max-h-[92vh] overflow-hidden" aria-describedby="profile-modal-description">
           <DialogTitle className="sr-only">Business Profile Details</DialogTitle>
           <div id="profile-modal-description" className="sr-only">
             Business profile details and management interface
