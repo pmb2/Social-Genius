@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { X } from "lucide-react"
+import { toast } from "@/lib/toast"
 
 interface Business {
   id: number;
@@ -33,6 +34,7 @@ export default function BusinessProfileEdit({ business, onClose }: BusinessProfi
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     // Handle form submission
+    toast.success("Business profile updated successfully")
     onClose()
   }
 

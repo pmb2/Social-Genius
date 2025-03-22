@@ -37,7 +37,9 @@ export async function GET(request: NextRequest) {
             user: {
               id: session.user.id,
               email: session.user.email,
-              name: session.user.name || ""
+              name: session.user.name || "",
+              profilePicture: session.user.profilePicture,
+              phoneNumber: session.user.phoneNumber
             }
           });
         }

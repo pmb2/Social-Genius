@@ -9,6 +9,7 @@ import BusinessProfileEdit from "./business-profile-edit"
 import { ComplianceTab } from "./compliance-tab"
 import { BrandAlignmentTab } from "./brand-alignment-tab"
 import { CompetitorResearchTab } from "./competitor-research-tab"
+import { toast } from "@/lib/toast"
 import Image from "next/image"
 
 interface Business {
@@ -78,11 +79,16 @@ export default function BusinessProfileModal({
       setIsDeleteDialogOpen(false)
       onClose()
       
+      // Show success toast notification
+      toast.success(`Business "${business.name}" successfully deleted`)
+      
       // Reload the page to refresh the businesses list
       window.location.reload()
     } catch (error) {
       console.error('Error deleting business:', error)
-      setDeleteError(error instanceof Error ? error.message : 'Failed to delete business')
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete business'
+      setDeleteError(errorMessage)
+      toast.error(`Error: ${errorMessage}`)
     } finally {
       setIsDeleting(false)
     }

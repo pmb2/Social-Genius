@@ -1,4 +1,11 @@
-import { Pool } from 'pg';
+import { Pool, types } from 'pg';
+
+// Tell pg not to try to load the native module
+process.env.NODE_PG_FORCE_NATIVE = '0';
+
+// Disable the automatic conversion of timestamp columns to JavaScript Date objects for better performance
+types.setTypeParser(1114, str => str); // timestamp without timezone
+types.setTypeParser(1082, str => str); // date
 import { OpenAIEmbeddings } from '@langchain/openai';
 
 // Singleton pattern for database connection
@@ -9,22 +16,20 @@ class PostgresService {
 
   private constructor() {
     try {
-      console.log('PostgresService initializing with DATABASE_URL:', 
-                 process.env.DATABASE_URL ? 'Set (length: ' + process.env.DATABASE_URL.length + ')' : 'Not set');
-      console.log('DATABASE_URL_DOCKER:', 
-                 process.env.DATABASE_URL_DOCKER ? 'Set (length: ' + process.env.DATABASE_URL_DOCKER.length + ')' : 'Not set');
+      // Log minimal information for performance
+      const hasDbUrl = Boolean(process.env.DATABASE_URL);
+      const hasDockerDbUrl = Boolean(process.env.DATABASE_URL_DOCKER);
+      console.log(`DB Config - Database URL: ${hasDbUrl ? 'Set' : 'Not set'}, Docker URL: ${hasDockerDbUrl ? 'Set' : 'Not set'}`);
       
       // Determine the connection string based on environment
       let connectionString;
       
       // Check if we're running inside Docker or not
       const inDocker = process.env.RUNNING_IN_DOCKER === 'true';
-      console.log(`Running in Docker: ${inDocker}`);
       
       if (inDocker) {
         // Inside Docker container - use container-to-container communication
         connectionString = process.env.DATABASE_URL_DOCKER || 'postgresql://postgres:postgres@postgres:5432/socialgenius';
-        console.log('Using Docker container network connection');
       } else {
         // Outside Docker container - use host to container communication
         connectionString = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5435/socialgenius';
@@ -37,12 +42,15 @@ class PostgresService {
       this.pool = new Pool({
         connectionString,
         ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
-        // Add connection timeout
+        // Connection pool settings optimized for performance
+        max: 10, // Reduced maximum pool size for better resource management
+        min: 2,  // Keep at least 2 connections ready
         connectionTimeoutMillis: 5000,
-        // Add idle timeout
-        idleTimeoutMillis: 30000,
-        // Max clients
-        max: 20
+        idleTimeoutMillis: 60000, // Increased idle timeout to reduce reconnection overhead
+        // Disable native bindings for better compatibility
+        native: false,
+        // Connection reuse settings
+        keepAlive: true
       });
       
       this.embeddings = new OpenAIEmbeddings({
@@ -71,6 +79,9 @@ class PostgresService {
       this.pool = new Pool({
         connectionString: fallbackConnection,
         connectionTimeoutMillis: 8000,
+        // Disable native bindings for better compatibility
+        native: false,
+        max: 5 // Limit connections in fallback mode
       });
       
       // Still create embeddings
@@ -180,6 +191,49 @@ class PostgresService {
     }
     return PostgresService.instance;
   }
+  
+  // Get a client connection from the pool with timeout protection
+  public async getClient() {
+    // Add timeout to avoid hanging forever on connection issues
+    const clientPromise = this.pool.connect();
+    
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error('Database connection timeout after 5000ms'));
+      }, 5000);
+    });
+    
+    try {
+      // Race the connection against a timeout
+      return await Promise.race([clientPromise, timeoutPromise]) as any;
+    } catch (error) {
+      console.error('Error getting database client:', error);
+      throw error;
+    }
+  }
+  
+  // Optimized query execution with pooling
+  public async execute(text: string, params: any[] = []) {
+    // Use pool directly for simple queries (no need for client checkout)
+    try {
+      const start = Date.now();
+      const res = await this.pool.query(text, params);
+      const duration = Date.now() - start;
+      
+      // Only log slow queries to reduce console noise
+      if (duration > 100) {
+        console.log('Slow query', { 
+          text: text.substring(0, 50) + (text.length > 50 ? '...' : ''), 
+          duration, 
+          rows: res.rowCount 
+        });
+      }
+      return res;
+    } catch (error) {
+      console.error('Error executing query:', error);
+      throw error;
+    }
+  }
 
   // Initialize the database with necessary tables and extensions
   public async initialize(): Promise<void> {
@@ -250,6 +304,24 @@ class PostgresService {
         )
       `);
       
+      // Create business_credentials table to store service credentials
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS business_credentials (
+          id SERIAL PRIMARY KEY,
+          business_id TEXT NOT NULL,
+          service_name TEXT NOT NULL,
+          username TEXT NOT NULL,
+          encrypted_password TEXT NOT NULL,
+          status TEXT DEFAULT 'active',
+          last_used TIMESTAMP WITH TIME ZONE,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          last_updated TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          metadata JSONB,
+          UNIQUE (business_id, service_name),
+          CONSTRAINT fk_business FOREIGN KEY (business_id) REFERENCES businesses(business_id) ON DELETE CASCADE
+        )
+      `);
+      
       // Create index for faster vector similarity search for documents
       await client.query(`
         CREATE INDEX IF NOT EXISTS documents_embedding_idx 
@@ -299,6 +371,12 @@ class PostgresService {
       await client.query(`
         CREATE INDEX IF NOT EXISTS sessions_id_idx 
         ON sessions(session_id)
+      `);
+      
+      // Create index on business_credentials for faster lookups
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS credentials_business_service_idx 
+        ON business_credentials(business_id, service_name)
       `);
       
       console.log('Database initialized successfully');
@@ -722,12 +800,34 @@ class PostgresService {
   public async getUserByEmail(email: string): Promise<any | null> {
     const client = await this.pool.connect();
     try {
-      const result = await client.query(
-        `SELECT id, email, password_hash, name, created_at, last_login 
-         FROM users 
-         WHERE email = $1`,
-        [email.toLowerCase()]
+      // Use a more dynamic approach to handle column existence
+      // Get all available columns from the users table
+      const columnsQuery = await client.query(
+        `SELECT column_name
+         FROM information_schema.columns 
+         WHERE table_schema = 'public' 
+         AND table_name = 'users'`
       );
+      
+      // Extract column names
+      const columns = columnsQuery.rows.map(row => row.column_name);
+      
+      // Build the SELECT statement with available columns
+      // Always include essential columns
+      const essentialColumns = ['id', 'email', 'password_hash', 'name', 'created_at', 'last_login'];
+      
+      // Add optional columns if they exist
+      if (columns.includes('profile_picture')) essentialColumns.push('profile_picture');
+      if (columns.includes('phone_number')) essentialColumns.push('phone_number');
+      
+      // Build the query with the confirmed columns
+      const query = `
+        SELECT ${essentialColumns.join(', ')}
+        FROM users 
+        WHERE email = $1
+      `;
+      
+      const result = await client.query(query, [email.toLowerCase()]);
       
       return result.rows.length > 0 ? result.rows[0] : null;
     } catch (error) {
@@ -742,12 +842,34 @@ class PostgresService {
   public async getUserById(userId: number): Promise<any | null> {
     const client = await this.pool.connect();
     try {
-      const result = await client.query(
-        `SELECT id, email, name, created_at, last_login 
-         FROM users 
-         WHERE id = $1`,
-        [userId]
+      // Use same dynamic approach as getUserByEmail for consistency
+      // Get all available columns from the users table
+      const columnsQuery = await client.query(
+        `SELECT column_name
+         FROM information_schema.columns 
+         WHERE table_schema = 'public' 
+         AND table_name = 'users'`
       );
+      
+      // Extract column names
+      const columns = columnsQuery.rows.map(row => row.column_name);
+      
+      // Build the SELECT statement with available columns
+      // Always include essential columns
+      const essentialColumns = ['id', 'email', 'name', 'created_at', 'last_login'];
+      
+      // Add optional columns if they exist
+      if (columns.includes('profile_picture')) essentialColumns.push('profile_picture');
+      if (columns.includes('phone_number')) essentialColumns.push('phone_number');
+      
+      // Build the query with the confirmed columns
+      const query = `
+        SELECT ${essentialColumns.join(', ')}
+        FROM users 
+        WHERE id = $1
+      `;
+      
+      const result = await client.query(query, [userId]);
       
       return result.rows.length > 0 ? result.rows[0] : null;
     } catch (error) {
@@ -778,6 +900,94 @@ class PostgresService {
       client.release();
     }
   }
+  
+  // Update user profile
+  public async updateUserProfile(userId: number, updates: { name?: string, email?: string, profilePicture?: string, phoneNumber?: string }): Promise<boolean> {
+    const client = await this.pool.connect();
+    try {
+      // Build update fields
+      const updateFields = [];
+      const values = [userId];
+      let paramIndex = 2;
+      
+      if (updates.name !== undefined) {
+        updateFields.push(`name = $${paramIndex}`);
+        values.push(updates.name);
+        paramIndex++;
+      }
+      
+      if (updates.email !== undefined) {
+        updateFields.push(`email = $${paramIndex}`);
+        values.push(updates.email.toLowerCase());
+        paramIndex++;
+      }
+      
+      // Check if we need to add profile_picture column
+      const profilePictureExists = await client.query(
+        `SELECT EXISTS (
+          SELECT FROM information_schema.columns 
+          WHERE table_schema = 'public' 
+          AND table_name = 'users' 
+          AND column_name = 'profile_picture'
+        )`
+      );
+      
+      if (!profilePictureExists.rows[0].exists) {
+        // Add profile_picture column if it doesn't exist
+        await client.query(
+          `ALTER TABLE users ADD COLUMN profile_picture TEXT`
+        );
+      }
+      
+      // Check if we need to add phone_number column
+      const phoneNumberExists = await client.query(
+        `SELECT EXISTS (
+          SELECT FROM information_schema.columns 
+          WHERE table_schema = 'public' 
+          AND table_name = 'users' 
+          AND column_name = 'phone_number'
+        )`
+      );
+      
+      if (!phoneNumberExists.rows[0].exists) {
+        // Add phone_number column if it doesn't exist
+        await client.query(
+          `ALTER TABLE users ADD COLUMN phone_number TEXT`
+        );
+      }
+      
+      if (updates.profilePicture !== undefined) {
+        updateFields.push(`profile_picture = $${paramIndex}`);
+        values.push(updates.profilePicture);
+        paramIndex++;
+      }
+      
+      if (updates.phoneNumber !== undefined) {
+        updateFields.push(`phone_number = $${paramIndex}`);
+        values.push(updates.phoneNumber);
+        paramIndex++;
+      }
+      
+      if (updateFields.length === 0) {
+        return false;
+      }
+      
+      const query = `
+        UPDATE users 
+        SET ${updateFields.join(', ')} 
+        WHERE id = $1
+        RETURNING id
+      `;
+      
+      const result = await client.query(query, values);
+      return result.rowCount ? result.rowCount > 0 : false;
+    } catch (error) {
+      console.error('Error updating user profile:', error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 
   // Create a new session
   public async createSession(userId: number, sessionId: string, expiresAt: Date): Promise<boolean> {
@@ -803,13 +1013,34 @@ class PostgresService {
   public async getSessionById(sessionId: string): Promise<any | null> {
     const client = await this.pool.connect();
     try {
-      const result = await client.query(
-        `SELECT s.id, s.user_id, s.expires_at, u.email, u.name
-         FROM sessions s
-         JOIN users u ON s.user_id = u.id
-         WHERE s.session_id = $1 AND s.expires_at > CURRENT_TIMESTAMP`,
-        [sessionId]
+      // Check if phone_number column exists
+      const phoneNumberExists = await client.query(
+        `SELECT EXISTS (
+          SELECT FROM information_schema.columns 
+          WHERE table_schema = 'public' 
+          AND table_name = 'users' 
+          AND column_name = 'phone_number'
+        )`
       );
+      
+      let query;
+      if (phoneNumberExists.rows[0].exists) {
+        query = `
+          SELECT s.id, s.user_id, s.expires_at, u.email, u.name, u.profile_picture, u.phone_number
+          FROM sessions s
+          JOIN users u ON s.user_id = u.id
+          WHERE s.session_id = $1 AND s.expires_at > CURRENT_TIMESTAMP
+        `;
+      } else {
+        query = `
+          SELECT s.id, s.user_id, s.expires_at, u.email, u.name, u.profile_picture
+          FROM sessions s
+          JOIN users u ON s.user_id = u.id
+          WHERE s.session_id = $1 AND s.expires_at > CURRENT_TIMESTAMP
+        `;
+      }
+      
+      const result = await client.query(query, [sessionId]);
       
       return result.rows.length > 0 ? result.rows[0] : null;
     } catch (error) {
@@ -983,6 +1214,303 @@ class PostgresService {
     } finally {
       client.release();
     }
+  }
+  
+  // Store business credentials
+  public async storeBusinessCredentials(
+    businessId: string, 
+    serviceName: string, 
+    username: string, 
+    password: string,
+    metadata: any = {}
+  ): Promise<boolean> {
+    const client = await this.pool.connect();
+    try {
+      console.log(`Storing credentials for business ${businessId}, service: ${serviceName}`);
+      
+      // Simple encryption for passwords - in production, use a proper encryption method
+      // This is just a basic XOR encryption for demonstration
+      const encryptionKey = process.env.ENCRYPTION_KEY || 'social-genius-secure-key';
+      const encryptedPassword = this.encryptPassword(password, encryptionKey);
+      
+      // First check if credentials already exist for this business+service
+      const existingCheck = await client.query(
+        `SELECT id FROM business_credentials 
+         WHERE business_id = $1 AND service_name = $2`,
+        [businessId, serviceName]
+      );
+      
+      let result;
+      
+      if (existingCheck.rowCount > 0) {
+        // Update existing credentials
+        console.log(`Updating existing credentials for business ${businessId}, service: ${serviceName}`);
+        result = await client.query(
+          `UPDATE business_credentials
+           SET username = $1, 
+               encrypted_password = $2,
+               status = 'active',
+               last_updated = CURRENT_TIMESTAMP,
+               metadata = $3
+           WHERE business_id = $4 AND service_name = $5
+           RETURNING id`,
+          [username, encryptedPassword, metadata || {}, businessId, serviceName]
+        );
+      } else {
+        // Insert new credentials
+        console.log(`Creating new credentials for business ${businessId}, service: ${serviceName}`);
+        result = await client.query(
+          `INSERT INTO business_credentials(business_id, service_name, username, encrypted_password, metadata) 
+           VALUES($1, $2, $3, $4, $5) 
+           RETURNING id`,
+          [businessId, serviceName, username, encryptedPassword, metadata || {}]
+        );
+      }
+      
+      const success = result.rowCount > 0;
+      console.log(`Credentials ${success ? 'stored successfully' : 'storage failed'} for business ${businessId}`);
+      return success;
+    } catch (error) {
+      console.error(`Error storing credentials for business ${businessId}:`, error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  
+  // Get business auth data (for cookies and authentication)
+  public async getBusinessAuth(businessId: string, serviceType: string): Promise<any> {
+    const client = await this.pool.connect();
+    try {
+      console.log(`Getting auth data for business ${businessId}, service: ${serviceType}`);
+      
+      // Check if the table exists
+      const tableExists = await client.query(
+        `SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'business_auth'
+        )`
+      );
+      
+      if (!tableExists.rows[0].exists) {
+        console.log('Creating business_auth table...');
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS business_auth (
+            id SERIAL PRIMARY KEY,
+            business_id TEXT NOT NULL,
+            service_type TEXT NOT NULL,
+            cookies TEXT,
+            last_updated TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(business_id, service_type)
+          )
+        `);
+        return null;
+      }
+      
+      // Query for auth data
+      const result = await client.query(
+        `SELECT id, business_id, service_type, cookies, last_updated
+         FROM business_auth 
+         WHERE business_id = $1 AND service_type = $2
+         LIMIT 1`,
+        [businessId, serviceType]
+      );
+      
+      if (result.rowCount === 0) {
+        console.log(`No auth data found for business ${businessId}, service: ${serviceType}`);
+        return null;
+      }
+      
+      return result.rows[0];
+    } catch (error) {
+      console.error(`Error getting auth data for business ${businessId}, service: ${serviceType}:`, error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  
+  // Update business auth data (cookies, tokens, etc.)
+  public async updateBusinessAuth(businessId: string, serviceType: string, data: any): Promise<boolean> {
+    const client = await this.pool.connect();
+    try {
+      console.log(`Updating auth data for business ${businessId}, service: ${serviceType}`);
+      
+      // Create table if it doesn't exist
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS business_auth (
+          id SERIAL PRIMARY KEY,
+          business_id TEXT NOT NULL,
+          service_type TEXT NOT NULL,
+          cookies TEXT,
+          last_updated TIMESTAMPTZ DEFAULT NOW(),
+          UNIQUE(business_id, service_type)
+        )
+      `);
+      
+      // Upsert auth data
+      const result = await client.query(
+        `INSERT INTO business_auth (business_id, service_type, cookies, last_updated)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (business_id, service_type) 
+         DO UPDATE SET 
+           cookies = EXCLUDED.cookies,
+           last_updated = EXCLUDED.last_updated
+         RETURNING id`,
+        [
+          businessId, 
+          serviceType, 
+          data.cookies, 
+          data.lastUpdated || new Date().toISOString()
+        ]
+      );
+      
+      return result.rowCount > 0;
+    } catch (error) {
+      console.error(`Error updating auth data for business ${businessId}, service: ${serviceType}:`, error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  
+  // Get business credentials
+  public async getBusinessCredentials(
+    businessId: string, 
+    serviceName: string
+  ): Promise<{username: string, password: string, status: string, lastUsed: Date} | null> {
+    const client = await this.pool.connect();
+    try {
+      console.log(`Retrieving credentials for business ${businessId}, service: ${serviceName}`);
+      
+      const result = await client.query(
+        `SELECT username, encrypted_password, status, last_used 
+         FROM business_credentials 
+         WHERE business_id = $1 AND service_name = $2`,
+        [businessId, serviceName]
+      );
+      
+      if (result.rowCount === 0) {
+        console.log(`No credentials found for business ${businessId}, service: ${serviceName}`);
+        return null;
+      }
+      
+      // Decrypt password
+      const encryptionKey = process.env.ENCRYPTION_KEY || 'social-genius-secure-key';
+      const decryptedPassword = this.decryptPassword(result.rows[0].encrypted_password, encryptionKey);
+      
+      // Update last_used timestamp
+      await client.query(
+        `UPDATE business_credentials
+         SET last_used = CURRENT_TIMESTAMP
+         WHERE business_id = $1 AND service_name = $2`,
+        [businessId, serviceName]
+      );
+      
+      console.log(`Retrieved credentials for business ${businessId}, service: ${serviceName}`);
+      
+      return {
+        username: result.rows[0].username,
+        password: decryptedPassword,
+        status: result.rows[0].status,
+        lastUsed: result.rows[0].last_used
+      };
+    } catch (error) {
+      console.error(`Error retrieving credentials for business ${businessId}:`, error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  
+  // Check if business has stored credentials for a service
+  public async hasCredentials(businessId: string, serviceName: string): Promise<boolean> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `SELECT COUNT(*) as count
+         FROM business_credentials 
+         WHERE business_id = $1 AND service_name = $2 AND status = 'active'`,
+        [businessId, serviceName]
+      );
+      
+      return result.rows[0].count > 0;
+    } catch (error) {
+      console.error(`Error checking credentials for business ${businessId}:`, error);
+      return false;
+    } finally {
+      client.release();
+    }
+  }
+  
+  // Update credential status
+  public async updateCredentialStatus(
+    businessId: string, 
+    serviceName: string, 
+    status: string
+  ): Promise<boolean> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `UPDATE business_credentials
+         SET status = $1, last_updated = CURRENT_TIMESTAMP
+         WHERE business_id = $2 AND service_name = $3
+         RETURNING id`,
+        [status, businessId, serviceName]
+      );
+      
+      return result.rowCount > 0;
+    } catch (error) {
+      console.error(`Error updating credential status for business ${businessId}:`, error);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+  
+  // Simple password encryption/decryption - for demonstration only
+  // In production, use a proper encryption library
+  private encryptPassword(password: string, key: string): string {
+    // Convert password and key to byte arrays
+    const passwordBytes = Buffer.from(password);
+    let keyBytes = Buffer.from(key);
+    
+    // If key is shorter than password, repeat it
+    if (keyBytes.length < passwordBytes.length) {
+      const repeats = Math.ceil(passwordBytes.length / keyBytes.length);
+      keyBytes = Buffer.concat(Array(repeats).fill(keyBytes)).slice(0, passwordBytes.length);
+    }
+    
+    // XOR password with key
+    const encryptedBytes = Buffer.alloc(passwordBytes.length);
+    for (let i = 0; i < passwordBytes.length; i++) {
+      encryptedBytes[i] = passwordBytes[i] ^ keyBytes[i % keyBytes.length];
+    }
+    
+    // Convert to base64 for storage
+    return encryptedBytes.toString('base64');
+  }
+  
+  private decryptPassword(encrypted: string, key: string): string {
+    // Convert encrypted text and key to byte arrays
+    const encryptedBytes = Buffer.from(encrypted, 'base64');
+    let keyBytes = Buffer.from(key);
+    
+    // If key is shorter than encrypted text, repeat it
+    if (keyBytes.length < encryptedBytes.length) {
+      const repeats = Math.ceil(encryptedBytes.length / keyBytes.length);
+      keyBytes = Buffer.concat(Array(repeats).fill(keyBytes)).slice(0, encryptedBytes.length);
+    }
+    
+    // XOR encrypted bytes with key
+    const decryptedBytes = Buffer.alloc(encryptedBytes.length);
+    for (let i = 0; i < encryptedBytes.length; i++) {
+      decryptedBytes[i] = encryptedBytes[i] ^ keyBytes[i % keyBytes.length];
+    }
+    
+    // Convert back to string
+    return decryptedBytes.toString();
   }
 }
 

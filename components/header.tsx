@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogClose, DialogTitle } from '@/components/ui
 import Image from 'next/image';
 import { LogOut, User, Settings, Bell, HelpCircle, X } from 'lucide-react';
 import FeedbackModal from './feedback-modal';
+import NotificationsDialog from './notifications';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 
@@ -13,6 +14,7 @@ export function Header() {
   const router = useRouter();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [feedbackType, setFeedbackType] = useState("feedback");
   
   // Use our custom auth context
@@ -34,7 +36,17 @@ export function Header() {
       <div className="flex justify-between items-center px-8 py-4 bg-black">
         <h1 className="text-xl text-white">Dashboard</h1>
         
-        <div className="flex items-center">
+        <div className="flex items-center space-x-3">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-white hover:bg-white/10 hover:text-white rounded-full relative"
+            title="Notifications"
+            onClick={() => setNotificationsOpen(true)}
+          >
+            <Bell className="h-5 w-5" />
+            <span className="absolute top-0 right-0 h-3 w-3 bg-blue-500 rounded-full"></span>
+          </Button>
           <Button 
             variant="ghost" 
             size="icon" 
@@ -43,7 +55,7 @@ export function Header() {
             onClick={() => setSettingsOpen(true)}
           >
             <Image
-              src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Mask%20group%20(2)%201-5RMiT8g4J4BzlQiRnu7aemEcs324uL.png"
+              src={user?.profilePicture || "/images/default-avatar.png"}
               alt="Profile"
               className="rounded-full w-12 h-12 object-cover border-2 border-white/40"
               width={48}
@@ -80,7 +92,7 @@ export function Header() {
               {/* User Profile Section */}
               <div className="flex items-center p-3 mb-4 bg-gray-50 rounded-lg">
                 <Image
-                  src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Mask%20group%20(2)%201-5RMiT8g4J4BzlQiRnu7aemEcs324uL.png"
+                  src={user?.profilePicture || "/images/default-avatar.png"}
                   alt="Profile"
                   className="rounded-full w-16 h-16 object-cover mr-3"
                   width={64}
@@ -98,14 +110,23 @@ export function Header() {
                 <Button
                   variant="ghost"
                   className="w-full justify-start px-3 py-2 h-10 text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    // Now profile settings are directly on dashboard
+                    router.push('/dashboard');
+                  }}
                 >
-                  <Settings className="h-4 w-4 mr-3" />
-                  Account Settings
+                  <User className="h-4 w-4 mr-3" />
+                  Profile Settings
                 </Button>
                 
                 <Button
                   variant="ghost"
                   className="w-full justify-start px-3 py-2 h-10 text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    setTimeout(() => setNotificationsOpen(true), 100); // Slight delay to avoid animation conflicts
+                  }}
                 >
                   <Bell className="h-4 w-4 mr-3" />
                   Notifications
@@ -145,6 +166,12 @@ export function Header() {
         open={feedbackOpen} 
         onOpenChange={setFeedbackOpen} 
         defaultType={feedbackType} 
+      />
+
+      {/* Notifications Modal */}
+      <NotificationsDialog
+        open={notificationsOpen}
+        onOpenChange={setNotificationsOpen}
       />
     </>
   );

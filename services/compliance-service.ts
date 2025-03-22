@@ -131,12 +131,25 @@ export const getComplianceReport = async (businessId: number) => {
  * @returns Status of the resolution
  */
 export const resolveComplianceIssue = async (businessId: number, issueId: string, data: any) => {
-  console.log(`Resolving issue ${issueId} for business ID: ${businessId} with data:`, data);
+  console.log(`Resolving issue ${issueId} for business ID: ${businessId} with data type: ${data.issueType}`);
   
   try {
     // Special handling for auth_required issue type
     if (data.issueType === 'auth_required') {
+      console.log(`[COMPLIANCE] Handling authentication request for business ID: ${businessId}`);
+      
+      if (!data.email || !data.password) {
+        console.error(`[COMPLIANCE] Missing credentials for business ID: ${businessId}`);
+        return {
+          success: false,
+          error: 'Email and password are required',
+          errorCode: 'MISSING_CREDENTIALS'
+        };
+      }
+      
       const { handleBusinessAuthentication } = await import('@/lib/compliance/auth-service');
+      
+      console.log(`[COMPLIANCE] Submitting credentials for business ID: ${businessId}`);
       
       // Process authentication with provided credentials
       const authResult = await handleBusinessAuthentication(
@@ -147,23 +160,69 @@ export const resolveComplianceIssue = async (businessId: number, issueId: string
         }
       );
       
+      // Log detailed auth result with timing information (excluding password)
+      const authResultSummary = {
+        success: authResult.success,
+        message: authResult.message,
+        errorCode: authResult.errorCode,
+        totalTimeMs: authResult.debugInfo?.totalTimeMs,
+        steps: authResult.debugInfo?.steps?.map(step => ({
+          step: step.step,
+          status: step.status,
+          timing: step.timing
+        }))
+      };
+      
+      console.log(`[COMPLIANCE] Authentication result for business ID: ${businessId}:`, 
+        JSON.stringify(authResultSummary));
+      
+      // Log authentication steps in a readable format for easier debugging
+      if (authResult.debugInfo?.steps) {
+        console.log(`[COMPLIANCE] Authentication steps for business ID: ${businessId}:`);
+        authResult.debugInfo.steps.forEach((step, index) => {
+          const statusIcon = step.status === 'success' ? '✓' : 
+                           step.status === 'failed' ? '✗' : 
+                           step.status === 'pending' ? '⋯' : 
+                           step.status === 'blocked' ? '⚠' : '?';
+                           
+          console.log(`[COMPLIANCE] Step ${index + 1}: ${statusIcon} ${step.step} - ${step.status}${step.timing ? ` (${step.timing}ms)` : ''}${step.reason ? ` - ${step.reason}` : ''}`);
+        });
+      }
+      
       // If authentication was successful, remove cached report to force refresh
       if (authResult.success) {
+        console.log(`[COMPLIANCE] Authentication successful for business ID: ${businessId}, clearing cache`);
         reportsCache.delete(businessId.toString());
+        
+        // Trigger a new compliance check after successful authentication
+        setTimeout(async () => {
+          try {
+            console.log(`[COMPLIANCE] Starting new compliance check after authentication for business ID: ${businessId}`);
+            const result = await supervisorAgent.runComplianceCheck(businessId.toString());
+            reportsCache.set(businessId.toString(), result);
+            console.log(`[COMPLIANCE] Post-authentication compliance check completed for business ID: ${businessId}`);
+          } catch (error) {
+            console.error(`[COMPLIANCE] Error running post-authentication compliance check for business ID: ${businessId}:`, error);
+          }
+        }, 0);
         
         return {
           success: true,
-          message: 'Google Business Profile authenticated successfully'
+          message: 'Google Business Profile authenticated successfully',
+          action: 'refresh'
         };
       } else {
+        console.error(`[COMPLIANCE] Authentication failed for business ID: ${businessId}: ${authResult.message}`);
         return {
           success: false,
-          error: authResult.message || 'Authentication failed'
+          error: authResult.message || 'Authentication failed',
+          errorCode: authResult.errorCode || 'AUTH_FAILED'
         };
       }
     }
     
     // For other issue types, proceed with normal resolution
+    console.log(`[COMPLIANCE] Processing standard issue resolution for business ID: ${businessId}, issue type: ${data.issueType}`);
     const result = await supervisorAgent.processUserInput(
       businessId.toString(),
       issueId,
@@ -173,15 +232,17 @@ export const resolveComplianceIssue = async (businessId: number, issueId: string
     // Remove the cached report to force a refresh
     reportsCache.delete(businessId.toString());
     
+    console.log(`[COMPLIANCE] Issue resolution complete for business ID: ${businessId}, status: ${result.status}`);
     return { 
       success: result.status === 'success', 
       message: result.message || 'Issue resolution processed'
     };
   } catch (error) {
-    console.error(`Error resolving compliance issue for business ID: ${businessId}:`, error);
+    console.error(`[COMPLIANCE] Error resolving compliance issue for business ID: ${businessId}:`, error);
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
+      errorCode: 'RESOLUTION_ERROR'
     };
   }
 }

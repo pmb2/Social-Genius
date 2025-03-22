@@ -258,7 +258,9 @@ class AuthService {
         user: {
           id: user.id,
           email: user.email,
-          name: user.name
+          name: user.name,
+          profilePicture: session.profile_picture,
+          phoneNumber: session.phone_number
         }
       };
     } catch (error) {
@@ -395,6 +397,30 @@ class AuthService {
   // Get database service for initialization
   public getDatabase(): PostgresService {
     return this.db;
+  }
+  
+  // Update user profile
+  public async updateUserProfile(userId: number, updates: { name?: string, email?: string, profilePicture?: string, phoneNumber?: string }): Promise<{ success: boolean, error?: string }> {
+    try {
+      // If email is being updated, check if it already exists for another user
+      if (updates.email) {
+        const existingUser = await this.db.getUserByEmail(updates.email);
+        if (existingUser && existingUser.id !== userId) {
+          return { success: false, error: 'Email already in use by another account' };
+        }
+      }
+      
+      const success = await this.db.updateUserProfile(userId, updates);
+      return { success };
+    } catch (error) {
+      console.error('Update profile error:', error);
+      return { success: false, error: 'Failed to update profile' };
+    }
+  }
+  
+  // Get default profile picture URL
+  public getDefaultProfilePicture(): string {
+    return '/images/default-avatar.png';
   }
 }
 

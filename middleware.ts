@@ -5,8 +5,10 @@ import type { NextRequest } from 'next/server';
 const publicRoutes = [
   '/auth',
   '/api/auth',
+  '/api/compliance',
   '/',
   '/api/init-db',
+  '/api/init-compliance-db',
   '/api/env-check',
   '/api/db-status',
   '/api/direct-db-test',
@@ -75,8 +77,8 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     // Skip all internal paths (_next) and other public paths
-    '/((?!_next|api/auth|favicon.ico).*)',
-    // Optional: Protect API routes except auth-related ones and utility routes
-    '/api/((?!auth|test-db|init-db|db-status|env-check|debug-auth|direct-db-test).*)',
+    '/((?!_next|api/auth|api/compliance|favicon.ico).*)',
+    // Optional: Protect API routes except auth-related ones, compliance-related ones and utility routes
+    '/api/((?!auth|compliance|test-db|init-db|db-status|env-check|debug-auth|direct-db-test).*)',
   ],
 };

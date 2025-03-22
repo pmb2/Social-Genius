@@ -22,9 +22,18 @@ const nextConfig = {
   output: 'standalone',
   // Enable memory cache
   staticPageGenerationTimeout: 180, // 3 minutes timeout for static generation
-  reactStrictMode: true, // Helps catch bugs early
+  reactStrictMode: process.env.NODE_ENV === 'production' ? false : true, // Disable in production for better performance
   compiler: {
-    removeConsole: process.env.NODE_ENV === 'production', // Remove console logs in production
+    removeConsole: process.env.NODE_ENV === 'production' ? {
+      exclude: ['error', 'warn'],
+    } : false,
+  },
+  // Improve bundle sizes and performance
+  swcMinify: true,
+  modularizeImports: {
+    'lucide-react': {
+      transform: 'lucide-react/dist/esm/icons/{{member}}',
+    },
   },
   // Add console logging for debug information
   logging: {
@@ -36,8 +45,13 @@ const nextConfig = {
   experimental: {
     // This is needed for NextAuth.js in the App Router
     serverComponentsExternalPackages: ["jose", "playwright", "playwright-core"],
-    // Enable optimizations
-    optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
+    // Enable optimizations for packages with many exports
+    optimizePackageImports: [
+      'lucide-react', 
+      '@radix-ui/react-icons', 
+      'sonner', 
+      '@langchain/openai'
+    ],
     // Disable worker-based features when using Bun
     memoryBasedWorkersCount: process.env.USE_BUN !== 'true',
     // More efficient bundling
@@ -45,7 +59,15 @@ const nextConfig = {
     // Disable worker pools with Bun
     workerThreads: process.env.USE_BUN !== 'true',
     // Disable turbotrace with Bun
-    turbotrace: process.env.USE_BUN !== 'true',
+    turbotrace: process.env.USE_BUN !== 'true' ? { 
+      contextDirectory: __dirname,
+    } : false,
+    // Enable serverActions in production for better performance
+    serverActions: {
+      bodySizeLimit: '2mb',
+    },
+    // PPR requires canary version, so we'll use other optimizations instead
+    // ppr: true,
   },
   // Add webpack configuration for Node.js modules
   webpack: (config, { dev, isServer }) => {
@@ -73,6 +95,7 @@ const nextConfig = {
         buffer: false,
         events: false,
         process: false,
+        'pg-native': false,
       };
       
       // Ignore specific modules in browser builds
@@ -146,12 +169,29 @@ const nextConfig = {
     // Enable source maps in development but use faster options
     if (process.env.NODE_ENV === 'development') {
       config.devtool = 'eval-source-map';
+      
+      // Increase cache validity for faster rebuilds in development
+      config.cache = {
+        type: 'filesystem',
+        allowCollectingMemory: true,
+        compression: 'gzip',
+        profile: false,
+      };
     }
     
-    // Add tree shaking hint
+    // Add tree shaking hint and optimize modules
     config.module.rules.push({
       test: /\.(js|mjs|jsx|ts|tsx)$/,
       sideEffects: false,
+    });
+    
+    // Optimize chunk loading speed
+    config.optimization.moduleIds = 'deterministic';
+    
+    // Disable webpack processing for large static assets
+    config.module.rules.push({
+      test: /\.(woff|woff2|eot|ttf|otf)$/,
+      type: 'asset/resource',
     });
     
     return config;

@@ -92,6 +92,8 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
   // Function to perform compliance check logic
   const performComplianceCheck = async (showProgress = true) => {
     try {
+      console.log(`Starting compliance check for business ID: ${businessId}, showProgress: ${showProgress}`);
+      
       if (showProgress) {
         // Step 1: Gathering info
         setActiveStep(0)
@@ -101,15 +103,19 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
       
       // Step 2: Checking compliance
       console.log(`Triggering compliance check for business ID: ${businessId}`);
+      
+      let triggerResponse;
       try {
-        const triggerResponse = await triggerComplianceCheck(businessId)
+        triggerResponse = await triggerComplianceCheck(businessId)
         
         if (!triggerResponse.success) {
-          console.error("Failed to trigger compliance check:", triggerResponse.error)
+          console.error(`Failed to trigger compliance check for business ID: ${businessId}:`, triggerResponse.error)
           return false
         }
+        
+        console.log(`Successfully triggered compliance check for business ID: ${businessId}, job ID: ${triggerResponse.jobId}`);
       } catch (error) {
-        console.error("Error triggering compliance check:", error)
+        console.error(`Error triggering compliance check for business ID: ${businessId}:`, error)
         // Continue anyway to show something to the user
       }
       
@@ -125,30 +131,48 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
       
       // Wait for the report to be ready (with polling)
       let retries = 0;
+      const maxRetries = 7;  // Increased from 5 to 7 for better reliability
       let report = await getComplianceReport(businessId);
       
-      // If we get a PENDING status, poll a few times
-      while (report.status === "PENDING" && retries < 5) {
-        await new Promise(resolve => setTimeout(resolve, 1000))
+      console.log(`Initial compliance report for business ID: ${businessId}, status: ${report.status}`);
+      
+      // If we get a PENDING status, poll with exponential backoff
+      while (report.status === "PENDING" && retries < maxRetries) {
+        // Exponential backoff with jitter (1s, 2s, 4s, etc. plus random jitter)
+        const backoffTime = Math.min(1000 * Math.pow(2, retries), 8000) + Math.random() * 500;
+        console.log(`Waiting ${Math.round(backoffTime)}ms before retry ${retries + 1} for business ID: ${businessId}`);
+        
+        await new Promise(resolve => setTimeout(resolve, backoffTime))
         report = await getComplianceReport(businessId)
+        console.log(`Compliance report retry ${retries + 1} for business ID: ${businessId}, status: ${report.status}`);
         retries++
       }
       
-      // Check if authentication is required
+      // Handle authentication required case
       if (report.status === "AUTH_REQUIRED") {
+        console.log(`Authentication required for business ID: ${businessId}`);
+        
         // Find the auth_required issue
         const authIssue = report.issues.find(issue => issue.type === "auth_required");
         if (authIssue) {
-          // Set auth required issues
+          // Stop in step 1 if no login is found, showing clear login required message
+          if (showProgress) {
+            setActiveStep(0) // Reset to step 1 for authentication
+          }
+          
+          // Set auth required issues with clear messaging
           const mappedIssues = [{
             id: authIssue.id || "auth-issue",
             title: "Google Business Profile Login Required",
-            description: authIssue.description || "You need to login to your Google Business Profile",
-            severity: authIssue.severity as "high" | "medium" | "low",
+            description: authIssue.description || 
+                        "You need to login to your Google Business Profile before we can gather compliance data",
+            severity: "high",
             type: "auth_required",
-            suggestedAction: authIssue.suggestedAction || "Please provide your Google Business Profile credentials"
+            suggestedAction: authIssue.suggestedAction || 
+                            "Please provide your Google Business Profile credentials to continue"
           }];
           
+          console.log(`Setting auth required issues for business ID: ${businessId}`);
           setIssues(mappedIssues);
           setIsCompliant(false);
           
@@ -160,14 +184,40 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
         }
       }
       
+      // Check for result status after all retries
+      if (report.status === "PENDING") {
+        console.warn(`Compliance check still pending after ${maxRetries} retries for business ID: ${businessId}`);
+        setIssues([{
+          title: "Check Taking Longer Than Expected",
+          description: "We're still processing your compliance check. Please try again in a few moments.",
+          severity: "medium"
+        }]);
+        setIsCompliant(false);
+        return false;
+      }
+      
+      if (report.status === "ERROR") {
+        console.error(`Compliance check error for business ID: ${businessId}`);
+        const errorIssue = report.issues.find(issue => issue.type === "system_error");
+        setIssues([{
+          title: "System Error",
+          description: errorIssue?.description || "We encountered a problem checking compliance. Please try again later.",
+          severity: "high"
+        }]);
+        setIsCompliant(false);
+        return false;
+      }
+      
       // Use real compliance status from the API response
       const isCompliant = report.status === "PASS";
+      console.log(`Setting compliance status for business ID: ${businessId} to: ${isCompliant}`);
       setIsCompliant(isCompliant)
       
       // If we're compliant, clear issues and reset countdown
       if (isCompliant) {
         setIssues([])
         setCountdown({ minutes: 59, seconds: 59 })
+        console.log(`Business ID: ${businessId} is compliant, cleared issues and reset countdown`);
       } else {
         // Map issues from API to component format with more detailed formatting
         const mappedIssues = report.issues.map(issue => ({
@@ -184,13 +234,14 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
           suggestedAction: issue.suggestedAction
         }));
         
-        console.log("Mapped compliance issues:", mappedIssues);
+        console.log(`Business ID: ${businessId} has ${mappedIssues.length} compliance issues:`, 
+          mappedIssues.map(i => i.title));
         setIssues(mappedIssues);
       }
       
       return isCompliant
     } catch (error) {
-      console.error("Error running compliance check:", error)
+      console.error(`Unexpected error running compliance check for business ID: ${businessId}:`, error)
       // Set default error issue when check fails
       setIssues([{
         title: "System Error",
@@ -219,20 +270,53 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!email || !password) {
-      setAuthError("Please enter both email and password")
+    // Enhanced validation with better error messaging
+    if (!email) {
+      setAuthError("Please enter your email address")
+      return
+    }
+    
+    if (!email.includes('@')) {
+      setAuthError("Please enter a valid email address")
+      return
+    }
+    
+    if (!password) {
+      setAuthError("Please enter your password")
+      return
+    }
+    
+    if (password.length < 6) {
+      setAuthError("Password must be at least 6 characters long")
       return
     }
     
     setIsSubmittingAuth(true)
     setAuthError("")
     
+    console.log(`Submitting GBP credentials for business ID: ${businessId}`)
+    
     try {
-      // Submit credentials to resolve the auth_required issue
-      const result = await resolveComplianceIssue(businessId, currentIssueId || "auth-issue", {
-        issueType: "auth_required",
-        email,
-        password
+      // Use the server API endpoint instead of direct service call
+      const response = await fetch('/api/compliance/auth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          businessId,
+          email,
+          password
+        }),
+      });
+      
+      const result = await response.json();
+      
+      console.log(`Authentication result for business ID ${businessId}:`, { 
+        success: result.success,
+        message: result.message,
+        error: result.error,
+        errorCode: result.errorCode
       })
       
       if (result.success) {
@@ -243,14 +327,44 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
         setEmail("")
         setPassword("")
         
+        // Show a temporary success message
+        setActiveStep(0) // Reset to step 1
+        
         // Re-run the compliance check to get updated status
+        console.log("Authentication successful, running compliance check again")
         await performComplianceCheck(true)
       } else {
-        setAuthError(result.error || "Authentication failed. Please try again.")
+        // Map error codes to detailed, user-friendly messages
+        let errorMessage = result.error || "Authentication failed. Please try again."
+        
+        // Provide more specific error messages based on error codes with troubleshooting steps
+        if (result.errorCode === 'INVALID_CREDENTIALS') {
+          errorMessage = "The email or password you entered is incorrect. Please check your credentials and try again."
+        } else if (result.errorCode === 'ACCOUNT_LOCKED') {
+          errorMessage = "Your account has been temporarily locked due to too many failed attempts. Please try again in 30 minutes or reset your password through Google."
+        } else if (result.errorCode === 'TECHNICAL_ERROR') {
+          errorMessage = "We're experiencing technical difficulties with our authentication service. Our team has been notified and is working on a solution. Please try again in a few minutes."
+        } else if (result.errorCode === 'TIMEOUT') {
+          errorMessage = "Authentication timed out. This could be due to slow internet connection or high server load. Please try again."
+        } else if (result.errorCode === 'BROWSER_LAUNCH_FAILED') {
+          errorMessage = "Failed to initialize the authentication process. This might be a temporary issue with our automation system. Please try again in a few minutes."
+        } else if (result.errorCode === 'UNEXPECTED_ERROR') {
+          errorMessage = "An unexpected error occurred during authentication. This is usually due to a temporary issue with our server. Please try again, and if the problem persists, contact support."
+        } else if (result.errorCode === 'LOGIN_FAILED') {
+          errorMessage = "Failed to log in to Google Business Profile. Please ensure you're using the correct email and password associated with your business profile."
+        }
+        
+        // Add troubleshooting information if not in the INVALID_CREDENTIALS case
+        if (result.errorCode !== 'INVALID_CREDENTIALS') {
+          errorMessage += "\n\nTroubleshooting steps:\n1. Check your internet connection\n2. Try again in a few minutes\n3. Make sure you are using the same Google account that manages your Business Profile"
+        }
+        
+        console.error(`Authentication error for business ID ${businessId}: ${errorMessage}`)
+        setAuthError(errorMessage)
       }
     } catch (error) {
       console.error("Error submitting authentication:", error)
-      setAuthError("An error occurred. Please try again.")
+      setAuthError("An unexpected error occurred. Please try again later.")
     } finally {
       setIsSubmittingAuth(false)
     }
@@ -274,68 +388,103 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
             Please enter your Google Business Profile credentials to continue with the compliance check.
           </p>
           
+          {/* Enhanced error display with icon and more prominence */}
           {authError && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md">
-              {authError}
+            <div className="mb-5 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md flex items-start">
+              <AlertCircle className="h-5 w-5 text-red-500 mr-2 flex-shrink-0 mt-0.5" />
+              <div>
+                {authError.split('\n').map((line, index) => (
+                  <div key={index} className={index > 0 ? "mt-1" : ""}>
+                    {line}
+                    {/* Add a heading style to the troubleshooting section */}
+                    {line === "Troubleshooting steps:" && <hr className="my-1 border-red-200" />}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           
           <form onSubmit={handleAuthSubmit}>
             <div className="space-y-4">
               <div>
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email" className="flex items-center justify-between">
+                  <span>Email</span>
+                  {email && !email.includes('@') && (
+                    <span className="text-red-500 text-xs">Invalid email format</span>
+                  )}
+                </Label>
                 <Input
                   id="email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="youremail@example.com"
-                  className="w-full mt-1"
+                  className={`w-full mt-1 ${email && !email.includes('@') ? 'border-red-300 focus-visible:ring-red-400' : ''}`}
                   disabled={isSubmittingAuth}
+                  autoComplete="email"
+                  required
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Use <code>fail@example.com</code> to test error handling
+                </p>
               </div>
               
               <div>
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password" className="flex items-center justify-between">
+                  <span>Password</span>
+                  {password && password.length < 6 && (
+                    <span className="text-red-500 text-xs">Min. 6 characters</span>
+                  )}
+                </Label>
                 <Input
                   id="password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full mt-1"
+                  className={`w-full mt-1 ${password && password.length < 6 ? 'border-red-300 focus-visible:ring-red-400' : ''}`}
                   disabled={isSubmittingAuth}
+                  autoComplete="current-password"
+                  required
                 />
               </div>
               
-              <div className="flex justify-end space-x-3 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setIsAuthModalOpen(false)
-                    setEmail("")
-                    setPassword("")
-                    setAuthError("")
-                  }}
-                  disabled={isSubmittingAuth}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={isSubmittingAuth}
-                  className={isSubmittingAuth ? "opacity-70" : ""}
-                >
-                  {isSubmittingAuth ? (
-                    <span className="flex items-center">
-                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></span>
-                      Authenticating...
-                    </span>
-                  ) : (
-                    "Submit"
-                  )}
-                </Button>
+              <div className="flex justify-between items-center pt-2">
+                <div className="text-sm">
+                  <p className="text-gray-500">
+                    Your credentials are used only to access your business profile
+                  </p>
+                </div>
+                
+                <div className="flex space-x-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setIsAuthModalOpen(false)
+                      setEmail("")
+                      setPassword("")
+                      setAuthError("")
+                    }}
+                    disabled={isSubmittingAuth}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={isSubmittingAuth || (email && !email.includes('@')) || (password && password.length < 6)}
+                    className={`transition-all duration-200 ${isSubmittingAuth ? "opacity-70" : ""}`}
+                  >
+                    {isSubmittingAuth ? (
+                      <span className="flex items-center">
+                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></span>
+                        Authenticating...
+                      </span>
+                    ) : (
+                      "Submit"
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
           </form>
@@ -496,7 +645,7 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
   }
 
   return (
-    <div className="m-0 p-6 h-full flex flex-col" data-tab="compliance">
+    <div className="m-0 p-6 h-full flex flex-col scrollbar-hide" data-tab="compliance">
       <div className="flex justify-between items-start mb-4">
         <div className="flex-1">
           <div className="flex items-center gap-3">
