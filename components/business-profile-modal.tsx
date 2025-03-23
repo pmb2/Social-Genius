@@ -77,13 +77,13 @@ export default function BusinessProfileModal({
       
       // Close the delete dialog and the modal
       setIsDeleteDialogOpen(false)
-      onClose()
       
       // Show success toast notification
       toast.success(`Business "${business.name}" successfully deleted`)
       
-      // Reload the page to refresh the businesses list
-      window.location.reload()
+      // Close the modal and trigger the parent's onClose which will refresh the businesses list
+      // instead of reloading the entire page
+      onClose()
     } catch (error) {
       console.error('Error deleting business:', error)
       const errorMessage = error instanceof Error ? error.message : 'Failed to delete business'

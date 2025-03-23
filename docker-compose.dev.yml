@@ -7,18 +7,20 @@ services:
       dockerfile: Dockerfile.dev
     volumes:
       - .:/app
-      - /app/node_modules
+      - ./node_modules:/app/node_modules
       - /app/.next
+      - /app/dist
     ports:
       - "3001:3000"
     environment:
       NODE_ENV: development
       # Docker environment flag
       RUNNING_IN_DOCKER: 'true'
-      # Use port 5432 for container-to-container communication (inside Docker network)
+      NEXT_TELEMETRY_DISABLED: 1
+      WATCHPACK_POLLING: "true"
+      # Database connection URLs
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
       DATABASE_URL_DOCKER: postgresql://postgres:postgres@postgres:5432/socialgenius
-      # Use port 5435 for host-to-container communication (from outside Docker)
       DATABASE_URL_HOST: postgresql://postgres:postgres@localhost:5435/socialgenius
       # Auth secret for JWT tokens
       JWT_SECRET: "social-genius-local-dev-secret-9bcd3a80-54a1-11ef-88c4"
@@ -43,7 +45,9 @@ services:
       sh -c "echo 'Waiting for database to be ready...' &&
              sleep 5 &&
              echo 'Starting application...' &&
-             npm run dev"
+             cd /app && 
+             if [ ! -d 'dist' ]; then mkdir -p dist; fi &&
+             NEXT_PUBLIC_HOST=http://localhost:3001 npm run dev"
 
   # PostgreSQL with pgvector for unified database
   postgres:

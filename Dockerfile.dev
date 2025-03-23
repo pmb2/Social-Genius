@@ -36,8 +36,11 @@ RUN apt-get update && apt-get install -y \
 # Copy package information
 COPY package.json package-lock.json ./
 
-# Install dependencies
-RUN npm ci
+# Install dependencies (with legacy peer deps to avoid version conflicts)
+RUN npm ci --legacy-peer-deps
+
+# Make sure the Radix UI dropdown menu is installed
+RUN npm install @radix-ui/react-dropdown-menu
 
 # Install Playwright browsers
 RUN npx playwright install chromium
@@ -61,6 +64,8 @@ RUN mkdir -p /tmp && chmod 777 /tmp
 # Set environment variables
 ENV NODE_ENV=development
 ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV WATCHPACK_POLLING=true
 
 # Ensure Playwright browsers are properly installed and accessible
 RUN chmod -R 755 /root/.cache/ms-playwright

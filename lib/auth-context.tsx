@@ -37,12 +37,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Check if the user is already logged in when the app loads
   useEffect(() => {
     console.log("AuthProvider: Starting initial auth check");
+    let isActive = true; // Track if component is still mounted
     
     const initAuth = async () => {
       try {
         // Add debug for fetch status
         console.log("AuthProvider: Checking session status...");
         const sessionActive = await checkSession();
+        
+        // Only update state if component is still mounted
+        if (!isActive) return;
         
         if (sessionActive) {
           console.log("AuthProvider: Valid session found, user is authenticated");
@@ -51,18 +55,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(null);
         }
       } catch (error) {
+        // Only update state if component is still mounted
+        if (!isActive) return;
+        
         console.error("AuthProvider: Error during initial auth check:", error);
         setUser(null);
       } finally {
+        // Only update state if component is still mounted
+        if (!isActive) return;
+        
         console.log("AuthProvider: Auth check complete, setting loading to false");
         setLoading(false);
       }
     };
     
-    // Short timeout to ensure state updates properly
-    setTimeout(() => {
-      initAuth();
-    }, 500);
+    // Initialize auth without delay
+    initAuth();
+    
+    // Cleanup function to prevent state updates after unmount
+    return () => {
+      isActive = false;
+    };
   }, []);
 
   // Function to check the current session
@@ -79,6 +92,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const timestamp = new Date().getTime();
         const url = `/api/auth/session?t=${timestamp}`;
         
+        // Add debugging for cookies before fetch
+        if (typeof document !== 'undefined') {
+          console.log("Current cookies before fetch:", document.cookie);
+        }
+        
         const response = await fetch(url, {
           method: 'GET',
           headers: {
@@ -86,9 +104,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             'Pragma': 'no-cache',
             'Expires': '0',
           },
-          // Important for cookies - using simpler mode 
-          // to ensure it works across different environments
-          credentials: 'same-origin', 
+          // Important for cookies - using include mode to ensure 
+          // cookies are sent with request in both same-origin and cross-origin scenarios
+          credentials: 'include', 
         });
         
         // Check if response is ok before trying to parse JSON
@@ -106,11 +124,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return false;
         }
         
+        // Verify if cookies were properly set in the response
+        console.log("Response headers:", {
+          'set-cookie': response.headers.get('set-cookie'),
+          'x-set-cookie': response.headers.get('x-set-cookie'),
+        });
+        
         const data = JSON.parse(text);
         console.log("Session data parsed:", data);
         
         if (data.authenticated && data.user) {
           console.log("Valid user found in session:", data.user);
+          // Ensure we only set the user if authenticated
           setUser(data.user);
           return true;
         } else {
@@ -167,7 +192,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(data.user);
           
           // The session cookie is set by the server via Set-Cookie header
-          // We don't need to do anything client-side for that
+          // Don't verify session immediately as it might not be available yet in the browser
+          console.log("Login successful, will redirect to dashboard");
+          
+          // Skip the session check to avoid race condition with cookie setting
           
           return { success: true };
         } else {

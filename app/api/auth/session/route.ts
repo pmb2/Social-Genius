@@ -14,11 +14,15 @@ export async function GET(request: NextRequest) {
       console.log("Session API called for:", request.nextUrl.pathname);
     }
     
-    // Try to get cookie-based session info
-    const sessionCookie = request.cookies.get('session');
+    // Try to get cookie-based session info - check both cookies for compatibility
+    const sessionCookie = request.cookies.get('session') || request.cookies.get('sessionId');
     
     if (!isAssetRequest) {
-      console.log("Session cookie present:", !!sessionCookie);
+      console.log("Session cookies:", {
+        'session': request.cookies.get('session')?.value ? 'present' : 'missing',
+        'sessionId': request.cookies.get('sessionId')?.value ? 'present' : 'missing',
+        'using': sessionCookie?.name
+      });
     }
     
     if (sessionCookie && sessionCookie.value) {

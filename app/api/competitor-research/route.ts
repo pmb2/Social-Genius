@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { performResearch } from "../../../lib/research";
+import { performCompetitorResearch } from "../../../lib/research";
 
 export async function POST(req: NextRequest) {
   try {
@@ -39,8 +39,13 @@ Format the response in Markdown for readability. Make it detailed and profession
       // Log that we're starting the research
       console.log(`Researching ${competitorName} in ${location} for the ${industry} industry.`);
       
-      // Use our shared performResearch function
-      const researchResult = await performResearch(prompt);
+      // Use our shared performCompetitorResearch function
+      const researchResult = await performCompetitorResearch({
+        term: competitorName,
+        industry,
+        location,
+        limit: 5
+      });
       
       return NextResponse.json({ 
         success: true, 

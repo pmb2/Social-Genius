@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogClose, DialogTitle } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import Image from 'next/image';
 import { LogOut, User, Settings, Bell, HelpCircle, X } from 'lucide-react';
 import FeedbackModal from './feedback-modal';
@@ -47,23 +48,62 @@ export function Header() {
             <Bell className="h-5 w-5" />
             <span className="absolute top-0 right-0 h-3 w-3 bg-blue-500 rounded-full"></span>
           </Button>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="rounded-full p-0 h-auto w-auto hover:scale-105 transition-transform"
-            title={user?.email || "User"}
-            onClick={() => setSettingsOpen(true)}
-          >
-            <Image
-              src={user?.profilePicture || "/images/default-avatar.png"}
-              alt="Profile"
-              className="rounded-full w-12 h-12 object-cover border-2 border-white/40"
-              width={48}
-              height={48}
-              style={{ width: "48px", height: "48px" }}
-              priority
-            />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="rounded-full p-0 h-auto w-auto hover:scale-105 transition-transform"
+                title={user?.email || "User"}
+              >
+                <Image
+                  src={user?.profilePicture || "/images/default-avatar.png"}
+                  alt="Profile"
+                  className="rounded-full w-12 h-12 object-cover border-2 border-white/40"
+                  width={48}
+                  height={48}
+                  style={{ width: "48px", height: "48px" }}
+                  priority
+                />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <div className="flex items-center p-2 mb-1">
+                <Image
+                  src={user?.profilePicture || "/images/default-avatar.png"}
+                  alt="Profile"
+                  className="rounded-full w-8 h-8 object-cover mr-2"
+                  width={32}
+                  height={32}
+                />
+                <div className="flex flex-col">
+                  <span className="font-medium text-sm">{user?.name || "User"}</span>
+                  <span className="text-xs text-gray-500 truncate">{user?.email || ""}</span>
+                </div>
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => router.push('/dashboard')}>
+                <User className="mr-2 h-4 w-4" />
+                <span>Profile Settings</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setNotificationsOpen(true)}>
+                <Bell className="mr-2 h-4 w-4" />
+                <span>Notifications</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => {
+                setFeedbackType("feedback");
+                setFeedbackOpen(true);
+              }}>
+                <HelpCircle className="mr-2 h-4 w-4" />
+                <span>Help & Support</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-red-600" onClick={handleLogout}>
+                <LogOut className="mr-2 h-4 w-4" />
+                <span>Sign Out</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

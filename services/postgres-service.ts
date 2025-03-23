@@ -94,6 +94,12 @@ class PostgresService {
   
   // Test database connection
   public async testConnection(): Promise<boolean> {
+    // When running in static build mode, just return true to avoid connection errors
+    if (process.env.NODE_ENV === 'production' && process.env.NEXT_PHASE === 'build-static') {
+      console.log('Skipping database connection check during static build');
+      return true;
+    }
+    
     let client;
     const maxRetries = 3;
     
@@ -1013,6 +1019,44 @@ class PostgresService {
   public async getSessionById(sessionId: string): Promise<any | null> {
     const client = await this.pool.connect();
     try {
+      console.log(`Looking up session with ID: ${sessionId.substring(0, 8)}...`);
+      
+      // First, check if the session exists at all
+      const sessionExists = await client.query(
+        `SELECT EXISTS (
+          SELECT 1 FROM sessions WHERE session_id = $1
+        )`,
+        [sessionId]
+      );
+      
+      if (!sessionExists.rows[0].exists) {
+        console.log(`Session ID ${sessionId.substring(0, 8)}... does not exist`);
+        return null;
+      }
+      
+      // Now check if it's expired
+      const expiredCheck = await client.query(
+        `SELECT expires_at < CURRENT_TIMESTAMP as is_expired 
+         FROM sessions 
+         WHERE session_id = $1`,
+        [sessionId]
+      );
+      
+      if (expiredCheck.rows.length > 0 && expiredCheck.rows[0].is_expired) {
+        console.log(`Session ID ${sessionId.substring(0, 8)}... has expired`);
+        return null;
+      }
+      
+      // First check if profile_picture column exists
+      const profilePictureExists = await client.query(
+        `SELECT EXISTS (
+          SELECT FROM information_schema.columns 
+          WHERE table_schema = 'public' 
+          AND table_name = 'users' 
+          AND column_name = 'profile_picture'
+        )`
+      );
+      
       // Check if phone_number column exists
       const phoneNumberExists = await client.query(
         `SELECT EXISTS (
@@ -1024,16 +1068,32 @@ class PostgresService {
       );
       
       let query;
-      if (phoneNumberExists.rows[0].exists) {
+      // Build query based on which columns exist
+      if (profilePictureExists.rows[0].exists && phoneNumberExists.rows[0].exists) {
         query = `
           SELECT s.id, s.user_id, s.expires_at, u.email, u.name, u.profile_picture, u.phone_number
           FROM sessions s
           JOIN users u ON s.user_id = u.id
           WHERE s.session_id = $1 AND s.expires_at > CURRENT_TIMESTAMP
         `;
-      } else {
+      } else if (profilePictureExists.rows[0].exists) {
         query = `
           SELECT s.id, s.user_id, s.expires_at, u.email, u.name, u.profile_picture
+          FROM sessions s
+          JOIN users u ON s.user_id = u.id
+          WHERE s.session_id = $1 AND s.expires_at > CURRENT_TIMESTAMP
+        `;
+      } else if (phoneNumberExists.rows[0].exists) {
+        query = `
+          SELECT s.id, s.user_id, s.expires_at, u.email, u.name, u.phone_number
+          FROM sessions s
+          JOIN users u ON s.user_id = u.id
+          WHERE s.session_id = $1 AND s.expires_at > CURRENT_TIMESTAMP
+        `;
+      } else {
+        // Fall back to just the basic columns if neither exists
+        query = `
+          SELECT s.id, s.user_id, s.expires_at, u.email, u.name
           FROM sessions s
           JOIN users u ON s.user_id = u.id
           WHERE s.session_id = $1 AND s.expires_at > CURRENT_TIMESTAMP
@@ -1041,6 +1101,12 @@ class PostgresService {
       }
       
       const result = await client.query(query, [sessionId]);
+      
+      if (result.rows.length === 0) {
+        console.log(`Session ID ${sessionId.substring(0, 8)}... exists but user not found or session expired`);
+      } else {
+        console.log(`Found valid session for user ID ${result.rows[0].user_id}`);
+      }
       
       return result.rows.length > 0 ? result.rows[0] : null;
     } catch (error) {
@@ -1094,9 +1160,29 @@ class PostgresService {
   public async addBusinessForUser(userId: number, businessName: string, status: string = 'noncompliant'): Promise<string> {
     const client = await this.pool.connect();
     try {
-      console.log(`Adding business "${businessName}" for user ID: ${userId}`);
+      console.log(`PostgresService: Adding business "${businessName}" for user ID: ${userId} (${typeof userId})`);
       
-      // First, validate that the user exists
+      // Ensure userId is a number
+      if (typeof userId !== 'number') {
+        userId = Number(userId);
+        console.log(`Converting userId to number: ${userId} (${typeof userId})`);
+      }
+      
+      // First, check if businesses table exists
+      const tableCheckResult = await client.query(
+        `SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'businesses'
+        )`
+      );
+      
+      if (!tableCheckResult.rows[0].exists) {
+        console.error('Businesses table does not exist - attempting to initialize database');
+        await this.initialize();
+      }
+      
+      // Now validate that the user exists
       const userCheckResult = await client.query(
         `SELECT id FROM users WHERE id = $1`,
         [userId]

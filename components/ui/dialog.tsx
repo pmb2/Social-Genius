@@ -44,6 +44,42 @@ const DialogContent = React.forwardRef<
 ))
 DialogContent.displayName = DialogPrimitive.Content.displayName
 
+// Add DialogHeader component
+const DialogHeader = ({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) => (
+  <div
+    className={cn("flex flex-col space-y-1.5 text-center sm:text-left px-6 py-4", className)}
+    {...props}
+  />
+)
+DialogHeader.displayName = "DialogHeader"
+
+// Add DialogFooter component
+const DialogFooter = ({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) => (
+  <div
+    className={cn("flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 px-6 py-4", className)}
+    {...props}
+  />
+)
+DialogFooter.displayName = "DialogFooter"
+
+// Add DialogBody component
+const DialogBody = ({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) => (
+  <div
+    className={cn("px-6 py-4", className)}
+    {...props}
+  />
+)
+DialogBody.displayName = "DialogBody"
+
 export { 
   Dialog, 
   DialogTrigger, 
@@ -52,6 +88,8 @@ export {
   DialogOverlay, 
   DialogPortal,
   DialogTitle,
-  DialogDescription
+  DialogDescription,
+  DialogHeader,
+  DialogFooter,
+  DialogBody
 }
-

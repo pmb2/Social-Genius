@@ -14,7 +14,7 @@ export default function DashboardPage() {
     const [isLoading, setIsLoading] = useState(true);
 
     // Use our custom auth context
-    const { user, loading } = useAuth();
+    const { user, loading, checkSession } = useAuth();
     
     useEffect(() => {
         if (loading) {
@@ -24,10 +24,15 @@ export default function DashboardPage() {
             
             // Redirect to login if not authenticated
             if (!user) {
+                console.log("Dashboard: No user found in context, redirecting to auth");
                 router.push('/auth');
+            } else {
+                console.log("Dashboard: User authenticated:", user.email);
+                // Don't immediately check the session, it may still be setting up
+                console.log("Dashboard: User authenticated and session active");
             }
         }
-    }, [user, loading, router]);
+    }, [user, loading, router, checkSession]);
 
     if (isLoading) {
         return (

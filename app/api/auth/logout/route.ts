@@ -22,10 +22,25 @@ export async function POST(req: NextRequest) {
       { status: 200 }
     );
     
-    // Clear session cookie by setting an expired date
+    // Clear both session and sessionId cookies by setting an expired date
+    // Use the same cookie settings as when setting them
     response.cookies.set({
       name: 'session',
       value: '',
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      expires: new Date(0),
+      path: '/'
+    });
+    
+    // Also clear sessionId cookie for compatibility
+    response.cookies.set({
+      name: 'sessionId',
+      value: '',
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
       expires: new Date(0),
       path: '/'
     });

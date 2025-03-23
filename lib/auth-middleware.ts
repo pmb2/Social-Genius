@@ -11,6 +11,14 @@ export async function authMiddleware(
   // Get the session ID from cookies - check both "session" and "sessionId" for compatibility
   const sessionId = req.cookies.get('session')?.value || req.cookies.get('sessionId')?.value;
   
+  // Debug session cookies
+  console.log('Auth middleware cookies:', {
+    hasCookies: req.cookies.size > 0,
+    sessionCookie: req.cookies.get('session')?.value ? 'Present' : 'Missing',
+    sessionIdCookie: req.cookies.get('sessionId')?.value ? 'Present' : 'Missing',
+    usedCookie: sessionId ? 'Found' : 'Not found'
+  });
+  
   if (!sessionId) {
     // Return proper JSON response
     return NextResponse.json({
@@ -20,11 +28,22 @@ export async function authMiddleware(
   }
   
   // Verify session
-  const session = await authService.verifySession(sessionId);
+  console.log(`Auth middleware - Attempting to verify session for ID: ${sessionId.substring(0, 8)}...`);
   
-  // Debug session verification
-  console.log(`Auth middleware - Session verification result:`, 
-    session ? `Valid session for user ${session.user_id}` : 'Invalid session');
+  let session;
+  try {
+    session = await authService.verifySession(sessionId);
+    
+    // Debug session verification
+    console.log(`Auth middleware - Session verification result:`, 
+      session ? `Valid session for user ${session.user_id}` : 'Invalid session');
+  } catch (sessionError) {
+    console.error('Session verification error:', sessionError);
+    return NextResponse.json({
+      success: false,
+      error: 'Session verification error'
+    }, { status: 401 });
+  }
   
   if (!session) {
     // Return proper JSON response for invalid session

@@ -75,14 +75,22 @@ export async function POST(req: NextRequest) {
       // Set the session cookie
       const sessionId = loginResult.user.sessionId;
       
-      // Set both cookie names for compatibility
+      // Debug the environment
+      console.log('Setting cookies with environment:', {
+        nodeEnv: process.env.NODE_ENV,
+        isDev: process.env.NODE_ENV !== 'production',
+        protocol: req.headers.get('x-forwarded-proto') || 'http', 
+        host: req.headers.get('host'),
+      });
+      
+      // Set both cookie names for compatibility - with more relaxed settings for development
       response.cookies.set({
         name: 'session',
         value: sessionId,
         httpOnly: true,
         path: '/',
-        sameSite: 'lax', // More compatible with iframe situations
-        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'none', // Allow cross-site usage
+        secure: true, // Always use secure in modern browsers
         maxAge: 30 * 24 * 60 * 60 // 30 days in seconds
       });
       
@@ -92,8 +100,8 @@ export async function POST(req: NextRequest) {
         value: sessionId,
         httpOnly: true,
         path: '/',
-        sameSite: 'lax', // More compatible with iframe situations
-        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'none', // Allow cross-site usage
+        secure: true, // Always use secure in modern browsers
         maxAge: 30 * 24 * 60 * 60 // 30 days in seconds
       });
       

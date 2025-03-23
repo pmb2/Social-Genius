@@ -253,15 +253,26 @@ class AuthService {
         return null;
       }
       
+      // Create user object with only the fields that exist in the session/user objects
+      const userObj = {
+        id: user.id,
+        email: user.email,
+        name: user.name || ""
+      };
+      
+      // Only add profile_picture if it exists
+      if (user.profile_picture !== undefined) {
+        userObj['profilePicture'] = user.profile_picture;
+      }
+      
+      // Only add phone_number if it exists
+      if (user.phone_number !== undefined) {
+        userObj['phoneNumber'] = user.phone_number;
+      }
+      
       return {
         ...session,
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          profilePicture: session.profile_picture,
-          phoneNumber: session.phone_number
-        }
+        user: userObj
       };
     } catch (error) {
       console.error('Session verification error:', error);
@@ -305,13 +316,14 @@ class AuthService {
   } {
     const expires = new Date(Date.now() + expiresIn);
     
+    // Use consistent cookie name 'session' for both Next.js and auth routes
     return {
-      name: 'sessionId',
+      name: 'session',
       value: '', // This will be set by the caller
       options: {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        secure: true, // Always use secure cookies
+        sameSite: 'none', // Allow cross-site usage
         expires,
         path: '/'
       }
@@ -321,11 +333,29 @@ class AuthService {
   // Add business for user
   public async addBusiness(userId: number, businessName: string): Promise<{ success: boolean, businessId?: string, error?: string }> {
     try {
-      const businessId = await this.db.addBusinessForUser(userId, businessName);
+      console.log(`AuthService: Adding business "${businessName}" for user ID ${userId}`);
+      
+      // Validate inputs
+      if (!userId || isNaN(userId)) {
+        console.error(`Invalid userId: ${userId}`);
+        return { success: false, error: 'Invalid user ID' };
+      }
+      
+      if (!businessName || typeof businessName !== 'string' || !businessName.trim()) {
+        console.error(`Invalid business name: ${businessName}`);
+        return { success: false, error: 'Invalid business name' };
+      }
+      
+      // Try to add the business
+      const businessId = await this.db.addBusinessForUser(userId, businessName.trim());
+      console.log(`AuthService: Business created successfully with ID: ${businessId}`);
       return { success: true, businessId };
     } catch (error) {
       console.error('Add business error:', error);
-      return { success: false, error: 'Failed to add business' };
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to add business' 
+      };
     }
   }
 

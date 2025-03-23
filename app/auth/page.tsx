@@ -60,8 +60,11 @@ export default function AuthPage() {
                 setError(result.error || 'Login failed');
                 setIsLoading(false);
             } else {
-                // Login successful - redirect to dashboard
-                router.push('/dashboard');
+                // Login successful - add longer delay before redirect to allow cookies to be set
+                console.log("Login successful - redirecting to dashboard in 1500ms...");
+                setTimeout(() => {
+                    router.push('/dashboard');
+                }, 1500);
             }
         } catch (error) {
             console.error('Login error:', error);

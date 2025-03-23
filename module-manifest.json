@@ -1,0 +1,95 @@
+{
+  "modules": [
+    {
+      "path": "@/components/profile-settings-tile",
+      "file": "components/profile-settings-tile.tsx"
+    },
+    {
+      "path": "@/components/notification-settings-tile",
+      "file": "components/notification-settings-tile.tsx"
+    },
+    {
+      "path": "@/components/feedback-button",
+      "file": "components/feedback-button.tsx"
+    },
+    {
+      "path": "@/components/feedback-modal",
+      "file": "components/feedback-modal.tsx"
+    },
+    {
+      "path": "@/components/header",
+      "file": "components/header.tsx"
+    },
+    {
+      "path": "@/components/notifications",
+      "file": "components/notifications.tsx"
+    },
+    {
+      "path": "@/components/ui/dropdown-menu",
+      "file": "components/ui/dropdown-menu.tsx"
+    },
+    {
+      "path": "@/components/ui/dropdown-menu-lite",
+      "file": "components/ui/dropdown-menu-lite.tsx"
+    },
+    {
+      "path": "@/components/ui/card",
+      "file": "components/ui/card.tsx"
+    },
+    {
+      "path": "@/components/ui/dialog",
+      "file": "components/ui/dialog.tsx"
+    },
+    {
+      "path": "@/components/ui/tabs",
+      "file": "components/ui/tabs.tsx"
+    },
+    {
+      "path": "@/lib/toast",
+      "file": "lib/toast.ts"
+    },
+    {
+      "path": "@/lib/toast-provider",
+      "file": "lib/toast-provider.tsx"
+    },
+    {
+      "path": "@/lib/utils",
+      "file": "lib/utils.ts"
+    },
+    {
+      "path": "@/lib/auth-context",
+      "file": "lib/auth-context.tsx"
+    },
+    {
+      "path": "@/lib/compliance",
+      "file": "lib/compliance/index.ts"
+    },
+    {
+      "path": "@/lib/compliance/models",
+      "file": "lib/compliance/models.ts"
+    },
+    {
+      "path": "@/lib/compliance/auth-service",
+      "file": "lib/compliance/auth-service.ts"
+    },
+    {
+      "path": "@/lib/research",
+      "file": "lib/research/index.ts"
+    }
+  ],
+  "requiredPackages": [
+    "@radix-ui/react-dropdown-menu",
+    "@radix-ui/react-dialog",
+    "@radix-ui/react-tabs",
+    "@radix-ui/react-select",
+    "@radix-ui/react-label",
+    "@radix-ui/react-radio-group",
+    "@radix-ui/react-slider",
+    "@radix-ui/react-switch",
+    "sonner",
+    "lucide-react",
+    "clsx",
+    "tailwind-merge",
+    "uuid"
+  ]
+}

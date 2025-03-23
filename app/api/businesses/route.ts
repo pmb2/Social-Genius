@@ -136,6 +136,15 @@ export const POST = createAuthRoute(async (req: NextRequest, userId: number) => 
   try {
     console.log(`Creating new business for user ID: ${userId}`);
     
+    // Double check user id
+    if (!userId) {
+      console.error('POST business: userId is null or undefined');
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Invalid or expired session' 
+      }, { status: 401 });
+    }
+    
     // Get auth service
     const authService = AuthService.getInstance();
     
@@ -165,9 +174,20 @@ export const POST = createAuthRoute(async (req: NextRequest, userId: number) => 
     
     // Create business in database
     try {
+      console.log(`Creating business for user ${userId} with name "${name}"`);
+      
+      // Ensure userId is a number
+      if (typeof userId !== 'number') {
+        console.error(`Invalid userId type: ${typeof userId}. Converting to number.`);
+        userId = Number(userId);
+      }
+      
+      // Create the business
       const result = await authService.addBusiness(userId, name);
+      console.log('Business creation result:', result);
       
       if (!result.success) {
+        console.error(`Failed to add business: ${result.error}`);
         return NextResponse.json({
           success: false,
           error: result.error || 'Failed to add business'
@@ -178,6 +198,7 @@ export const POST = createAuthRoute(async (req: NextRequest, userId: number) => 
       businessesCache.delete(userId);
       
       // Return success with the new business ID
+      console.log(`Business created successfully with ID: ${result.businessId}`);
       return NextResponse.json({
         success: true,
         businessId: result.businessId

@@ -37,6 +37,7 @@ RUN apt-get update && apt-get install -y \
 # Copy package files
 COPY package.json package-lock.json ./
 RUN npm ci
+RUN npm install @radix-ui/react-dropdown-menu
 
 # Install Playwright browsers
 RUN npx playwright install chromium

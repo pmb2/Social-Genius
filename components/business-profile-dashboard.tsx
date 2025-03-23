@@ -48,7 +48,7 @@ export function BusinessProfileDashboard() {
   }, []);
   
   // Function to fetch businesses from API with caching
-  const fetchBusinesses = async () => {
+  const fetchBusinesses = async (skipCache = false) => {
     try {
       setIsLoading(true);
       setError(null);
@@ -56,15 +56,15 @@ export function BusinessProfileDashboard() {
       // Generate cache key based on the current user (would be better with user ID)
       const cacheKey = 'user_businesses_cache';
       
-      // Try to get from session storage cache first (client-side only)
+      // Try to get from session storage cache first (client-side only) if not skipping cache
       let cachedData = null;
-      if (typeof window !== 'undefined') {
+      if (!skipCache && typeof window !== 'undefined') {
         try {
           const cachedJson = sessionStorage.getItem(cacheKey);
           if (cachedJson) {
             const cached = JSON.parse(cachedJson);
-            // Use cache if it's less than 5 minutes old
-            if (cached && cached.timestamp && (Date.now() - cached.timestamp < 5 * 60 * 1000)) {
+            // Use cache if it's less than 1 minute old (reduced from 5 minutes)
+            if (cached && cached.timestamp && (Date.now() - cached.timestamp < 60 * 1000)) {
               cachedData = cached.data;
             }
           }
@@ -74,7 +74,7 @@ export function BusinessProfileDashboard() {
       }
       
       // If we have valid cached data, use it
-      if (cachedData) {
+      if (!skipCache && cachedData) {
         console.log(`Using cached businesses data (${cachedData.businesses?.length || 0} items)`);
         if (cachedData.businesses) {
           // Sort businesses by creation date (newest first)
@@ -102,12 +102,23 @@ export function BusinessProfileDashboard() {
         }
       });
       
+      const data = await response.json();
+      
       if (!response.ok) {
         console.error(`Error response from businesses API: ${response.status} ${response.statusText}`);
+        
+        // If authentication error, try to refresh the session
+        if (response.status === 401 && (data.error === 'Invalid or expired session' || data.error === 'Authentication required')) {
+          console.log('Authentication error detected during fetch, redirecting to login page');
+          // Redirect to login page after a short delay to let user see error
+          setTimeout(() => {
+            window.location.href = '/auth?session=expired';
+          }, 500);
+          throw new Error('Session expired. Please log in again.');
+        }
+        
         throw new Error(`Failed to fetch businesses: ${response.status} ${response.statusText}`);
       }
-      
-      const data = await response.json();
       console.log(`Fetched ${data.businesses?.length || 0} businesses from API`);
       
       // Save to session storage cache
@@ -154,7 +165,11 @@ export function BusinessProfileDashboard() {
         return;
       }
       
+      // Show a loading state
+      setIsLoading(true);
+      
       // Call the API to add the business
+      console.log('Sending request to /api/businesses endpoint');
       const response = await fetch('/api/businesses', {
         method: 'POST',
         headers: {
@@ -169,9 +184,35 @@ export function BusinessProfileDashboard() {
         }),
       });
       
+      console.log(`Received response with status: ${response.status}`);
       const data = await response.json();
+      console.log('Response data:', data);
       
       if (!response.ok) {
+        // If authentication error, try to refresh the session
+        if (response.status === 401 && (data.error === 'Invalid or expired session' || data.error === 'Authentication required')) {
+          console.log('Authentication error detected, trying to refresh session...');
+          
+          // Use the imported hook to check session
+          // Try to check session from the API
+          const sessionResponse = await fetch('/api/auth/session?t=' + new Date().getTime(), {
+            method: 'GET',
+            headers: {
+              'Cache-Control': 'no-cache',
+            },
+            credentials: 'include',
+          });
+          
+          if (!sessionResponse.ok) {
+            console.error('Session refresh failed, redirecting to login');
+            // Redirect to login page
+            window.location.href = '/auth?session=expired';
+            return;
+          }
+          
+          throw new Error('Session error. Please try again.');
+        }
+        
         throw new Error(data.error || 'Failed to add business');
       }
       
@@ -182,13 +223,21 @@ export function BusinessProfileDashboard() {
       setBusinessEmail("");
       setIsAddBusinessModalOpen(false);
       
-      // Refresh the business list with a slight delay to ensure server processes are complete
+      // Refresh the business list with a delay to ensure server processes are complete
       setTimeout(() => {
-        fetchBusinesses();
-      }, 300);
+        console.log('Refreshing businesses list after adding new business');
+        // Skip cache to force a fresh fetch
+        fetchBusinesses(true);
+      }, 1000);
+      
+      // Show a success message
+      alert('Business added successfully!');
     } catch (err) {
       console.error('Error adding business:', err);
       alert(`Failed to add business: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      // Always reset loading state, even if there was an error
+      setIsLoading(false);
     }
   }
 
@@ -380,7 +429,8 @@ export function BusinessProfileDashboard() {
         setIsModalOpen(open);
         // Refresh businesses list when modal is closed to reflect any changes
         if (!open) {
-          fetchBusinesses();
+          // Skip cache to ensure we get fresh data
+          fetchBusinesses(true);
         }
       }}>
         <DialogContent className="p-0 max-w-[1200px] w-[95vw] h-[95vh] max-h-[92vh] overflow-hidden" aria-describedby="profile-modal-description">
@@ -389,9 +439,11 @@ export function BusinessProfileDashboard() {
             Business profile details and management interface
           </div>
           <BusinessProfileModal business={selectedBusiness} onClose={() => {
+            console.log("Business profile modal closed - refreshing business list");
+            // Close the modal
             handleClose();
-            // Also refresh businesses when modal is closed via the close button
-            fetchBusinesses();
+            // Refresh businesses list immediately - force skipping cache
+            fetchBusinesses(true);
           }} />
         </DialogContent>
       </Dialog>

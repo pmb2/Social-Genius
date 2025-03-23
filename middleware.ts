@@ -33,8 +33,15 @@ export async function middleware(request: NextRequest) {
   if (isPublicRoute) {
     response = NextResponse.next();
   } else {
-    // Get session cookie
-    const sessionCookie = request.cookies.get('session')?.value;
+    // Get session cookie (check both 'session' and 'sessionId' for compatibility)
+    const sessionCookie = request.cookies.get('session')?.value || request.cookies.get('sessionId')?.value;
+    
+    // Debug cookie information
+    console.log(`Middleware - Cookies for ${pathname}:`, {
+      'session': request.cookies.get('session')?.value ? 'present' : 'missing',
+      'sessionId': request.cookies.get('sessionId')?.value ? 'present' : 'missing',
+      'usingCookie': sessionCookie ? 'found' : 'not found'
+    });
     
     // If there's no session cookie and it's not a public route, redirect to auth page
     if (!sessionCookie) {

@@ -7,6 +7,15 @@ import AuthService from '@/services/auth-service';
 // Specify that this route runs on the Node.js runtime, not Edge
 export const runtime = 'nodejs';
 
+// This dynamic API route cannot be statically generated
+// Next.js requires this when using output: 'export'
+// But we're using output: 'standalone' which supports dynamic API routes
+// export async function generateStaticParams() {
+// This function tells Next.js not to try static generation for [...nextauth]
+export function generateStaticParams() {
+  return []
+}
+
 export const authOptions: AuthOptions = {
   providers: [
     CredentialsProvider({
