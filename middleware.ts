@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+// Add global type for our auth log tracking
+declare global {
+  var __lastAuthLog: Record<string, number>;
+}
+
 // Public routes that don't require authentication
 const publicRoutes = [
   '/auth',
@@ -36,12 +41,35 @@ export async function middleware(request: NextRequest) {
     // Get session cookie (check both 'session' and 'sessionId' for compatibility)
     const sessionCookie = request.cookies.get('session')?.value || request.cookies.get('sessionId')?.value;
     
-    // Debug cookie information
-    console.log(`Middleware - Cookies for ${pathname}:`, {
-      'session': request.cookies.get('session')?.value ? 'present' : 'missing',
-      'sessionId': request.cookies.get('sessionId')?.value ? 'present' : 'missing',
-      'usingCookie': sessionCookie ? 'found' : 'not found'
-    });
+    // Debug cookie information - only log this in development with debug flag and throttle frequency
+    if (process.env.NODE_ENV === 'development' && 
+        process.env.DEBUG_AUTH === 'true' &&
+        (pathname.endsWith('/dashboard') || pathname.includes('/api/businesses') || !pathname.includes('/_next'))) {
+      
+      // We'll create a timestamp-based throttling system here to avoid excessive logs
+      const now = Date.now();
+      const authLogKey = 'last_auth_middleware_log'; 
+      
+      // Only log once every 3 minutes per path (or use global storage in actual code)
+      // Note: In middleware, we have limited storage options, so this is simplified
+      if (!global.__lastAuthLog) {
+        global.__lastAuthLog = {};
+      }
+      
+      const pathKey = pathname.split('?')[0];
+      const lastLog = global.__lastAuthLog[pathKey] || 0;
+      
+      // Log only if we haven't logged this path in the last 3 minutes
+      if (now - lastLog > 3 * 60 * 1000) {
+        // Use a session hash to identify without logging the actual session value
+        const sessionHash = sessionCookie ? sessionCookie.substring(0, 8) : 'none';
+        const timestamp = new Date().toISOString().split('T')[1].substring(0, 8);
+        console.log(`[AUTH ${timestamp}] Check for ${pathKey} with session: ${sessionHash}...`);
+        
+        // Update the last log time for this path
+        global.__lastAuthLog[pathKey] = now;
+      }
+    }
     
     // If there's no session cookie and it's not a public route, redirect to auth page
     if (!sessionCookie) {
@@ -54,7 +82,7 @@ export async function middleware(request: NextRequest) {
     response = NextResponse.next();
   }
   
-  // Add cache control headers for static assets and optimize caching
+  // Add cache control headers and security headers
   if (
     pathname.includes('/_next/static') || 
     pathname.includes('/static/') ||
@@ -75,6 +103,20 @@ export async function middleware(request: NextRequest) {
   } else if (isPublicRoute && pathname !== '/auth') {
     // Public routes (except auth) - cache for a short time with revalidation
     response.headers.set('Cache-Control', 'public, max-age=300, s-maxage=600, stale-while-revalidate=59');
+  }
+  
+  // Add security headers to all responses
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  response.headers.set('X-XSS-Protection', '1; mode=block');
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  
+  // Add a more permissive Content-Security-Policy for non-API routes during development
+  if (!pathname.startsWith('/api/')) {
+    const cspValue = process.env.NODE_ENV === 'production' 
+      ? "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://*.stripe.com https://*.openai.com https://*.groq.com https://*.amazonaws.com"
+      : "default-src * 'unsafe-inline' 'unsafe-eval'; script-src * 'unsafe-inline' 'unsafe-eval'; connect-src * 'unsafe-inline'; img-src * data: blob: 'unsafe-inline'; frame-src *; style-src * 'unsafe-inline'";
+    
+    response.headers.set('Content-Security-Policy', cspValue);
   }
   
   return response;

@@ -3,6 +3,8 @@
 import React, { useEffect } from 'react';
 import { AuthProvider } from '@/lib/auth-context';
 import { ToastProvider } from '@/lib/toast-provider';
+// Import log suppressor to reduce console spam
+import '@/lib/utilities/log-suppressor';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   // Performance optimization - clear query caches and run garbage collection when tab becomes invisible

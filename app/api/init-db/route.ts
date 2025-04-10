@@ -22,9 +22,37 @@ async function initDb(req: NextRequest) {
     console.log('DATABASE INITIALIZATION TRIGGERED VIA API');
     console.log('============================================');
     
+    // Force disable native pg
+    process.env.NODE_PG_FORCE_NATIVE = '0';
+    
+    // Enable debug logging
+    process.env.DEBUG_DATABASE = 'true';
+    process.env.PG_DEBUG = 'true';
+    
+    // Load pg patch first to ensure it's applied
+    try {
+      require('@/pg-patch.cjs');
+      console.log('✅ pg-patch applied successfully');
+    } catch (patchError) {
+      console.error('Failed to apply pg-patch:', patchError);
+    }
+    
     // Check for Docker environment
     const inDocker = process.env.RUNNING_IN_DOCKER === 'true';
     console.log(`Running in Docker: ${inDocker}`);
+    
+    // Print environment variables for debugging
+    console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
+    console.log('DATABASE_URL_DOCKER:', process.env.DATABASE_URL_DOCKER ? 'SET' : 'NOT SET');
+    
+    // Set explicit connection string based on environment
+    if (inDocker) {
+      process.env.DATABASE_URL = 'postgresql://postgres:postgres@postgres:5432/socialgenius';
+      console.log('Using Docker database connection');
+    } else {
+      process.env.DATABASE_URL = 'postgresql://postgres:postgres@localhost:5435/socialgenius';
+      console.log('Using local database connection');
+    }
     
     // Get database service (but don't reset connection - let our improved logic handle it)
     const dbService = PostgresService.getInstance();

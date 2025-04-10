@@ -21,17 +21,25 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        DATABASE_URL: postgresql://postgres:postgres@postgres:5435/socialgenius
+        DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
     depends_on:
       - postgres
     ports:
       - "3000:3000"
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5435/socialgenius
+      RUNNING_IN_DOCKER: 'true'
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
+      DATABASE_URL_DOCKER: postgresql://postgres:postgres@postgres:5432/socialgenius
       NEXTAUTH_URL: https://localhost
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-your-secure-nextauth-secret}
+      NODE_PG_FORCE_NATIVE: '0'
     restart: unless-stopped
+    command: >
+      sh -c "
+        node node_modules_patch.cjs &&
+        npm start
+      "
     networks:
       - social_genius_network
 
@@ -39,7 +47,7 @@ services:
   postgres:
     image: pgvector/pgvector:pg14
     ports:
-      - "5435:5432"
+      - "5435:5432"  # Maps host port 5435 to container port 5432
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres

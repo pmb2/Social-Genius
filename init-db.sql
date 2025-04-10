@@ -44,6 +44,10 @@ CREATE TABLE IF NOT EXISTS businesses (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   status TEXT DEFAULT 'noncompliant',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  auth_status TEXT DEFAULT 'pending',
+  browser_instance TEXT,
+  credentials JSONB,
+  last_login TIMESTAMP WITH TIME ZONE,
   UNIQUE (business_id, user_id)
 );
 

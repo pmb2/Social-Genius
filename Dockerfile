@@ -126,7 +126,9 @@ RUN chmod -R 755 /root/.cache/ms-playwright
 # Switch back to nextjs user
 USER nextjs
 
-# Run the application
+# Run the application with patched PostgreSQL modules
 EXPOSE 3000
 ENV PORT 3000
-CMD ["node", "server.js"]
+
+# Apply pg patches and run server
+CMD ["sh", "-c", "node node_modules_patch.cjs && node -e \"require('./pg-patch.cjs'); console.log('✅ PG patches applied before server start')\" && node server.js"]

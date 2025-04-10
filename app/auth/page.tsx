@@ -23,7 +23,14 @@ export default function AuthPage() {
     // Check for HTTP protocol - in useEffect to avoid hydration mismatch
     useEffect(() => {
         if (typeof window !== 'undefined') {
-            setIsHttpWarning(window.location.protocol === 'http:');
+            // Check security of connection
+            setIsHttpWarning(window.location.protocol === 'http:' && window.location.hostname !== 'localhost');
+            
+            // Clear any URL parameters that might contain sensitive data
+            if (window.location.search) {
+                // If there are query parameters in the URL, remove them without reloading the page
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
         }
     }, []);
 

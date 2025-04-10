@@ -6,6 +6,10 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/compone
 import { Button } from "@/components/ui/button"
 import { ProgressCircle } from "./progress-circle"
 import { StatusIndicator } from "./status-indicator"
+import { SubscriptionUpgradeModal } from "./subscription/subscription-upgrade-modal"
+import { useAuth } from "@/lib/auth-context"
+import { subscriptionPlans } from "@/lib/subscription/plans"
+import { encryptPassword } from "@/lib/utilities/password-encryption"
 // Import specific icons instead of the whole library to reduce bundle size
 import PlusIcon from "lucide-react/dist/esm/icons/plus"
 import MailIcon from "lucide-react/dist/esm/icons/mail"
@@ -29,11 +33,14 @@ type Business = {
   name: string;
   status: string;
   createdAt: string;
+  authStatus?: 'logged_in' | 'pending' | 'failed';
+  browserInstance?: string;
 }
 
 export function BusinessProfileDashboard() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isAddBusinessModalOpen, setIsAddBusinessModalOpen] = useState(false)
+  const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false)
   const [businessName, setBusinessName] = useState("")
   const [businessEmail, setBusinessEmail] = useState("")
   const [businessType, setBusinessType] = useState("google") // "google" or "invite"
@@ -41,14 +48,54 @@ export function BusinessProfileDashboard() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null)
+  const [limitError, setLimitError] = useState<{
+    currentSubscription: string;
+    requiredSubscription: string;
+    currentCount: number;
+    maxAllowed: number;
+  } | null>(null);
   
-  // Fetch businesses on component mount
-  useEffect(() => {
-    fetchBusinesses();
-  }, []);
+  // Google Auth related states
+  const [googleEmail, setGoogleEmail] = useState("")
+  const [googlePassword, setGooglePassword] = useState("")
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false)
+  const [authError, setAuthError] = useState("")
+  const [isGoogleAuthStep, setIsGoogleAuthStep] = useState(false)
+  const [autoLoginAttempted, setAutoLoginAttempted] = useState(false)
   
-  // Function to fetch businesses from API with caching
-  const fetchBusinesses = async (skipCache = false) => {
+  // Auth and subscription data
+  const { user } = useAuth();
+  const userSubscription = user?.subscription || 'basic';
+  const currentPlan = subscriptionPlans.find(plan => plan.id === userSubscription) || subscriptionPlans[0];
+  const locationLimit = currentPlan.locationRange.max;
+  
+  // Controlled logging function that respects environment and logs with timestamps
+  const log = (message: string, level: 'info' | 'error' | 'warn' = 'info'): void => {
+    const isDev = process.env.NODE_ENV === 'development';
+    const debugBusiness = process.env.DEBUG_BUSINESS === 'true';
+    
+    // Determine if we should log
+    const shouldLog = level === 'error' || // Always log errors
+                      (isDev && level === 'warn') || // Log warnings in dev
+                      (isDev && debugBusiness && level === 'info'); // Only log info if debug flag is on
+    
+    if (!shouldLog) return;
+    
+    // Add timestamp to message
+    const timestamp = new Date().toISOString().split('T')[1].substring(0, 8);
+    const prefix = `[BUSINESS ${timestamp}]`;
+    
+    if (level === 'error') {
+      console.error(`${prefix} ${message}`);
+    } else if (level === 'warn') {
+      console.warn(`${prefix} ${message}`);
+    } else {
+      console.log(`${prefix} ${message}`);
+    }
+  };
+  
+  // Function to fetch businesses from API with caching - memoized to avoid dependency issues
+  const fetchBusinesses = useCallback(async (skipCache = false) => {
     try {
       setIsLoading(true);
       setError(null);
@@ -69,16 +116,28 @@ export function BusinessProfileDashboard() {
             }
           }
         } catch (e) {
-          console.warn('Error reading from cache:', e);
+          log('Error reading from cache: ' + String(e), 'warn');
         }
       }
       
       // If we have valid cached data, use it
       if (!skipCache && cachedData) {
-        console.log(`Using cached businesses data (${cachedData.businesses?.length || 0} items)`);
+        // Only log when debug is enabled
+        if (cachedData.businesses?.length > 0) {
+          log(`Using cached businesses data (${cachedData.businesses.length} items)`, 'info');
+        }
+        
         if (cachedData.businesses) {
-          // Sort businesses by creation date (newest first)
+          
+          // Sort businesses with priority:
+          // 1. Failed auth status first (need attention)
+          // 2. Then by creation date (newest first)
           const sortedBusinesses = [...cachedData.businesses].sort((a, b) => {
+            // First sort by auth status - failed auth businesses first
+            if (a.authStatus === 'failed' && b.authStatus !== 'failed') return -1;
+            if (a.authStatus !== 'failed' && b.authStatus === 'failed') return 1;
+            
+            // Then sort by creation date (newest first)
             return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
           });
           
@@ -89,7 +148,7 @@ export function BusinessProfileDashboard() {
       }
       
       // If no cache or expired, fetch from API
-      console.log('Fetching businesses for current user...');
+      log('Fetching businesses for current user...', 'info');
       
       // Add cache-busting parameter and cache control
       const timestamp = new Date().getTime();
@@ -105,11 +164,11 @@ export function BusinessProfileDashboard() {
       const data = await response.json();
       
       if (!response.ok) {
-        console.error(`Error response from businesses API: ${response.status} ${response.statusText}`);
+        log(`Error response from businesses API: ${response.status} ${response.statusText}`, 'error');
         
         // If authentication error, try to refresh the session
         if (response.status === 401 && (data.error === 'Invalid or expired session' || data.error === 'Authentication required')) {
-          console.log('Authentication error detected during fetch, redirecting to login page');
+          log('Authentication error detected during fetch, redirecting to login page', 'error');
           // Redirect to login page after a short delay to let user see error
           setTimeout(() => {
             window.location.href = '/auth?session=expired';
@@ -119,7 +178,7 @@ export function BusinessProfileDashboard() {
         
         throw new Error(`Failed to fetch businesses: ${response.status} ${response.statusText}`);
       }
-      console.log(`Fetched ${data.businesses?.length || 0} businesses from API`);
+      log(`Fetched ${data.businesses?.length || 0} businesses from API`, 'info');
       
       // Save to session storage cache
       if (typeof window !== 'undefined') {
@@ -129,13 +188,20 @@ export function BusinessProfileDashboard() {
             timestamp: Date.now()
           }));
         } catch (e) {
-          console.warn('Error writing to cache:', e);
+          log('Error writing to cache: ' + String(e), 'warn');
         }
       }
       
       if (data.businesses) {
-        // Sort businesses by creation date (newest first)
+        // Sort businesses with priority:
+        // 1. Failed auth status first (need attention)
+        // 2. Then by creation date (newest first)
         const sortedBusinesses = [...data.businesses].sort((a, b) => {
+          // First sort by auth status - failed auth businesses first
+          if (a.authStatus === 'failed' && b.authStatus !== 'failed') return -1;
+          if (a.authStatus !== 'failed' && b.authStatus === 'failed') return 1;
+          
+          // Then sort by creation date (newest first)
           return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
         });
         
@@ -144,32 +210,361 @@ export function BusinessProfileDashboard() {
         setBusinesses([]);
       }
     } catch (err) {
-      console.error('Error fetching businesses:', err);
+      log(`Error fetching businesses: ${err instanceof Error ? err.message : String(err)}`, 'error');
       setError('Failed to load businesses. Please try again.');
     } finally {
       setIsLoading(false);
     }
+  }, []);
+  
+  // Function to attempt auto-login for all businesses - memoized to prevent dependency issues
+  const tryAutoLoginForAllBusinesses = useCallback(async () => {
+    // Don't do anything if no businesses
+    if (!businesses || businesses.length === 0) return;
+    
+    log(`Starting auto-login attempts for ${businesses.length} businesses`, 'info');
+    
+    // Count successful and failed attempts for a single summary message
+    let successCount = 0;
+    let failureCount = 0;
+    let skippedCount = 0;
+    
+    log(`Starting auto-login process for businesses`, 'info');
+    
+    // Try auto-login for each business, one at a time to avoid overwhelming the server
+    for (const business of businesses) {
+      try {
+        // Skip businesses already marked as logged in
+        if (business.authStatus === 'logged_in') {
+          skippedCount++;
+          continue;
+        }
+        
+        // Implement retry logic for auto-login
+        let response;
+        let result;
+        let retries = 0;
+        const maxRetries = 2; // Maximum number of retry attempts
+        
+        while (retries <= maxRetries) {
+          try {
+            // Attempt auto-login with incrementing delay between retries
+            if (retries > 0) {
+              log(`Retry ${retries}/${maxRetries} for business ${business.id}`, 'info');
+            }
+            
+            response = await fetch('/api/compliance/auto-login', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                businessId: business.id,
+                retry: retries > 0 // Indicate this is a retry attempt
+              }),
+            });
+            
+            // Process the result
+            result = await response.json();
+            
+            // If successful or not a 400 error that we can retry, break out of the loop
+            if (result.success || !result.errorCode || !result.errorCode.includes('400_ERROR')) {
+              break;
+            }
+            
+            // If we get here, it's a retryable 400 error
+            retries++;
+            
+            // Exponential backoff with jitter
+            const delay = Math.min(1000 * Math.pow(2, retries), 5000) + Math.random() * 500;
+            await new Promise(resolve => setTimeout(resolve, delay));
+          } catch (retryError) {
+            // Log the error and continue to the next retry
+            log(`Error during auto-login retry ${retries} for business ${business.id}: ${retryError instanceof Error ? retryError.message : String(retryError)}`, 'error');
+            retries++;
+            
+            // Create a basic result object for error cases
+            result = { 
+              success: false, 
+              error: retryError instanceof Error ? retryError.message : 'Network error during login attempt'
+            };
+            
+            // Don't retry network/fetch errors, just break
+            break;
+          }
+        }
+        
+        // Update our counters
+        if (result.success) {
+          successCount++;
+        } else {
+          failureCount++;
+          // Log failures with warning level
+          log(`Auto-login failed for ${business.name}: ${result.error || 'Unknown error'}`, 'warn');
+        }
+        
+        // Add a short delay between requests to avoid overwhelming the server
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } catch (error) {
+        failureCount++;
+        // Always log errors
+        log(`Error during auto-login for business ${business.id}: ${error instanceof Error ? error.message : String(error)}`, 'error');
+      }
+    }
+    
+    // Provide a single summary log instead of individual logs
+    log(`Auto-login summary: ${successCount} succeeded, ${failureCount} failed, ${skippedCount} skipped`, 'info');
+    
+    // Small delay before refresh to ensure backend has processed all login attempts
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    fetchBusinesses(true);
+  }, [businesses, fetchBusinesses]);
+  
+  // Fetch businesses on component mount
+  useEffect(() => {
+    fetchBusinesses();
+  }, [fetchBusinesses]);
+  
+  // Attempt auto-login for all businesses when the list is first loaded
+  useEffect(() => {
+    // Only run this effect if we have businesses, aren't in loading state, 
+    // and haven't attempted auto-login yet
+    if (businesses.length > 0 && !isLoading && !autoLoginAttempted) {
+      log(`Starting automatic login process for all businesses`, 'info');
+      setAutoLoginAttempted(true); // Mark as attempted to prevent infinite loop
+      tryAutoLoginForAllBusinesses();
+    }
+  }, [businesses.length, isLoading, autoLoginAttempted, tryAutoLoginForAllBusinesses]);
+  
+  const handleCloseUpgradeModal = () => {
+    setIsUpgradeModalOpen(false);
+    setLimitError(null);
   };
   
   const handleAddBusiness = async () => {
     try {
-      console.log(`Adding new business: "${businessName}" (type: ${businessType})`);
-      
-      if (!businessName.trim()) {
-        alert('Please enter a business name');
+      // Check subscription limits first
+      if (locationLimit !== null && businesses.length >= locationLimit) {
+        // Find the next tier that would allow more businesses
+        const nextTier = subscriptionPlans.find(plan => 
+          plan.locationRange.max === null || 
+          (plan.locationRange.max !== null && plan.locationRange.max > locationLimit)
+        );
+        
+        setLimitError({
+          currentSubscription: userSubscription,
+          requiredSubscription: nextTier?.id || 'enterprise',
+          currentCount: businesses.length,
+          maxAllowed: locationLimit
+        });
+        
+        setIsUpgradeModalOpen(true);
+        return;
+      }
+    
+      // First step - collect business name
+      if (!isGoogleAuthStep) {
+        log(`Starting to add new business: "${businessName}" (type: ${businessType})`, 'info');
+        
+        if (!businessName.trim()) {
+          alert('Please enter a business name');
+          return;
+        }
+        
+        if (businessType === "invite") {
+          if (!businessEmail.trim()) {
+            alert('Please enter a business email');
+            return;
+          }
+          
+          // For email invites, proceed with the original flow
+          await addBusinessToSystem();
+          return;
+        }
+        
+        // For Google Business Profile, move to step 2 (Google auth) without creating business yet
+        // We'll only create the business after successful authentication
+        setIsGoogleAuthStep(true);
         return;
       }
       
-      if (businessType === "invite" && !businessEmail.trim()) {
-        alert('Please enter a business email');
-        return;
+      // Second step - Google authentication
+      if (isGoogleAuthStep) {
+        // Validate email format first with comprehensive checks
+        if (!googleEmail || !googleEmail.trim()) {
+          setAuthError("Please enter your Google email address");
+          return;
+        }
+        
+        // Comprehensive email validation for Google accounts
+        const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+        if (!emailRegex.test(googleEmail)) {
+          setAuthError("Please enter a valid email address");
+          return;
+        }
+        
+        // Google accounts typically end with gmail.com, googlemail.com, or a Google Workspace domain
+        if (!googleEmail.includes('@gmail.com') && 
+            !googleEmail.includes('@googlemail.com') && 
+            !googleEmail.includes('@google.com') &&
+            !confirm("The email address you entered doesn't appear to be a Gmail account. Are you sure you want to proceed?")) {
+          return;
+        }
+        
+        // Validate password
+        if (!googlePassword) {
+          setAuthError("Please enter your password");
+          return;
+        }
+        
+        if (googlePassword.length < 6) {
+          setAuthError("Password must be at least 6 characters long");
+          return;
+        }
+        
+        setIsAuthSubmitting(true);
+        setAuthError("");
+        
+        try {
+          setAuthError("");
+          log(`Attempting to authenticate with Google first, before creating business: "${businessName}"`, 'info');
+          
+          // Create a temporary browser instance ID that we'll use for authentication
+          const tempBrowserInstanceId = `temp-gbp-${Date.now()}`;
+          
+          // Encrypt the password before sending
+          const passwordData = encryptPassword(googlePassword);
+          
+          // Call auth API directly without a business ID first, to validate credentials
+          const preAuthResponse = await fetch('/api/compliance/auth-validate', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              email: googleEmail,
+              encryptedPassword: passwordData.encryptedPassword,
+              nonce: passwordData.nonce,
+              version: passwordData.version,
+              browserInstanceId: tempBrowserInstanceId
+            }),
+          });
+          
+          const preAuthResult = await preAuthResponse.json();
+          
+          // If pre-auth validation fails, stop here without creating business
+          if (!preAuthResponse.ok || !preAuthResult.success) {
+            const errorMessage = preAuthResult.error || "Authentication failed. Please check your credentials and try again.";
+            setAuthError(errorMessage);
+            throw new Error(errorMessage);
+          }
+          
+          // Authentication successful, now create the business
+          log('Google authentication validated, creating business record', 'info');
+          const businessData = await addBusinessToSystem();
+          
+          if (!businessData.success) {
+            throw new Error(businessData.error || "Failed to create business record");
+          }
+          
+          // Then finalize authentication with the new business ID
+          const businessId = businessData.businessId;
+          log(`Finalizing Google Business Profile authentication for business ID: ${businessId}`, 'info');
+          
+          // Encrypt the password again before sending (don't reuse the previous token)
+          const finalPasswordData = encryptPassword(googlePassword);
+          
+          // Call the auth API with the business ID
+          const authResponse = await fetch('/api/compliance/auth', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              businessId,
+              email: googleEmail,
+              encryptedPassword: finalPasswordData.encryptedPassword,
+              nonce: finalPasswordData.nonce,
+              version: finalPasswordData.version,
+              persistBrowser: true // Flag to indicate browser should persist
+            }),
+          });
+          
+          const authResult = await authResponse.json();
+          
+          if (!authResponse.ok || !authResult.success) {
+            // Format error message based on error code
+            let errorMessage = authResult.error || "Authentication failed. Please try again.";
+            
+            if (authResult.errorCode === 'INVALID_CREDENTIALS') {
+              errorMessage = "The email or password you entered is incorrect. Please check your credentials and try again.";
+            } else if (authResult.errorCode === 'ACCOUNT_LOCKED') {
+              errorMessage = "Your account has been temporarily locked due to too many failed attempts. Please try again in 30 minutes or reset your password through Google.";
+            } else if (authResult.errorCode === 'BROWSER_LAUNCH_FAILED') {
+              errorMessage = "Failed to initialize the browser. Please try again or contact support.";
+            }
+            
+            // Clean up the temporary business record since authentication failed
+            try {
+              log(`Authentication failed - removing temporary business record for ID: ${businessId}`, 'info');
+              const cleanupResponse = await fetch(`/api/businesses?businessId=${businessId}`, {
+                method: 'DELETE',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                credentials: 'include', // Include cookies for authentication
+              });
+              
+              if (cleanupResponse.ok) {
+                log(`Successfully removed temporary business record for ID: ${businessId}`, 'info');
+              } else {
+                log(`Failed to remove temporary business with status: ${cleanupResponse.status}`, 'warn');
+              }
+            } catch (cleanupError) {
+              log(`Failed to remove temporary business record: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`, 'error');
+            }
+            
+            throw new Error(errorMessage);
+          }
+          
+          log(`Google Business Profile authenticated successfully for business ID: ${businessId}`, 'info');
+          
+          // Reset form and close modal
+          resetForm();
+          
+          // Refresh the business list with a delay
+          setTimeout(() => {
+            log('Refreshing businesses list after adding authenticated business', 'info');
+            fetchBusinesses(true);
+          }, 1000);
+          
+          // Show success message
+          alert('Business added and Google account authenticated successfully!');
+        } finally {
+          setIsAuthSubmitting(false);
+        }
       }
-      
-      // Show a loading state
-      setIsLoading(true);
+    } catch (err) {
+      log(`Error adding business: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      setAuthError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  }
+  
+  // Helper function to add business to the system
+  const addBusinessToSystem = async () => {
+    log(`Adding new business: "${businessName}" (type: ${businessType})`, 'info');
+    
+    // Show a loading state
+    setIsLoading(true);
+    
+    try {
+      // Validate email for Google business type
+      if (businessType === 'google' && (!googleEmail || !googleEmail.includes('@'))) {
+        throw new Error('Email field not found or invalid');
+      }
       
       // Call the API to add the business
-      console.log('Sending request to /api/businesses endpoint');
+      log('Sending request to /api/businesses endpoint', 'info');
       const response = await fetch('/api/businesses', {
         method: 'POST',
         headers: {
@@ -180,20 +575,42 @@ export function BusinessProfileDashboard() {
         body: JSON.stringify({
           name: businessName.trim(),
           type: businessType,
-          email: businessType === "invite" ? businessEmail.trim() : undefined
+          email: businessType === "invite" ? businessEmail.trim() : undefined,
+          authPending: businessType === "google" // Flag to indicate auth will follow
         }),
       });
       
-      console.log(`Received response with status: ${response.status}`);
+      log(`Received response with status: ${response.status}`, 'info');
       const data = await response.json();
-      console.log('Response data:', data);
+      log(`Response data: ${JSON.stringify(data)}`, 'info');
       
       if (!response.ok) {
+        // Check if this is a subscription limit error
+        if (response.status === 403 && data.limitReached) {
+          // Set limit error state
+          setLimitError({
+            currentSubscription: data.currentSubscription || userSubscription,
+            requiredSubscription: data.requiredSubscription || 'enterprise',
+            currentCount: data.currentCount || businesses.length,
+            maxAllowed: data.maxAllowed || locationLimit
+          });
+          
+          // Show upgrade modal
+          setIsUpgradeModalOpen(true);
+          
+          // Reset loading state
+          setIsLoading(false);
+          
+          // Close the add business modal
+          setIsAddBusinessModalOpen(false);
+          
+          return { success: false, error: data.error };
+        }
+        
         // If authentication error, try to refresh the session
         if (response.status === 401 && (data.error === 'Invalid or expired session' || data.error === 'Authentication required')) {
-          console.log('Authentication error detected, trying to refresh session...');
+          log('Authentication error detected, trying to refresh session...', 'warn');
           
-          // Use the imported hook to check session
           // Try to check session from the API
           const sessionResponse = await fetch('/api/auth/session?t=' + new Date().getTime(), {
             method: 'GET',
@@ -204,41 +621,56 @@ export function BusinessProfileDashboard() {
           });
           
           if (!sessionResponse.ok) {
-            console.error('Session refresh failed, redirecting to login');
+            log('Session refresh failed, redirecting to login', 'error');
             // Redirect to login page
             window.location.href = '/auth?session=expired';
-            return;
+            return { success: false, error: 'Session expired' };
           }
           
-          throw new Error('Session error. Please try again.');
+          return { success: false, error: 'Session error. Please try again.' };
         }
         
-        throw new Error(data.error || 'Failed to add business');
+        return { success: false, error: data.error || 'Failed to add business' };
       }
       
-      console.log(`Business added successfully: ${data.businessId}`);
+      log(`Business added successfully: ${data.businessId}`, 'info');
       
-      // Reset form and close modal
-      setBusinessName("");
-      setBusinessEmail("");
-      setIsAddBusinessModalOpen(false);
+      // For invite type, we're done
+      if (businessType === "invite") {
+        // Reset form and close modal
+        resetForm();
+        
+        // Refresh the business list with a delay
+        setTimeout(() => {
+          log('Refreshing businesses list after adding new business', 'info');
+          fetchBusinesses(true);
+        }, 1000);
+        
+        // Show a success message
+        alert('Business added successfully!');
+      }
       
-      // Refresh the business list with a delay to ensure server processes are complete
-      setTimeout(() => {
-        console.log('Refreshing businesses list after adding new business');
-        // Skip cache to force a fresh fetch
-        fetchBusinesses(true);
-      }, 1000);
-      
-      // Show a success message
-      alert('Business added successfully!');
+      return { success: true, businessId: data.businessId };
     } catch (err) {
-      console.error('Error adding business:', err);
-      alert(`Failed to add business: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      log(`Error adding business: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
     } finally {
-      // Always reset loading state, even if there was an error
-      setIsLoading(false);
+      // Always reset loading state if we're not going to auth step
+      if (businessType !== "google" || !isGoogleAuthStep) {
+        setIsLoading(false);
+      }
     }
+  }
+  
+  // Helper to reset the form
+  const resetForm = () => {
+    setBusinessName("");
+    setBusinessEmail("");
+    setGoogleEmail("");
+    setGooglePassword("");
+    setAuthError("");
+    setIsGoogleAuthStep(false);
+    setIsAddBusinessModalOpen(false);
   }
 
   // Memoize filtered business counts to prevent recalculation on each render
@@ -262,6 +694,25 @@ export function BusinessProfileDashboard() {
   const handleRowClick = useCallback((business: Business) => {
     setSelectedBusiness(business);
     setIsModalOpen(true);
+    
+    // If the business has a browser instance, activate it
+    if (business.browserInstance) {
+      log(`Activating browser instance ${business.browserInstance} for business ${business.id}`, 'info');
+      
+      // Tell the server to use this instance for subsequent operations
+      fetch('/api/compliance/activate-browser', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          businessId: business.id,
+          instanceId: business.browserInstance
+        }),
+      }).catch(err => {
+        log(`Error activating browser instance: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      });
+    }
   }, []);
   
   const handleClose = useCallback(() => {
@@ -269,8 +720,27 @@ export function BusinessProfileDashboard() {
   }, []);
   
   const handleAddBusinessClick = useCallback(() => {
+    // Check subscription limits first
+    if (locationLimit !== null && businesses.length >= locationLimit) {
+      // Find the next tier that would allow more businesses
+      const nextTier = subscriptionPlans.find(plan => 
+        plan.locationRange.max === null || 
+        (plan.locationRange.max !== null && plan.locationRange.max > locationLimit)
+      );
+      
+      setLimitError({
+        currentSubscription: userSubscription,
+        requiredSubscription: nextTier?.id || 'enterprise',
+        currentCount: businesses.length,
+        maxAllowed: locationLimit
+      });
+      
+      setIsUpgradeModalOpen(true);
+      return;
+    }
+    
     setIsAddBusinessModalOpen(true);
-  }, []);
+  }, [businesses.length, locationLimit, userSubscription]);
 
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center">
@@ -335,6 +805,27 @@ export function BusinessProfileDashboard() {
             </div>
           </div>
 
+          {/* Subscription limit status */}
+          <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg flex items-center justify-between mb-6">
+            <div>
+              <span className="font-medium">
+                {businesses.length} / {locationLimit === null ? 'Unlimited' : locationLimit} locations used
+              </span>
+              <p className="text-sm text-gray-500">
+                Your {currentPlan.name} plan allows {locationLimit === null ? 'unlimited' : `up to ${locationLimit}`} business locations
+              </p>
+            </div>
+            {locationLimit !== null && businesses.length >= locationLimit && (
+              <Button
+                variant="outline"
+                onClick={() => window.location.href = '/subscription'}
+                className="bg-white hover:bg-gray-100"
+              >
+                Upgrade Plan
+              </Button>
+            )}
+          </div>
+
           {/* Table */}
           <div className="rounded-lg overflow-hidden border border-gray-100">
             <Table>
@@ -393,7 +884,19 @@ export function BusinessProfileDashboard() {
                       className="cursor-pointer hover:bg-gray-50"
                       onClick={() => handleRowClick(business)}
                     >
-                      <TableCell className="text-black py-4">{business.name}</TableCell>
+                      <TableCell className="text-black py-4 flex items-center">
+                        {/* Show alert icon for businesses that need re-authentication */}
+                        {business.authStatus === 'failed' && (
+                          <div className="mr-2 text-amber-500" title="Authentication needs attention">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                              <line x1="12" y1="9" x2="12" y2="13"></line>
+                              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                            </svg>
+                          </div>
+                        )}
+                        {business.name}
+                      </TableCell>
                       <TableCell className="text-right py-4 pr-8">
                         <div className="flex justify-end">
                           <StatusIndicator status={business.status} />
@@ -409,7 +912,7 @@ export function BusinessProfileDashboard() {
                         <Button 
                           variant="ghost" 
                           className="text-sm text-gray-500 hover:text-black"
-                          onClick={() => console.log("Load more businesses")}
+                          onClick={() => log("Load more businesses", 'info')}
                         >
                           Load more ({businesses.length - 10} remaining)
                         </Button>
@@ -439,7 +942,7 @@ export function BusinessProfileDashboard() {
             Business profile details and management interface
           </div>
           <BusinessProfileModal business={selectedBusiness} onClose={() => {
-            console.log("Business profile modal closed - refreshing business list");
+            log("Business profile modal closed - refreshing business list", 'info');
             // Close the modal
             handleClose();
             // Refresh businesses list immediately - force skipping cache
@@ -448,109 +951,268 @@ export function BusinessProfileDashboard() {
         </DialogContent>
       </Dialog>
       
-      {/* Add Business Modal - Enhanced Version */}
-      <Dialog open={isAddBusinessModalOpen} onOpenChange={setIsAddBusinessModalOpen}>
+      {/* Add Business Modal - Enhanced Version with Google Auth */}
+      <Dialog 
+        open={isAddBusinessModalOpen} 
+        onOpenChange={(open) => {
+          if (!open) {
+            // Reset form when closing modal
+            resetForm();
+          }
+          setIsAddBusinessModalOpen(open);
+        }}
+      >
         <DialogContent className="max-w-sm p-6 max-h-[90vh]" aria-describedby="add-business-description">
-          <DialogTitle className="text-xl font-semibold mb-2">Add Business</DialogTitle>
-          <DialogDescription id="add-business-description">
-            Add a new business to manage through Social Genius.
-          </DialogDescription>
-          
-          <div className="py-4 space-y-4">
-            {/* Option Selection */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium">Select an option:</h3>
-              <div className="grid grid-cols-1 gap-3">
-                {/* Google Business Profile Option */}
-                <div 
-                  className={`flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-colors ${businessType === 'google' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-200 hover:bg-blue-50/50'}`}
-                  onClick={() => setBusinessType('google')}
-                >
-                  <div className="h-4 w-4 rounded-full border border-gray-300 flex items-center justify-center flex-shrink-0">
-                    {businessType === 'google' && (
-                      <div className="h-2 w-2 rounded-full bg-blue-600"></div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 flex-1">
-                    <Building2Icon className="h-5 w-5 text-blue-600" />
-                    <div>
-                      <div>Google Business Profile</div>
-                      <div className="text-xs text-gray-500">Connect an existing Google Business Profile</div>
+          {!isGoogleAuthStep ? (
+            // Step 1: Business Info
+            <>
+              <DialogTitle className="text-xl font-semibold mb-2">Add Business</DialogTitle>
+              <DialogDescription id="add-business-description">
+                Add a new business to manage through Social Genius.
+              </DialogDescription>
+              
+              <div className="py-4 space-y-4">
+                {/* Option Selection */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium">Select an option:</h3>
+                  <div className="grid grid-cols-1 gap-3">
+                    {/* Google Business Profile Option */}
+                    <div 
+                      className={`flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-colors ${businessType === 'google' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-200 hover:bg-blue-50/50'}`}
+                      onClick={() => setBusinessType('google')}
+                    >
+                      <div className="h-4 w-4 rounded-full border border-gray-300 flex items-center justify-center flex-shrink-0">
+                        {businessType === 'google' && (
+                          <div className="h-2 w-2 rounded-full bg-blue-600"></div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-1">
+                        <Building2Icon className="h-5 w-5 text-blue-600" />
+                        <div>
+                          <div>Google Business Profile</div>
+                          <div className="text-xs text-gray-500">Connect an existing Google Business Profile</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Invitation Option */}
+                    <div 
+                      className={`flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-colors ${businessType === 'invite' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-200 hover:bg-blue-50/50'}`}
+                      onClick={() => setBusinessType('invite')}
+                    >
+                      <div className="h-4 w-4 rounded-full border border-gray-300 flex items-center justify-center flex-shrink-0">
+                        {businessType === 'invite' && (
+                          <div className="h-2 w-2 rounded-full bg-blue-600"></div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-1">
+                        <MailIcon className="h-5 w-5 text-blue-600" />
+                        <div>
+                          <div>Send Invitation Email</div>
+                          <div className="text-xs text-gray-500">Invite a client to add their business</div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Invitation Option */}
-                <div 
-                  className={`flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-colors ${businessType === 'invite' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-200 hover:bg-blue-50/50'}`}
-                  onClick={() => setBusinessType('invite')}
+                {/* Business Name Field */}
+                <div className="space-y-2">
+                  <label htmlFor="business-name" className="block text-sm font-medium">
+                    Business Name
+                  </label>
+                  <input 
+                    id="business-name"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                    value={businessName}
+                    onChange={(e) => setBusinessName(e.target.value)}
+                    placeholder="Enter business name"
+                  />
+                </div>
+                
+                {/* Email Field - Only shown for invitation option */}
+                {businessType === 'invite' && (
+                  <div className="space-y-2">
+                    <label htmlFor="business-email" className="block text-sm font-medium">
+                      Business Email
+                    </label>
+                    <input 
+                      id="business-email"
+                      type="email"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+                      value={businessEmail}
+                      onChange={(e) => setBusinessEmail(e.target.value)}
+                      placeholder="Enter contact email"
+                    />
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <Button 
+                  variant="outline" 
+                  onClick={() => setIsAddBusinessModalOpen(false)}
+                  className="px-4 py-2"
                 >
-                  <div className="h-4 w-4 rounded-full border border-gray-300 flex items-center justify-center flex-shrink-0">
-                    {businessType === 'invite' && (
-                      <div className="h-2 w-2 rounded-full bg-blue-600"></div>
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={handleAddBusiness}
+                  disabled={!businessName || (businessType === 'invite' && !businessEmail)}
+                  className="px-4 py-2 bg-gradient-to-r from-[#FFAB1A] via-[#FF1681] to-[#0080FF] text-white hover:opacity-90"
+                >
+                  {businessType === 'google' ? 'Next' : 'Add Business'}
+                </Button>
+              </div>
+            </>
+          ) : (
+            // Step 2: Google Authentication (only for google business type)
+            <>
+              <DialogTitle className="text-xl font-semibold mb-2">
+                <div className="flex items-center justify-center">
+                  <img 
+                    src="https://www.svgrepo.com/show/303108/google-icon-logo.svg"
+                    alt="Google"
+                    width={28}
+                    height={28}
+                    className="mr-3"
+                  />
+                  <span className="text-[#5F6368] font-normal">Sign in with Google</span>
+                </div>
+              </DialogTitle>
+              
+              {/* Error display */}
+              {authError && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md text-sm">
+                  {authError}
+                </div>
+              )}
+              
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                handleAddBusiness();
+              }} className="py-4 space-y-4">
+                {/* Google login container styling */}
+                <div className="flex flex-col items-center justify-center w-full max-w-md mx-auto p-6 border border-gray-300 rounded-md shadow-sm">
+                  <div className="w-full text-center mb-4">
+                    <h1 className="text-2xl font-normal mb-2 text-[#202124]">Sign in</h1>
+                    <p className="text-sm text-[#5F6368] mb-6">to continue to Google Business Profile</p>
+                  </div>
+                
+                  {/* Google Email Field */}
+                  <div className="w-full space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label htmlFor="google-email" className="block text-sm font-medium text-[#5F6368]">
+                        Email or phone
+                      </label>
+                      {googleEmail && !googleEmail.includes('@') && (
+                        <span className="text-red-500 text-xs">Invalid email format</span>
+                      )}
+                    </div>
+                    <input 
+                      id="google-email"
+                      type="email"
+                      className={`w-full px-3 py-3 border rounded-md focus:outline-none focus:ring-1 ${
+                        googleEmail && !googleEmail.includes('@') 
+                          ? 'border-red-300 focus-visible:ring-red-400' 
+                          : 'border-gray-300 focus-visible:ring-blue-500 focus:border-blue-500'
+                      }`}
+                      value={googleEmail}
+                      onChange={(e) => setGoogleEmail(e.target.value)}
+                      placeholder="youremail@gmail.com"
+                      disabled={isAuthSubmitting}
+                      autoComplete="email"
+                      required
+                      minLength={5} // Basic validation
+                      pattern="[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$" // Email pattern
+                    />
+                </div>
+                
+                  {/* Google Password Field */}
+                  <div className="w-full space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label htmlFor="google-password" className="block text-sm font-medium text-[#5F6368]">
+                        Password
+                      </label>
+                      {googlePassword && googlePassword.length < 6 && (
+                        <span className="text-red-500 text-xs">Min. 6 characters</span>
+                      )}
+                    </div>
+                    <input 
+                      id="google-password"
+                      type="password"
+                      className={`w-full px-3 py-3 border rounded-md focus:outline-none focus:ring-1 ${
+                        googlePassword && googlePassword.length < 6 
+                          ? 'border-red-300 focus-visible:ring-red-400' 
+                          : 'border-gray-300 focus-visible:ring-blue-500 focus:border-blue-500'
+                      }`}
+                      value={googlePassword}
+                      onChange={(e) => setGooglePassword(e.target.value)}
+                    placeholder="••••••••"
+                    disabled={isAuthSubmitting}
+                    required
+                  />
+                </div>
+                
+                  <div className="w-full flex justify-between mt-6 mb-4">
+                    <button 
+                      type="button" 
+                      className="text-sm text-[#1a73e8] hover:text-blue-700 hover:underline font-medium"
+                      onClick={() => setIsGoogleAuthStep(false)}
+                      disabled={isAuthSubmitting}
+                    >
+                      Back
+                    </button>
+                    <a href="#" className="text-sm text-[#1a73e8] hover:text-blue-700 hover:underline font-medium">
+                      Forgot password?
+                    </a>
+                  </div>
+                  
+                  <div className="w-full mt-3">
+                    {isAuthSubmitting ? (
+                      <button
+                        type="button"
+                        className="w-full py-2.5 px-4 bg-[#1a73e8] text-white font-medium rounded-md focus:outline-none flex items-center justify-center"
+                        disabled={true}
+                      >
+                        <div className="w-5 h-5 border-t-2 border-white border-solid rounded-full animate-spin mr-2"></div>
+                        Signing in...
+                      </button>
+                    ) : (
+                      <button
+                        type="submit"
+                        className="w-full py-2.5 px-4 bg-[#1a73e8] text-white font-medium rounded-md hover:bg-blue-700 focus:outline-none"
+                        disabled={isAuthSubmitting || !googleEmail || !googlePassword || 
+                                (googleEmail && !googleEmail.includes('@')) || 
+                                (googlePassword && googlePassword.length < 6)}
+                      >
+                        Sign in
+                      </button>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 flex-1">
-                    <MailIcon className="h-5 w-5 text-blue-600" />
-                    <div>
-                      <div>Send Invitation Email</div>
-                      <div className="text-xs text-gray-500">Invite a client to add their business</div>
-                    </div>
+                  
+                  <div className="text-xs text-gray-500 mt-4 text-center">
+                    <p>Not your computer? Use Guest mode to sign in privately.</p>
+                    <a href="#" className="text-[#1a73e8] hover:text-blue-700 hover:underline">Learn more</a>
                   </div>
                 </div>
-              </div>
-            </div>
-
-            {/* Business Name Field */}
-            <div className="space-y-2">
-              <label htmlFor="business-name" className="block text-sm font-medium">
-                Business Name
-              </label>
-              <input 
-                id="business-name"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
-                value={businessName}
-                onChange={(e) => setBusinessName(e.target.value)}
-                placeholder="Enter business name"
-              />
-            </div>
-            
-            {/* Email Field - Only shown for invitation option */}
-            {businessType === 'invite' && (
-              <div className="space-y-2">
-                <label htmlFor="business-email" className="block text-sm font-medium">
-                  Business Email
-                </label>
-                <input 
-                  id="business-email"
-                  type="email"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
-                  value={businessEmail}
-                  onChange={(e) => setBusinessEmail(e.target.value)}
-                  placeholder="Enter contact email"
-                />
-              </div>
-            )}
-          </div>
-          
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            <Button 
-              variant="outline" 
-              onClick={() => setIsAddBusinessModalOpen(false)}
-              className="px-4 py-2"
-            >
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleAddBusiness}
-              disabled={!businessName || (businessType === 'invite' && !businessEmail)}
-              className="px-4 py-2 bg-gradient-to-r from-[#FFAB1A] via-[#FF1681] to-[#0080FF] text-white hover:opacity-90"
-            >
-              Add Business
-            </Button>
-          </div>
+              </form>
+            </>
+          )}
         </DialogContent>
       </Dialog>
+
+      {/* Subscription Upgrade Modal */}
+      {limitError && (
+        <SubscriptionUpgradeModal
+          isOpen={isUpgradeModalOpen}
+          onClose={handleCloseUpgradeModal}
+          currentPlan={limitError.currentSubscription}
+          requiredPlan={limitError.requiredSubscription}
+          limitType="locations"
+          currentCount={limitError.currentCount}
+        />
+      )}
     </div>
   )
 }

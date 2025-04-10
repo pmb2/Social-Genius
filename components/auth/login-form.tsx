@@ -36,13 +36,14 @@ export function LoginForm() {
     setIsLoading(true);
     
     try {
+      // Use POST method only, never include credentials in URL
       const result = await login(email, password);
       
       if (result.success) {
         // Login successful - redirect to dashboard
         window.location.href = '/dashboard';
       } else {
-        setError(result.error || "Login failed. Please check the server connection and try again.");
+        setError(result.error || "Login failed. Please check your credentials and try again.");
       }
     } catch (error) {
       console.error('Login error:', error);

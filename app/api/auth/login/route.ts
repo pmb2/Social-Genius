@@ -5,15 +5,44 @@ import PostgresService from '@/services/postgres-service';
 // Specify that this route runs on the Node.js runtime, not Edge
 export const runtime = 'nodejs';
 
+// Explicit rejection of GET method to prevent password exposure in URL
+export async function GET(req: NextRequest) {
+  return NextResponse.json({ 
+    success: false, 
+    error: 'Method not allowed. Please use POST for authentication.' 
+  }, { status: 405 });
+}
+
 // Proper login endpoint
 export async function POST(req: NextRequest) {
   // Wrap everything in a try/catch to catch any unexpected errors
   try {
-    console.log('Login API called with content-type:', req.headers.get('content-type'));
+    // Security check - don't log content-type details in production
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('Login API called with content-type:', req.headers.get('content-type'));
+    }
+    
+    // Force disable native pg and enable debug
+    process.env.NODE_PG_FORCE_NATIVE = '0';
+    process.env.DEBUG_DATABASE = 'true';
+    process.env.PG_DEBUG = 'true';
+    
+    // Load pg patch first to ensure it's applied
+    try {
+      require('@/pg-patch.cjs');
+      console.log('✅ pg-patch applied in login route');
+    } catch (patchError) {
+      console.error('Failed to apply pg-patch in login route:', patchError);
+    }
     
     // Get services
     const authService = AuthService.getInstance();
     const dbService = PostgresService.getInstance();
+    
+    // Print environment variables for debugging
+    console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
+    console.log('DATABASE_URL_DOCKER:', process.env.DATABASE_URL_DOCKER ? 'SET' : 'NOT SET');
+    console.log('RUNNING_IN_DOCKER:', process.env.RUNNING_IN_DOCKER);
     
     // Ensure database connection is available
     try {
@@ -23,7 +52,8 @@ export async function POST(req: NextRequest) {
       console.error('Database connection error:', dbError);
       return NextResponse.json({ 
         success: false, 
-        error: 'Database connection failed. Please try again later.' 
+        error: 'Database connection failed. Please try again later.',
+        details: String(dbError)
       }, { status: 500 });
     }
     
@@ -32,7 +62,8 @@ export async function POST(req: NextRequest) {
     try {
       const bodyText = await req.text();
       body = JSON.parse(bodyText);
-      console.log('Request body parsed:', { email: body.email ? 'Present' : 'Missing' });
+      // Security: Only log presence of fields, never the values
+      console.log('Request body parsed:', { email: body.email ? 'Present' : 'Missing', password: body.password ? 'Present' : 'Missing' });
     } catch (parseError) {
       console.error('Error parsing request body:', parseError);
       return NextResponse.json({ 

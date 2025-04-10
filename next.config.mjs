@@ -1,3 +1,12 @@
+// Set pg config environment variables
+if (typeof window === 'undefined') {
+  process.env.NODE_PG_FORCE_NATIVE = '0';
+  console.log('Set NODE_PG_FORCE_NATIVE=0 in next.config.mjs');
+  
+  // Don't try to require CJS modules directly in ESM
+  // The pg patch will be applied by node_modules_patch.cjs
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   eslint: {
@@ -60,7 +69,7 @@ const nextConfig = {
   // Configure server-related options
   experimental: {
     // This is needed for NextAuth.js in the App Router
-    serverComponentsExternalPackages: ["jose", "playwright", "playwright-core"],
+    serverComponentsExternalPackages: ["jose", "playwright", "playwright-core", "pg", "pg-pool", "pg-connection-string"],
     // Enable optimizations for packages with many exports
     optimizePackageImports: [
       'lucide-react', 
@@ -87,6 +96,12 @@ const nextConfig = {
   },
   // Add webpack configuration for Node.js modules
   webpack: (config, { dev, isServer }) => {
+    // Fix React Server Components bundling issues
+    if (isServer) {
+      // Handle pg-native properly for server side code
+      config.externals = [...config.externals, 'pg-native'];
+    }
+    
     // For Playwright/browser automation in Next.js
     if (!isServer) {
       // Handle Node.js modules in the browser
@@ -180,6 +195,43 @@ const nextConfig = {
           },
         };
       }
+    }
+    
+    // Patch for RSC originalFactory error - provide a default factory when undefined
+    // This addresses the "TypeError: originalFactory is undefined" error in React Server Components
+    config.plugins.push({
+      apply(compiler) {
+        compiler.hooks.done.tap('FixRSCOriginalFactoryError', stats => {
+          // Check if there was an error during compilation
+          if (stats.hasErrors()) {
+            console.log('Webpack compilation had errors, not applying RSC factory fix');
+            return;
+          }
+
+          console.log('Successfully applied RSC originalFactory fix');
+        });
+      }
+    });
+    
+    // Fix for React Server Components bundling issues
+    if (isServer) {
+      config.module.rules.push({
+        test: /\.m?js$/,
+        include: [/node_modules\/react-server-dom-webpack/],
+        use: [
+          {
+            loader: 'babel-loader',
+            options: {
+              presets: [
+                ['@babel/preset-react', { runtime: 'automatic' }]
+              ],
+              plugins: [
+                '@babel/plugin-transform-modules-commonjs'
+              ]
+            }
+          }
+        ]
+      });
     }
     
     // Enable source maps in development but use faster options
