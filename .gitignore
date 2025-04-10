@@ -36,3 +36,4 @@ yarn-error.log*
 next-env.d.ts
 .aider*
 .env
+dist/cache/webpack/server-production/0.pack
