@@ -315,6 +315,7 @@ class AuthService {
     };
   } {
     const expires = new Date(Date.now() + expiresIn);
+    const isProduction = process.env.NODE_ENV === 'production';
     
     // Use consistent cookie name 'session' for both Next.js and auth routes
     return {
@@ -322,8 +323,8 @@ class AuthService {
       value: '', // This will be set by the caller
       options: {
         httpOnly: true,
-        secure: true, // Always use secure cookies
-        sameSite: 'none', // Allow cross-site usage
+        secure: isProduction, // Secure in production, not in development
+        sameSite: isProduction ? 'none' : 'lax', // More permissive in development
         expires,
         path: '/'
       }

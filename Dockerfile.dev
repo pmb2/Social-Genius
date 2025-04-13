@@ -1,4 +1,4 @@
-FROM node:18-slim
+FROM node:18
 
 WORKDIR /app
 
@@ -52,6 +52,12 @@ RUN mkdir -p /app/browser_cookies && chmod 777 /app/browser_cookies
 # Copy source code
 COPY . .
 
+# Verify Next.js is installed and accessible
+RUN npm list next
+RUN echo "Node.js binary path: $(which node)"
+RUN echo "NPM binary path: $(which npm)"
+RUN ls -la /app/node_modules/.bin/
+
 # Create .env.local file to override Next.js environment variables
 RUN echo "NEXT_PUBLIC_DATABASE_URL=$DATABASE_URL" > .env.local
 RUN echo "NEXT_PUBLIC_GROQ_API_KEY=$GROQ_API_KEY" >> .env.local
@@ -66,6 +72,7 @@ ENV NODE_ENV=development
 ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV WATCHPACK_POLLING=true
+ENV PATH="/app/node_modules/.bin:${PATH}"
 
 # Ensure Playwright browsers are properly installed and accessible
 RUN chmod -R 755 /root/.cache/ms-playwright

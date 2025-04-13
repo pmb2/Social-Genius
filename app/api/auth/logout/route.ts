@@ -28,8 +28,8 @@ export async function POST(req: NextRequest) {
       name: 'session',
       value: '',
       httpOnly: true,
-      secure: true,
-      sameSite: 'none',
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       expires: new Date(0),
       path: '/'
     });
@@ -39,8 +39,8 @@ export async function POST(req: NextRequest) {
       name: 'sessionId',
       value: '',
       httpOnly: true,
-      secure: true,
-      sameSite: 'none',
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       expires: new Date(0),
       path: '/'
     });

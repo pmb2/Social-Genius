@@ -7,11 +7,12 @@ services:
       dockerfile: Dockerfile.dev
     volumes:
       - .:/app
-      - ./node_modules:/app/node_modules
+      - /app/node_modules
       - /app/.next
       - /app/dist
     ports:
-      - "3001:3000"
+      - "0.0.0.0:3000:3000"
+      - "0.0.0.0:3001:3000"
     environment:
       NODE_ENV: development
       # Docker environment flag
@@ -33,6 +34,8 @@ services:
       NEXT_PUBLIC_GROQ_API_KEY: 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
       NEXT_PUBLIC_EXA_API_KEY: f5c132ea-a9ae-4977-a59b-f79ee13ea44f
       NEXT_PUBLIC_OPENAI_API_KEY: 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
+      # Add PATH to include node_modules/.bin
+      PATH: /app/node_modules/.bin:${PATH}
     env_file:
       - .env
     depends_on:
@@ -47,7 +50,8 @@ services:
              echo 'Starting application...' &&
              cd /app && 
              if [ ! -d 'dist' ]; then mkdir -p dist; fi &&
-             NEXT_PUBLIC_HOST=http://localhost:3001 npm run dev"
+             export PATH=\"/app/node_modules/.bin:$PATH\" &&
+             NEXT_PUBLIC_HOST=http://18.223.171.255:3000 npm run dev -- -H 0.0.0.0"
 
   # PostgreSQL with pgvector for unified database
   postgres:

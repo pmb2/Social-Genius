@@ -195,6 +195,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Don't verify session immediately as it might not be available yet in the browser
           console.log("Login successful, will redirect to dashboard");
           
+          // Add debugging for cookies after login
+          if (typeof document !== 'undefined') {
+            console.log("Current cookies after login:", document.cookie);
+          }
+          
           // Skip the session check to avoid race condition with cookie setting
           
           return { success: true };

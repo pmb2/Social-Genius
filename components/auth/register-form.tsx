@@ -61,7 +61,9 @@ export function RegisterForm({ onSuccess }: RegisterFormProps) {
       console.log('Registration result:', result);
       
       if (result.success) {
-        // Redirect to dashboard on successful registration and login
+        // Redirect to dashboard immediately on successful registration
+        // No need for success message as auto-login happens in the auth context
+        console.log('Registration and auto-login successful, redirecting to dashboard');
         window.location.href = '/dashboard';
       } else {
         setError(result.error || "Registration failed. Please check the server connection and try again.");

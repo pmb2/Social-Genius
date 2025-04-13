@@ -83,14 +83,14 @@ export async function POST(req: NextRequest) {
         host: req.headers.get('host'),
       });
       
-      // Set both cookie names for compatibility - with more relaxed settings for development
+      // Set both cookie names for compatibility - with relaxed settings for development
       response.cookies.set({
         name: 'session',
         value: sessionId,
         httpOnly: true,
         path: '/',
-        sameSite: 'none', // Allow cross-site usage
-        secure: true, // Always use secure in modern browsers
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        secure: process.env.NODE_ENV === 'production',
         maxAge: 30 * 24 * 60 * 60 // 30 days in seconds
       });
       
@@ -100,8 +100,8 @@ export async function POST(req: NextRequest) {
         value: sessionId,
         httpOnly: true,
         path: '/',
-        sameSite: 'none', // Allow cross-site usage
-        secure: true, // Always use secure in modern browsers
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        secure: process.env.NODE_ENV === 'production',
         maxAge: 30 * 24 * 60 * 60 // 30 days in seconds
       });
       

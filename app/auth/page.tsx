@@ -100,13 +100,10 @@ export default function AuthPage() {
             const result = await register(email, password, fullName);
 
             if (result.success) {
-                // Registration successful - show login form with success message
-                setError('');
-                setIsLogin(true);
-                setIsLoading(false);
-
-                // Set a success message
-                alert('Account created successfully! You can now log in.');
+                // Registration successful - redirect to dashboard directly
+                // The auth context already does auto-login in the register function
+                console.log('Registration successful - redirecting to dashboard');
+                router.push('/dashboard');
             } else {
                 // Registration failed
                 setError(result.error || 'Registration failed. Please try again.');
