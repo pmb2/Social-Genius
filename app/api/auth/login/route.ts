@@ -42,18 +42,18 @@ export async function POST(req: NextRequest) {
     }
     
     // Extract and validate input
-    const { email, password } = body;
+    const { email, passwordHash } = body;
     
-    if (!email || !password) {
+    if (!email || !passwordHash) {
       return NextResponse.json({ 
         success: false, 
-        error: 'Email and password are required' 
+        error: 'Email and password hash are required' 
       }, { status: 400 });
     }
     
-    // Attempt to login the user
+    // Attempt to login the user with the password hash instead of plaintext password
     try {
-      const loginResult = await authService.login(email, password);
+      const loginResult = await authService.loginWithHash(email, passwordHash);
       
       if (!loginResult.success) {
         return NextResponse.json({ 

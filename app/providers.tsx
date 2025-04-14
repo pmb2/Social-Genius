@@ -5,29 +5,16 @@ import { AuthProvider } from '@/lib/auth-context';
 import { ToastProvider } from '@/lib/toast-provider';
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  // Performance optimization - clear query caches and run garbage collection when tab becomes invisible
+  // We're removing the problematic visibility change handler
+  // that was trying to force garbage collection and likely
+  // causing page refreshes and modal issues
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    // This effect is intentionally left empty to avoid
+    // timing and memory management issues in the previous code
     
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        // Clear caches when tab becomes invisible to free up memory
-        setTimeout(() => {
-          try {
-            // Request garbage collection via setTimeout (only works in some browsers)
-            if (window.gc) window.gc();
-            
-            // Clear memory-heavy objects
-            console.clear();
-          } catch (e) {
-            // Ignore errors
-          }
-        }, 500);
-      }
-    };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    // The browser will handle its own memory management
+    // without needing explicit garbage collection calls
+    // which can cause unintended side effects
   }, []);
   
   return (

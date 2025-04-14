@@ -164,12 +164,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         console.log('Logging in user:', email);
         
+        // Hash the password client-side before sending to server
+        // This is not a full security solution but adds a layer of protection
+        // against plain-text password transmission
+        const passwordHash = await window.crypto.subtle.digest(
+          'SHA-256',
+          new TextEncoder().encode(password)
+        );
+        
+        // Convert hash to hex string
+        const hashArray = Array.from(new Uint8Array(passwordHash));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        
         const response = await fetch('/api/auth/login', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify({ email, passwordHash: hashHex }),
           cache: 'no-store',
           credentials: 'include', // Important for cookies
         });
@@ -241,13 +253,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         console.log('Registering new user:', email);
         
+        // Hash the password client-side before sending to server
+        // This is not a full security solution but adds a layer of protection
+        // against plain-text password transmission
+        const passwordHash = await window.crypto.subtle.digest(
+          'SHA-256',
+          new TextEncoder().encode(password)
+        );
+        
+        // Convert hash to hex string
+        const hashArray = Array.from(new Uint8Array(passwordHash));
+        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        
         // Use the real registration endpoint now that we've fixed the runtime issue
         const response = await fetch('/api/auth/register', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ email, password, name }),
+          body: JSON.stringify({ email, passwordHash: hashHex, name }),
           cache: 'no-store',
         });
         
@@ -298,9 +322,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (data.success) {
           console.log('Registration successful for:', email);
           
-          // Try to log in automatically
+          // Try to log in automatically - store original password to reuse
           try {
             console.log('Attempting to log in newly registered user');
+            // We already have the password in memory for the auto-login
+            // Since we're in the same context, we can securely reuse it without exposing it
             const loginResult = await login(email, password);
             if (loginResult.success) {
               console.log('Auto-login successful after registration');

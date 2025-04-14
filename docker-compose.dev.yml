@@ -29,6 +29,8 @@ services:
       GROQ_API_KEY: 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
       EXA_API_KEY: f5c132ea-a9ae-4977-a59b-f79ee13ea44f
       OPENAI_API_KEY: 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
+      # Browser-use API URL
+      BROWSER_USE_API_URL: http://browser-use-api:5055
       # Add Next.js specific env vars with NEXT_PUBLIC_ prefix for client-side access
       NEXT_PUBLIC_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
       NEXT_PUBLIC_GROQ_API_KEY: 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
@@ -40,6 +42,8 @@ services:
       - .env
     depends_on:
       postgres:
+        condition: service_healthy
+      browser-use-api:
         condition: service_healthy
     restart: unless-stopped
     networks:
@@ -87,6 +91,31 @@ services:
       - "5050:80"
     depends_on:
       - postgres
+    networks:
+      - social_genius_network
+      
+  # Browser-Use API Service for automation
+  browser-use-api:
+    build:
+      context: ./browser-use-api
+      dockerfile: Dockerfile
+    container_name: social-genius-browser-api
+    volumes:
+      - ./browser-use-api/screenshots:/app/screenshots
+    environment:
+      - PORT=5055
+      - HOST=0.0.0.0
+      - MAX_CONCURRENT_BROWSERS=10
+      - SCREENSHOT_PATH=/app/screenshots
+    ports:
+      - "5055:5055"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5055/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     networks:
       - social_genius_network
 

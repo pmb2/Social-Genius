@@ -64,19 +64,19 @@ export async function POST(req: NextRequest) {
     }
     
     // Extract and validate input
-    const { email, password, name } = body;
+    const { email, passwordHash, name } = body;
     
-    if (!email || !password) {
+    if (!email || !passwordHash) {
       return NextResponse.json({ 
         success: false, 
-        error: 'Email and password are required' 
+        error: 'Email and password hash are required' 
       }, { status: 400 });
     }
     
-    if (password.length < 6) {
+    if (passwordHash.length !== 64) {
       return NextResponse.json({ 
         success: false, 
-        error: 'Password must be at least 6 characters long' 
+        error: 'Invalid password hash format' 
       }, { status: 400 });
     }
     
@@ -84,8 +84,8 @@ export async function POST(req: NextRequest) {
     const authService = AuthService.getInstance();
     
     try {
-      // Use the AuthService register method
-      const result = await authService.register(email, password, name);
+      // Use the AuthService register method with the hashed password
+      const result = await authService.registerWithHash(email, passwordHash, name);
       
       if (!result.success) {
         return NextResponse.json({ 

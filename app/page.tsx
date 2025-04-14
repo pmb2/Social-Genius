@@ -23,16 +23,21 @@ export default function HomePage() {
             return; // Skip the timer if we already redirected
         }
         
-        // Force redirect after 2 seconds if still loading
+        // Force redirect after 5 seconds if still loading (increased from 2 seconds)
+        // This helps prevent premature redirection that might interrupt other processes
         const redirectTimer = setTimeout(() => {
-            // If after 2 seconds we still don't know auth state, make a sensible default
+            // If after 5 seconds we still don't know auth state, make a sensible default
+            // But only do this if we're still mounted and still loading
             if (loading) {
                 console.log("Still loading after timeout, redirecting to auth");
                 router.replace('/auth');
             }
-        }, 2000);
+        }, 5000); // Extended to 5 seconds
         
-        return () => clearTimeout(redirectTimer);
+        return () => {
+            clearTimeout(redirectTimer);
+            console.log("Home page redirect timer cleared");
+        };
     }, [user, loading, router]);
 
     // Display a loading state during the redirect

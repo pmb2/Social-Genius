@@ -110,10 +110,8 @@ export function BusinessProfileDashboard() {
         // If authentication error, try to refresh the session
         if (response.status === 401 && (data.error === 'Invalid or expired session' || data.error === 'Authentication required')) {
           console.log('Authentication error detected during fetch, redirecting to login page');
-          // Redirect to login page after a short delay to let user see error
-          setTimeout(() => {
-            window.location.href = '/auth?session=expired';
-          }, 500);
+          // Show an error message instead of auto-redirecting with timeout
+          setError('Your session has expired. Please log in again.');
           throw new Error('Session expired. Please log in again.');
         }
         
@@ -223,12 +221,10 @@ export function BusinessProfileDashboard() {
       setBusinessEmail("");
       setIsAddBusinessModalOpen(false);
       
-      // Refresh the business list with a delay to ensure server processes are complete
-      setTimeout(() => {
-        console.log('Refreshing businesses list after adding new business');
-        // Skip cache to force a fresh fetch
-        fetchBusinesses(true);
-      }, 1000);
+      // Immediately refresh the business list instead of using a timeout
+      console.log('Refreshing businesses list after adding new business');
+      // Skip cache to force a fresh fetch
+      fetchBusinesses(true);
       
       // Show a success message
       alert('Business added successfully!');
