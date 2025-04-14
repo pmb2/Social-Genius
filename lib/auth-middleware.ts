@@ -11,13 +11,13 @@ export async function authMiddleware(
   // Get the session ID from cookies - check both "session" and "sessionId" for compatibility
   const sessionId = req.cookies.get('session')?.value || req.cookies.get('sessionId')?.value;
   
-  // Debug session cookies
-  console.log('Auth middleware cookies:', {
-    hasCookies: req.cookies.size > 0,
-    sessionCookie: req.cookies.get('session')?.value ? 'Present' : 'Missing',
-    sessionIdCookie: req.cookies.get('sessionId')?.value ? 'Present' : 'Missing',
-    usedCookie: sessionId ? 'Found' : 'Not found'
-  });
+  // Only log auth details for non-API requests to reduce noise
+  if (!req.nextUrl.pathname.includes('/api/')) {
+    console.log('Auth middleware cookies:', {
+      sessionCookie: req.cookies.get('session')?.value ? 'Present' : 'Missing',
+      sessionIdCookie: req.cookies.get('sessionId')?.value ? 'Present' : 'Missing'
+    });
+  }
   
   if (!sessionId) {
     // Return proper JSON response
@@ -34,9 +34,11 @@ export async function authMiddleware(
   try {
     session = await authService.verifySession(sessionId);
     
-    // Debug session verification
-    console.log(`Auth middleware - Session verification result:`, 
-      session ? `Valid session for user ${session.user_id}` : 'Invalid session');
+    // Only log detailed session info for non-API requests
+    if (!req.nextUrl.pathname.includes('/api/')) {
+      console.log(`Auth middleware - Session verification result:`, 
+        session ? `Valid session for user ${session.user_id}` : 'Invalid session');
+    }
   } catch (sessionError) {
     console.error('Session verification error:', sessionError);
     return NextResponse.json({

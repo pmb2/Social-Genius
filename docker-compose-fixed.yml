@@ -1,0 +1,113 @@
+version: '3.8'
+services:
+  # Development mode for Next.js app with hot reloading
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+      - /app/dist
+    ports:
+      - "0.0.0.0:3000:3000"
+      - "0.0.0.0:3001:3000"
+    environment:
+      NODE_ENV: development
+      # Docker environment flag
+      RUNNING_IN_DOCKER: 'true'
+      NEXT_TELEMETRY_DISABLED: 1
+      WATCHPACK_POLLING: "true"
+      # Database connection URLs with hard-coded IP
+      DATABASE_URL: postgresql://postgres:postgres@172.18.0.2:5432/socialgenius
+      DATABASE_URL_DOCKER: postgresql://postgres:postgres@172.18.0.2:5432/socialgenius
+      # Direct PostgreSQL environment variables
+      PGHOST: 172.18.0.2
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: socialgenius
+      PGPORT: 5432
+      # Force JavaScript implementation of pg
+      NODE_PG_FORCE_NATIVE: "0"
+      # Auth secret for JWT tokens
+      JWT_SECRET: "social-genius-local-dev-secret-9bcd3a80-54a1-11ef-88c4"
+      # API keys
+      GROQ_API_KEY: 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
+      EXA_API_KEY: f5c132ea-a9ae-4977-a59b-f79ee13ea44f
+      OPENAI_API_KEY: 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
+      # Add Next.js specific env vars with NEXT_PUBLIC_ prefix for client-side access
+      NEXT_PUBLIC_DATABASE_URL: postgresql://postgres:postgres@172.18.0.2:5432/socialgenius
+      NEXT_PUBLIC_GROQ_API_KEY: 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
+      NEXT_PUBLIC_EXA_API_KEY: f5c132ea-a9ae-4977-a59b-f79ee13ea44f
+      NEXT_PUBLIC_OPENAI_API_KEY: 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
+      # Add PATH to include node_modules/.bin
+      PATH: /app/node_modules/.bin:${PATH}
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - social_genius_network
+    command: >
+      sh -c "echo 'Waiting for database to be ready...' &&
+             sleep 30 &&
+             echo 'Testing direct connection to PostgreSQL...' &&
+             apt-get update -q && apt-get install -y -q postgresql-client &&
+             PGPASSWORD=postgres psql -h 172.18.0.2 -U postgres -c 'SELECT 1' &&
+             echo 'PostgreSQL is accepting connections' &&
+             echo 'Starting application...' &&
+             cd /app && 
+             if [ ! -d 'dist' ]; then mkdir -p dist; fi &&
+             export PATH=\"/app/node_modules/.bin:$PATH\" &&
+             export NODE_ENV=development &&
+             export NODE_PG_FORCE_NATIVE=0 &&
+             export PGHOST=172.18.0.2 &&
+             export RUNNING_IN_DOCKER=true &&
+             NEXT_PUBLIC_HOST=http://18.223.171.255:3000 npm run dev -- -H 0.0.0.0"
+
+  # PostgreSQL with pgvector for unified database
+  postgres:
+    image: pgvector/pgvector:pg14
+    ports:
+      - "5435:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: socialgenius
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Add initialization script to configure database on first run
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d socialgenius || pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - social_genius_network
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "max_connections=100", "-c", "work_mem=16MB"]
+
+  # pgAdmin for database management (optional)
+  pgadmin:
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@socialgenius.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - social_genius_network
+
+networks:
+  social_genius_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
