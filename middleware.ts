@@ -27,20 +27,21 @@ export async function middleware(request: NextRequest) {
     pathname === route || pathname.startsWith(`${route}/`)
   );
   
-  // Only log for non-static resources and skip API polling endpoints
-  const isPollingEndpoint = pathname.includes('/api/auth/session') || 
-                            pathname.includes('/api/init-db') || 
-                            pathname.match(/\?t=\d+$/);
-                            
-  const shouldLog = !pathname.match(/\.(css|js|jpg|png|svg|ico)$/) && 
-                    !isPollingEndpoint &&
-                    !pathname.includes('/_next/');
+  // Completely disable middleware logging except in special debug mode
+  // This is a stronger setting than before to eliminate almost all logging
+  const skipLogging = true; 
+  
+  // Only enable if explicitly turned on with environment variable
+  const enableMiddlewareLogging = process.env.DEBUG_MIDDLEWARE === 'true' && process.env.NODE_ENV === 'development';
   
   // Create the response object
   let response;
   
   if (isPublicRoute) {
-    if (shouldLog) console.log(`[MIDDLEWARE] Allowing public route: ${pathname}`);
+    // Only log if explicitly enabled with DEBUG_MIDDLEWARE=true
+    if (enableMiddlewareLogging) {
+      console.log(`[MIDDLEWARE] Public route: ${pathname}`);
+    }
     response = NextResponse.next();
   } else {
     // Get session cookie (check both 'session' and 'sessionId' for compatibility)
@@ -48,15 +49,20 @@ export async function middleware(request: NextRequest) {
     
     // If there's no session cookie and it's not a public route, redirect to auth page
     if (!sessionCookie) {
-      if (shouldLog) console.log(`[MIDDLEWARE] No session cookie found for ${pathname}, redirecting to /auth`);
+      // Only log authentication failures when explicitly enabled
+      if (enableMiddlewareLogging) {
+        console.log(`[MIDDLEWARE] No session for ${pathname}, redirecting to /auth`);
+      }
       const url = new URL('/auth', request.url);
       url.searchParams.set('callbackUrl', pathname);
       url.searchParams.set('reason', 'no_session');
       return NextResponse.redirect(url);
     }
     
-    // Session exists, allow the request to proceed
-    if (shouldLog && pathname !== '/dashboard') console.log(`[MIDDLEWARE] Session valid for: ${pathname}`);
+    // Only log when explicitly enabled with DEBUG_MIDDLEWARE=true
+    if (enableMiddlewareLogging) {
+      console.log(`[MIDDLEWARE] Session valid: ${pathname}`);
+    }
     response = NextResponse.next();
   }
   

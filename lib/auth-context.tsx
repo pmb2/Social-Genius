@@ -36,35 +36,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Check if the user is already logged in when the app loads
   useEffect(() => {
-    console.log("AuthProvider: Starting initial auth check");
+    // Minimal logging for authentication flow
+    const showDebug = process.env.NODE_ENV === 'development' && process.env.DEBUG_AUTH === 'true';
+    if (showDebug) console.log("AuthProvider: Starting initial auth check");
+    
     let isActive = true; // Track if component is still mounted
     
     const initAuth = async () => {
       try {
-        // Add debug for fetch status
-        console.log("AuthProvider: Checking session status...");
         const sessionActive = await checkSession();
         
         // Only update state if component is still mounted
         if (!isActive) return;
         
-        if (sessionActive) {
-          console.log("AuthProvider: Valid session found, user is authenticated");
-        } else {
-          console.log("AuthProvider: No valid session found");
+        if (!sessionActive) {
           setUser(null);
         }
       } catch (error) {
         // Only update state if component is still mounted
         if (!isActive) return;
         
-        console.error("AuthProvider: Error during initial auth check:", error);
+        // Minimal error logging - only show in development with debugging enabled
+        const showDebug = process.env.NODE_ENV === 'development' && process.env.DEBUG_AUTH === 'true';
+        if (showDebug) {
+          console.error("Auth init error:", error instanceof Error ? error.message : 'Unknown error');
+        }
         setUser(null);
       } finally {
         // Only update state if component is still mounted
         if (!isActive) return;
         
-        console.log("AuthProvider: Auth check complete, setting loading to false");
         setLoading(false);
       }
     };
@@ -80,157 +81,99 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Function to check the current session
   const checkSession = async (): Promise<boolean> => {
+    // Conditional debug logging - only enabled in development with flag
+    const showDebug = process.env.NODE_ENV === 'development' && process.env.DEBUG_AUTH === 'true';
+    
     try {
-      // Check if we have a session
+      // Add a cache-busting parameter to ensure fresh results
+      const timestamp = new Date().getTime();
+      const url = `/api/auth/session?t=${timestamp}`;
+      
+      // Use a longer timeout for session check to ensure it completes
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
       try {
-        console.log("[AUTH_CONTEXT] Fetching session from API...");
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+          },
+          credentials: 'include',
+          signal: controller.signal
+        });
         
-        // Add a cache-busting parameter to ensure fresh results
-        const timestamp = new Date().getTime();
-        const url = `/api/auth/session?t=${timestamp}`;
+        clearTimeout(timeoutId);
         
-        // Add debugging for cookies before fetch
-        if (typeof document !== 'undefined') {
-          const cookies = document.cookie.split(';').map(c => c.trim());
-          console.log("[AUTH_CONTEXT] Current cookies before fetch:", cookies);
-          console.log("[AUTH_CONTEXT] Session cookie present:", cookies.some(c => c.startsWith('session=')));
-          console.log("[AUTH_CONTEXT] SessionId cookie present:", cookies.some(c => c.startsWith('sessionId=')));
+        // Check if response is ok before trying to parse JSON
+        if (!response.ok) {
+          // Only log errors in development
+          if (process.env.NODE_ENV === 'development') {
+            console.error('Session API error:', response.status);
+          }
           
-          // Log cookie values for debugging
-          const sessionCookie = cookies.find(c => c.startsWith('session='));
-          const sessionIdCookie = cookies.find(c => c.startsWith('sessionId='));
-          if (sessionCookie) {
-            const value = sessionCookie.split('=')[1];
-            console.log("[AUTH_CONTEXT] Session cookie value:", value ? `${value.substring(0, 8)}...` : 'empty');
+          // Only update user state if it's currently not null
+          if (user !== null) {
+            setUser(null);
           }
-          if (sessionIdCookie) {
-            const value = sessionIdCookie.split('=')[1];
-            console.log("[AUTH_CONTEXT] SessionId cookie value:", value ? `${value.substring(0, 8)}...` : 'empty');
-          }
+          return false;
         }
         
-        // Use a longer timeout for session check to ensure it completes
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+        const text = await response.text();
         
+        // Make sure we have valid JSON before parsing
+        if (!text) {
+          if (user !== null) {
+            setUser(null);
+          }
+          return false;
+        }
+        
+        let data;
         try {
-          console.log("[AUTH_CONTEXT] Sending fetch request to session API");
-          const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-              'Cache-Control': 'no-cache, no-store, must-revalidate',
-              'Pragma': 'no-cache',
-              'Expires': '0',
-            },
-            // Important for cookies - using include mode to ensure 
-            // cookies are sent with request in both same-origin and cross-origin scenarios
-            credentials: 'include',
-            signal: controller.signal
-          });
+          data = JSON.parse(text);
+        } catch (parseError) {
+          // Always log parse errors as these indicate a real problem
+          console.error('JSON parse error:', parseError instanceof Error ? parseError.message : 'Invalid JSON');
           
-          clearTimeout(timeoutId);
-          console.log("[AUTH_CONTEXT] Session API response status:", response.status);
-          
-          // Check if response is ok before trying to parse JSON
-          if (!response.ok) {
-            console.error('[AUTH_CONTEXT] Session API returned error:', response.status);
-            // Important: Only update user state if we're sure it's invalid
-            // to prevent unnecessary state changes that cause re-renders
-            if (user !== null) {
-              console.log('[AUTH_CONTEXT] Session API error, clearing user state');
-              setUser(null);
-            }
-            return false;
+          if (user !== null) {
+            setUser(null);
           }
-          
-          const text = await response.text();
-          console.log("[AUTH_CONTEXT] Session API raw response:", text.substring(0, 100) + (text.length > 100 ? '...' : ''));
-          
-          // Make sure we have valid JSON before parsing
-          if (!text) {
-            console.log('[AUTH_CONTEXT] Empty response from session API');
-            if (user !== null) {
-              setUser(null);
-            }
-            return false;
-          }
-          
-          // Verify if cookies were properly set in the response
-          console.log("[AUTH_CONTEXT] Response headers:", {
-            'set-cookie': response.headers.get('set-cookie') ? 'present' : 'absent',
-            'x-set-cookie': response.headers.get('x-set-cookie') ? 'present' : 'absent'
-          });
-          
-          // Check cookies after response
-          if (typeof document !== 'undefined') {
-            const cookiesAfter = document.cookie.split(';').map(c => c.trim());
-            console.log("[AUTH_CONTEXT] Cookies after session API call:", cookiesAfter);
-            
-            // Log cookie values for debugging
-            const sessionCookieAfter = cookiesAfter.find(c => c.startsWith('session='));
-            const sessionIdCookieAfter = cookiesAfter.find(c => c.startsWith('sessionId='));
-            
-            console.log("[AUTH_CONTEXT] Session cookie after API call:", 
-                        sessionCookieAfter ? `present (${sessionCookieAfter.split('=')[1]?.substring(0, 8)}...)` : 'missing');
-            console.log("[AUTH_CONTEXT] SessionId cookie after API call:", 
-                        sessionIdCookieAfter ? `present (${sessionIdCookieAfter.split('=')[1]?.substring(0, 8)}...)` : 'missing');
-          }
-          
-          let data;
-          try {
-            data = JSON.parse(text);
-            console.log("[AUTH_CONTEXT] Session data parsed:", data);
-          } catch (parseError) {
-            console.error('[AUTH_CONTEXT] Error parsing session response:', parseError);
-            if (user !== null) {
-              console.log('[AUTH_CONTEXT] JSON parse error, clearing user state');
-              setUser(null);
-            }
-            return false;
-          }
-          
-          if (data.authenticated && data.user) {
-            console.log("[AUTH_CONTEXT] Valid user found in session ID:", data.user.id, "Email:", data.user.email);
-            
-            // Important: Only update user state if it's different or null
-            // This prevents unnecessary re-renders
-            const userChanged = !user || 
-                               user.id !== data.user.id || 
-                               user.email !== data.user.email || 
-                               user.name !== data.user.name;
-                               
-            if (userChanged) {
-              console.log("[AUTH_CONTEXT] User state different, updating user state");
-              setUser(data.user);
-            } else {
-              console.log("[AUTH_CONTEXT] User state unchanged, keeping current state");
-            }
-            
-            return true;
-          } else {
-            console.log("[AUTH_CONTEXT] No authenticated user in session response");
-            if (user !== null) {
-              console.log('[AUTH_CONTEXT] Not authenticated, clearing user state');
-              setUser(null);
-            }
-            return false;
-          }
-        } finally {
-          clearTimeout(timeoutId);
+          return false;
         }
-      } catch (fetchError) {
-        console.error('[AUTH_CONTEXT] Error fetching session:', fetchError);
-        // Only update state if there's a change needed
-        if (user !== null) {
-          console.log('[AUTH_CONTEXT] Fetch error, clearing user state');
-          setUser(null);
+        
+        if (data.authenticated && data.user) {
+          // Important: Only update user state if it's different or null
+          // This prevents unnecessary re-renders
+          const userChanged = !user || 
+                             user.id !== data.user.id || 
+                             user.email !== data.user.email || 
+                             user.name !== data.user.name;
+                             
+          if (userChanged) {
+            setUser(data.user);
+          }
+          
+          return true;
+        } else {
+          if (user !== null) {
+            setUser(null);
+          }
+          return false;
         }
-        return false;
+      } finally {
+        clearTimeout(timeoutId);
       }
     } catch (error) {
-      console.error('[AUTH_CONTEXT] Session check error:', error);
+      // Only log errors if debugging is enabled
+      const showDebug = process.env.NODE_ENV === 'development' && process.env.DEBUG_AUTH === 'true';
+      if (showDebug) {
+        console.error('Session check failed:', error instanceof Error ? error.message : 'Unknown error');
+      }
+      
       if (user !== null) {
-        console.log('[AUTH_CONTEXT] General error, clearing user state');
         setUser(null);
       }
       return false;

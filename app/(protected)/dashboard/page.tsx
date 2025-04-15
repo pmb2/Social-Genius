@@ -17,32 +17,22 @@ export default function DashboardPage() {
     const { user, loading, checkSession } = useAuth();
     
     useEffect(() => {
-        console.log("[DASHBOARD] Component mounted or auth state changed");
-        console.log("[DASHBOARD] Auth state - loading:", loading, "user:", user ? "exists (ID: " + user.id + ")" : "null");
+        // Removed excessive logging for clarity
+        // Only log critical errors or when explicitly enabled with DEBUG_DASHBOARD=true
+        const debugEnabled = process.env.NODE_ENV === 'development' && process.env.DEBUG_DASHBOARD === 'true';
         
-        // Log cookies in the dashboard component for debugging
-        if (typeof document !== 'undefined') {
-            const cookies = document.cookie.split(';').map(c => c.trim());
-            console.log("[DASHBOARD] Current cookies:", cookies);
-            const sessionCookie = cookies.find(c => c.startsWith('session='));
-            const sessionIdCookie = cookies.find(c => c.startsWith('sessionId='));
-            
-            console.log("[DASHBOARD] Session cookie:", 
-                      sessionCookie ? `present (${sessionCookie.split('=')[1]?.substring(0, 8)}...)` : 'missing');
-            console.log("[DASHBOARD] SessionId cookie:", 
-                      sessionIdCookie ? `present (${sessionIdCookie.split('=')[1]?.substring(0, 8)}...)` : 'missing');
+        if (debugEnabled) {
+            console.log("[DASHBOARD] Auth state - loading:", loading, "user:", user ? "exists" : "null");
         }
         
         if (loading) {
-            console.log("[DASHBOARD] Still loading auth state, showing loader");
+            // Set loading state without logging
             setIsLoading(true);
             return; // Don't do anything else while loading
         }
         
         // If we already have a user, show the dashboard immediately
         if (user) {
-            console.log("[DASHBOARD] User authenticated ID:", user.id, "Email:", user.email);
-            console.log("[DASHBOARD] User session active, showing dashboard");
             setIsLoading(false);
             return;
         }
@@ -52,36 +42,34 @@ export default function DashboardPage() {
             document.cookie.includes('session=') || document.cookie.includes('sessionId=')
         );
         
-        console.log("[DASHBOARD] No user in context but cookies present:", hasCookies);
-        
         // If no user is found, perform a session check after a delay
         // to ensure cookies have been properly processed
         const timer = setTimeout(async () => {
-            console.log("[DASHBOARD] Running delayed session check");
+            // Only log if debug is enabled
+            if (debugEnabled) {
+                console.log("[DASHBOARD] Running delayed session check");
+            }
             
             try {
                 // Try to verify the session one more time before redirecting
-                console.log("[DASHBOARD] Re-checking session...");
                 const hasSession = await checkSession();
-                console.log("[DASHBOARD] Session check result:", hasSession ? "Valid session" : "No valid session");
-                console.log("[DASHBOARD] User state after check:", user ? "User present" : "No user");
                 
                 if (hasSession && user) {
-                    console.log("[DASHBOARD] Session verified on recheck, showing dashboard");
                     setIsLoading(false);
                 } else {
-                    console.log("[DASHBOARD] No valid session found on recheck, redirecting to auth");
-                    // Use window.location for hard redirect
-                    window.location.href = '/auth?reason=no_valid_session_on_recheck';
+                    // Redirect to auth page without reloading the whole window
+                    router.push('/auth?reason=session_expired');
                 }
             } catch (error) {
-                console.error("[DASHBOARD] Error rechecking session:", error);
-                // If session check fails, redirect to login
-                window.location.href = '/auth?reason=session_check_error';
+                if (debugEnabled) {
+                    console.error("[DASHBOARD] Session check error");
+                }
+                // Redirect to auth page without reloading the whole window
+                router.push('/auth?reason=session_error');
             } finally {
                 setIsLoading(false);
             }
-        }, 2000); // Even longer delay to ensure cookies are properly processed
+        }, 1000); // Reduced delay to improve responsiveness
         
         return () => clearTimeout(timer);
     }, [user, loading, checkSession]);

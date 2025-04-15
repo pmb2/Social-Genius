@@ -1,6 +1,7 @@
 "use client"
 
-import {useState, useEffect, useMemo, useCallback, Suspense} from "react"
+import {useState, useEffect, useMemo, useCallback, useRef, Suspense} from "react"
+import {useRouter} from "next/navigation"
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table"
 import {Dialog, DialogContent, DialogTitle, DialogDescription} from "@/components/ui/dialog"
 import {Button} from "@/components/ui/button"
@@ -35,9 +36,13 @@ type Business = {
     createdAt: string;
     authStatus?: 'logged_in' | 'pending' | 'failed';
     browserInstance?: string;
+    _modalOpenTime?: number; // Track when modal was opened to detect changes
 }
 
 export function BusinessProfileDashboard() {
+    // Import router for client-side navigation without full page reloads
+    const router = useRouter();
+    
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [isAddBusinessModalOpen, setIsAddBusinessModalOpen] = useState(false)
     const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false)
@@ -62,6 +67,9 @@ export function BusinessProfileDashboard() {
     const [authError, setAuthError] = useState("")
     const [isGoogleAuthStep, setIsGoogleAuthStep] = useState(false)
     const [autoLoginAttempted, setAutoLoginAttempted] = useState(false)
+    
+    // Track if component is mounted to prevent operations after unmount
+    const isMounted = useRef(true);
 
     // Auth and subscription data
     const {user} = useAuth();
@@ -105,15 +113,21 @@ export function BusinessProfileDashboard() {
 
             // Try to get from session storage cache first (client-side only) if not skipping cache
             let cachedData = null;
-            // Increase cache time to 5 minutes to prevent frequent refreshes
+            // Increase cache time to 15 minutes to prevent frequent refreshes
+            // This is a significant change to reduce API calls and prevent refreshes
+            const CACHE_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+            
             if (!skipCache && typeof window !== 'undefined') {
                 try {
                     const cachedJson = sessionStorage.getItem(cacheKey);
                     if (cachedJson) {
                         const cached = JSON.parse(cachedJson);
-                        // Use cache if it's less than 5 minutes old
-                        if (cached && cached.timestamp && (Date.now() - cached.timestamp < 300 * 1000)) {
+                        // Use cache if it's less than 15 minutes old
+                        if (cached && cached.timestamp && (Date.now() - cached.timestamp < CACHE_DURATION_MS)) {
                             cachedData = cached.data;
+                            log(`Using cached data (expires in ${Math.round((cached.timestamp + CACHE_DURATION_MS - Date.now())/1000/60)} minutes)`, 'info');
+                        } else {
+                            log('Cache expired, will fetch fresh data', 'info');
                         }
                     }
                 } catch (e) {
@@ -169,11 +183,14 @@ export function BusinessProfileDashboard() {
 
                 // If authentication error, try to refresh the session
                 if (response.status === 401 && (data.error === 'Invalid or expired session' || data.error === 'Authentication required')) {
-                    log('Authentication error detected during fetch, redirecting to login page', 'error');
-                    // Redirect to login page after a short delay to let user see error
-                    setTimeout(() => {
-                        window.location.href = '/auth?session=expired';
-                    }, 500);
+                    log('Authentication error detected during fetch', 'error');
+                    
+                    // Use Next.js router instead of window.location to prevent page refresh
+                    // Only navigate if component is still mounted
+                    if (isMounted.current) {
+                        router.push('/auth?reason=session_expired');
+                    }
+                    
                     throw new Error('Session expired. Please log in again.');
                 }
 
@@ -321,9 +338,20 @@ export function BusinessProfileDashboard() {
         fetchBusinesses(true);
     }, [businesses, fetchBusinesses]);
 
-    // Fetch businesses on component mount
+    // Fetch businesses on component mount - only once
     useEffect(() => {
-        fetchBusinesses();
+        // Set a flag in session storage to track initial data load
+        const businessesLoaded = sessionStorage.getItem('businessesInitiallyLoaded') === 'true';
+        
+        // Fetch businesses on first load or if forced refresh
+        if (!businessesLoaded) {
+            fetchBusinesses();
+            // Mark as loaded to prevent unnecessary refreshes
+            sessionStorage.setItem('businessesInitiallyLoaded', 'true');
+        } else {
+            // Still try to use cached data without forcing API refresh
+            fetchBusinesses(false);
+        }
     }, [fetchBusinesses]);
 
     // Attempt auto-login for all businesses when the list is first loaded
@@ -332,11 +360,15 @@ export function BusinessProfileDashboard() {
         // Store a flag in sessionStorage to track if we've already tried auto-login
         // in this browser session to prevent repeated attempts
         if (typeof window !== 'undefined') {
+            // Check browser session storage first
             const alreadyAttempted = sessionStorage.getItem('autoLoginAttempted') === 'true';
             
             if (alreadyAttempted) {
-                // If we've already attempted in this session, just mark as attempted
-                setAutoLoginAttempted(true);
+                // If we've already attempted in this session, just mark as attempted locally
+                // without triggering any state updates or additional processing
+                if (!autoLoginAttempted) {
+                    setAutoLoginAttempted(true);
+                }
                 return;
             }
             
@@ -344,18 +376,32 @@ export function BusinessProfileDashboard() {
             // and haven't attempted auto-login yet
             if (businesses.length > 0 && !isLoading && !autoLoginAttempted) {
                 log(`Starting automatic login process for all businesses`, 'info');
-                setAutoLoginAttempted(true); // Mark as attempted to prevent infinite loop
                 
-                // Also store in session storage to prevent repeated attempts
+                // Mark as attempted to prevent infinite loop
+                setAutoLoginAttempted(true);
+                
+                // Store in session storage immediately to prevent repeated attempts
+                // even if the page refreshes before the timeout completes
                 sessionStorage.setItem('autoLoginAttempted', 'true');
                 
                 // Delay auto-login to ensure UI is responsive
-                setTimeout(() => {
+                // Use a longer delay (10s) to ensure the UI is fully loaded and stable
+                const timer = setTimeout(() => {
                     tryAutoLoginForAllBusinesses();
-                }, 5000);
+                }, 10000);
+                
+                // Clean up the timer if the component unmounts
+                return () => clearTimeout(timer);
             }
         }
     }, [businesses.length, isLoading, autoLoginAttempted, tryAutoLoginForAllBusinesses]);
+    
+    // Cleanup on unmount to prevent memory leaks and state updates after unmount
+    useEffect(() => {
+        return () => {
+            isMounted.current = false;
+        };
+    }, []);
 
     const handleCloseUpgradeModal = () => {
         setIsUpgradeModalOpen(false);
@@ -642,8 +688,10 @@ export function BusinessProfileDashboard() {
 
                     if (!sessionResponse.ok) {
                         log('Session refresh failed, redirecting to login', 'error');
-                        // Redirect to login page
-                        window.location.href = '/auth?session=expired';
+                        // Use router instead of window.location to prevent page refresh
+                        if (isMounted.current) {
+                            router.push('/auth?reason=session_expired');
+                        }
                         return {success: false, error: 'Session expired'};
                     }
 
@@ -848,7 +896,7 @@ export function BusinessProfileDashboard() {
                         {locationLimit !== null && businesses.length >= locationLimit && (
                             <Button
                                 variant="outline"
-                                onClick={() => window.location.href = '/subscription'}
+                                onClick={() => router.push('/subscription')}
                                 className="bg-white hover:bg-gray-100"
                             >
                                 Upgrade Plan
@@ -970,10 +1018,22 @@ export function BusinessProfileDashboard() {
             {/* Business Profile Modal */}
             <Dialog open={isModalOpen} onOpenChange={(open) => {
                 setIsModalOpen(open);
-                // Refresh businesses list when modal is closed to reflect any changes
-                if (!open) {
-                    // Skip cache to ensure we get fresh data
-                    fetchBusinesses(true);
+                // Only refresh businesses list when modal is closed if changes were made
+                // This prevents unnecessary refreshes when just viewing the modal
+                if (!open && selectedBusiness) {
+                    // Use the timestamp approach to determine if we need to refresh
+                    const modalOpenTimestamp = selectedBusiness._modalOpenTime || 0;
+                    const modalDuration = Date.now() - modalOpenTimestamp;
+                    
+                    // Only refresh if the modal was open for at least 5 seconds
+                    // This is a good heuristic for determining if changes were made
+                    // Short interactions (< 5 seconds) are likely just viewing, not editing
+                    if (modalDuration > 5000) {
+                        log("Modal was open for " + Math.round(modalDuration/1000) + " seconds - refreshing data", 'info');
+                        fetchBusinesses(true);
+                    } else {
+                        log("Short modal interaction - skipping refresh", 'info');
+                    }
                 }
             }}>
                 <DialogContent className="p-0 max-w-[1200px] w-[95vw] h-[95vh] max-h-[92vh] overflow-hidden"
@@ -982,13 +1042,17 @@ export function BusinessProfileDashboard() {
                     <div id="profile-modal-description" className="sr-only">
                         Business profile details and management interface
                     </div>
-                    <BusinessProfileModal business={selectedBusiness} onClose={() => {
-                        log("Business profile modal closed - refreshing business list", 'info');
-                        // Close the modal
-                        handleClose();
-                        // Refresh businesses list immediately - force skipping cache
-                        fetchBusinesses(true);
-                    }}/>
+                    <BusinessProfileModal 
+                        business={selectedBusiness ? {
+                            ...selectedBusiness,
+                            _modalOpenTime: Date.now() // Add timestamp when modal was opened
+                        } : null} 
+                        onClose={() => {
+                            log("Business profile modal closed via explicit close button", 'info');
+                            // Just close the modal - refresh will be handled by onOpenChange if needed
+                            handleClose();
+                        }}
+                    />
                 </DialogContent>
             </Dialog>
 
