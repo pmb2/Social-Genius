@@ -1,47 +1,43 @@
-#!/bin/bash
+#\!/bin/bash
 
-# Color codes
-GREEN="\033[0;32m"
-YELLOW="\033[0;33m"
-RED="\033[0;31m"
-NC="\033[0m" # No Color
+# This script uses the fix-db-schema.sql file to fix the database schema issues
+# It handles executing the SQL script against the Docker PostgreSQL container
 
-echo -e "${YELLOW}Starting database schema fix...${NC}"
+echo "Fixing database schema..."
 
-# Run docker-compose with init-db.sql mounted
-echo -e "${YELLOW}Creating business tables using init-db.sql...${NC}"
-docker exec -i social-genius_postgres_1 psql -U postgres -d socialgenius -c "
-CREATE TABLE IF NOT EXISTS businesses (
-  id SERIAL PRIMARY KEY,
-  business_id TEXT UNIQUE NOT NULL,
-  name TEXT NOT NULL,
-  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  status TEXT DEFAULT 'noncompliant',
-  description TEXT,
-  industry TEXT,
-  website TEXT,
-  logo_url TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE (business_id, user_id)
-);"
+# Check if PostgreSQL container is running
+if \! docker ps | grep -q "social-genius_postgres"; then
+  echo "Error: PostgreSQL container is not running. Start it with 'docker-compose -f docker-compose.dev.yml up -d'"
+  exit 1
+fi
 
-# Create business_credentials table
-echo -e "${YELLOW}Creating business_credentials table...${NC}"
-docker exec -i social-genius_postgres_1 psql -U postgres -d socialgenius -c "
-CREATE TABLE IF NOT EXISTS business_credentials (
-  id SERIAL PRIMARY KEY,
-  business_id INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
-  credential_type TEXT NOT NULL,
-  credential_value TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(business_id, credential_type)
-);"
+# Get PostgreSQL container ID
+PG_CONTAINER=$(docker ps | grep social-genius_postgres | awk '{print $1}')
+if [ -z "$PG_CONTAINER" ]; then
+  echo "Error: Could not identify PostgreSQL container"
+  exit 1
+fi
 
-# Verify the schema
-echo -e "${YELLOW}Verifying schema...${NC}"
-docker exec -i social-genius_postgres_1 psql -U postgres -d socialgenius -c "\d businesses"
-docker exec -i social-genius_postgres_1 psql -U postgres -d socialgenius -c "\d business_credentials"
+echo "Found PostgreSQL container: $PG_CONTAINER"
 
-echo -e "${GREEN}Database schema has been repaired!${NC}"
+# Copy SQL file to container
+echo "Copying fix-db-schema-alter.sql to container..."
+docker cp fix-db-schema-alter.sql "$PG_CONTAINER:/tmp/fix-db-schema-alter.sql"
+
+# Execute SQL file
+echo "Executing SQL file..."
+docker exec "$PG_CONTAINER" psql -U postgres -d socialgenius -f /tmp/fix-db-schema-alter.sql
+
+# Check if SQL execution was successful
+if [ $? -eq 0 ]; then
+  echo "Database schema fixed successfully\!"
+else
+  echo "Error: Failed to fix database schema. Check PostgreSQL logs for details."
+  exit 1
+fi
+
+# Restart app container
+echo "Restarting app container..."
+docker-compose -f docker-compose.dev.yml restart app
+
+echo "Done\!"

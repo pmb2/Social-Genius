@@ -73,7 +73,9 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
     
-    if (passwordHash.length !== 64) {
+    // In development, we're allowing fallback to plain passwords when crypto API is unavailable
+    // This check should be enabled in production only
+    if (process.env.NODE_ENV === 'production' && passwordHash.length !== 64) {
       return NextResponse.json({ 
         success: false, 
         error: 'Invalid password hash format' 
@@ -81,20 +83,32 @@ export async function POST(req: NextRequest) {
     }
     
     // Use AuthService for registration (which handles database interactions properly)
+    console.log('[REGISTER-API] Getting AuthService instance...');
     const authService = AuthService.getInstance();
     
     try {
       // Use the AuthService register method with the hashed password
+      console.log('[REGISTER-API] Calling registerWithHash for email:', email);
+      console.log('[REGISTER-API] Password hash length:', passwordHash?.length);
+      console.log('[REGISTER-API] Password hash preview:', passwordHash?.substring(0, 10) + '...');
+      console.log('[REGISTER-API] Has name:', !!name);
+      
       const result = await authService.registerWithHash(email, passwordHash, name);
+      console.log('[REGISTER-API] Registration result:', { 
+        success: result.success, 
+        userId: result.userId, 
+        error: result.error 
+      });
       
       if (!result.success) {
+        console.log('[REGISTER-API] Registration failed:', result.error);
         return NextResponse.json({ 
           success: false, 
           error: result.error || 'Registration failed'
         }, { status: 400 });
       }
       
-      console.log(`User registered with ID: ${result.userId}`);
+      console.log(`[REGISTER-API] User registered successfully with ID: ${result.userId}`);
       
       // Return success response
       return NextResponse.json({
@@ -103,27 +117,62 @@ export async function POST(req: NextRequest) {
         userId: result.userId
       }, { status: 201 });
     } catch (registerError) {
-      console.error('Error during user registration:', registerError);
+      console.error('[REGISTER-API] Error during user registration:', registerError);
+      console.error('[REGISTER-API] Error stack:', registerError instanceof Error ? registerError.stack : 'No stack available');
+      
+      // Extract more useful error message
+      let errorMessage = 'Failed to create user account. Please try again.';
+      if (registerError instanceof Error) {
+        if (registerError.message.includes('duplicate') || 
+            registerError.message.includes('already exists') || 
+            registerError.message.includes('already registered')) {
+          errorMessage = 'This email is already registered. Please use a different email or try to login.';
+        } else if (registerError.message.includes('database') || 
+                  registerError.message.includes('sql') || 
+                  registerError.message.includes('connection')) {
+          errorMessage = 'Database connection error occurred. Please try again later.';
+        }
+      }
+      
       return NextResponse.json({ 
         success: false, 
-        error: 'Failed to create user account. Please try again.' 
+        error: errorMessage,
+        debug: process.env.NODE_ENV === 'development' ? 
+          (registerError instanceof Error ? registerError.message : String(registerError)) : undefined
       }, { status: 500 });
     }
   } catch (error) {
     // Final catch for any unexpected errors
-    console.error('Unexpected registration error:', error);
-    console.error('Error stack:', error instanceof Error ? error.stack : 'No stack available');
+    console.error('[REGISTER-API] Unexpected registration error:', error);
+    console.error('[REGISTER-API] Error stack:', error instanceof Error ? error.stack : 'No stack available');
     
-    // Return a very simple response
-    return new Response(JSON.stringify({ 
-      success: false, 
-      error: 'Internal server error',
-      message: error instanceof Error ? error.message : String(error)
-    }), {
-      status: 500,
-      headers: {
-        'Content-Type': 'application/json'
+    // Attempt to categorize the error for better client feedback
+    let errorMessage = 'Internal server error';
+    let statusCode = 500;
+    
+    if (error instanceof Error) {
+      if (error.message.includes('database') || 
+          error.message.includes('sql') || 
+          error.message.includes('connection')) {
+        errorMessage = 'Database connection error. Please try again later.';
+      } else if (error.message.includes('timeout')) {
+        errorMessage = 'The server took too long to respond. Please try again.';
+      } else if (error.message.includes('parse') || error.message.includes('json')) {
+        errorMessage = 'Invalid request format. Please check your input.';
+        statusCode = 400;
+      } else if (error.message.includes('duplicate') || 
+                error.message.includes('already exists') || 
+                error.message.includes('already registered')) {
+        errorMessage = 'This email is already registered. Please use a different email or try to login.';
+        statusCode = 409; // Conflict
       }
-    });
+    }
+    
+    return NextResponse.json({ 
+      success: false, 
+      error: errorMessage,
+      debug: process.env.NODE_ENV === 'development' ? 
+        (error instanceof Error ? error.message : String(error)) : undefined
+    }, { status: statusCode });
   }
 }

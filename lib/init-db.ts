@@ -77,8 +77,15 @@ export async function initializeDatabase() {
     
     // Initialize tables
     console.log('Initializing database tables...');
-    await dbService.initialize();
-    console.log('Database tables initialized successfully');
+    try {
+      console.log('dbService methods available:', Object.getOwnPropertyNames(Object.getPrototypeOf(dbService)));
+      console.log('dbService.initialize exists:', typeof dbService.initialize === 'function');
+      await dbService.initialize();
+      console.log('Database tables initialized successfully');
+    } catch (error) {
+      console.error('Error during database initialization:', error);
+      throw error;
+    }
     
     // Initialize the Auth service
     console.log('Initializing Auth service...');

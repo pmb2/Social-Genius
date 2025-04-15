@@ -429,6 +429,336 @@ class AuthService {
     return this.db;
   }
   
+  /**
+   * Register a user with a pre-hashed password
+   * This method is used when the client has already hashed the password
+   */
+  public async registerWithHash(email: string, passwordHash: string, name?: string): Promise<{ success: boolean, userId?: number, error?: string }> {
+    try {
+      console.log('=============================================');
+      console.log('[AUTH-SERVICE] registerWithHash called with:', { email, hashLength: passwordHash.length, name });
+      console.log('[AUTH-SERVICE] Client-provided hash:', passwordHash.substring(0, 10) + '... (length: ' + passwordHash.length + ')');
+      
+      // Debug what instance of db we're using
+      console.log('[AUTH-SERVICE] DATABASE INSTANCE CHECK:');
+      console.log('[AUTH-SERVICE] DB instance type:', this.db.constructor.name);
+      console.log('[AUTH-SERVICE] DB methods available:', Object.getOwnPropertyNames(Object.getPrototypeOf(this.db)));
+      
+      // Add extensive logging to debug database issues
+      console.log('[AUTH-SERVICE] Checking database connection...');
+      try {
+        const isConnected = await this.db.testConnection();
+        if (!isConnected) {
+          console.error('[AUTH-SERVICE] Database connection failed in registerWithHash');
+          return { success: false, error: 'Database connection failed' };
+        }
+        console.log('[AUTH-SERVICE] Database connection verified ✅');
+      } catch (connError) {
+        console.error('[AUTH-SERVICE] Error testing database connection:', connError);
+        console.error('[AUTH-SERVICE] Error stack:', connError instanceof Error ? connError.stack : 'No stack available');
+        return { success: false, error: 'Error testing database connection' };
+      }
+      
+      // Check if user already exists
+      console.log('[AUTH-SERVICE] Checking if user exists...');
+      try {
+        let existingUser;
+        try {
+          existingUser = await this.db.getUserByEmail(email);
+        } catch (dbError) {
+          console.error('[AUTH-SERVICE] Database error checking if user exists:', dbError);
+          console.error('[AUTH-SERVICE] Error stack:', dbError instanceof Error ? dbError.stack : 'No stack available');
+          
+          // Try to initialize the database if the error might be because tables don't exist
+          if (dbError.message && (
+              dbError.message.includes('relation "users" does not exist') || 
+              dbError.message.includes('no such table') ||
+              dbError.message.includes('does not exist')
+          )) {
+            console.log('[AUTH-SERVICE] Attempting to initialize database tables...');
+            try {
+              await this.db.initialize();
+              console.log('[AUTH-SERVICE] Database initialized, retrying user lookup...');
+              existingUser = await this.db.getUserByEmail(email);
+            } catch (initError) {
+              console.error('[AUTH-SERVICE] Failed to initialize database:', initError);
+              return { success: false, error: 'Failed to initialize database' };
+            }
+          } else {
+            return { success: false, error: 'Database error checking if user exists' };
+          }
+        }
+        
+        console.log('[AUTH-SERVICE] User exists check result:', existingUser ? 'User exists ⚠️' : 'User does not exist ✅');
+        if (existingUser) {
+          console.log('[AUTH-SERVICE] Email already registered:', email);
+          return { success: false, error: 'Email already registered' };
+        }
+      } catch (lookupError) {
+        console.error('[AUTH-SERVICE] Error checking if user exists:', lookupError);
+        console.error('[AUTH-SERVICE] Error stack:', lookupError instanceof Error ? lookupError.stack : 'No stack available');
+        return { success: false, error: 'Error checking if user exists' };
+      }
+      
+      // Create the secured password with new salt
+      // Format stored in DB will be salt:hashedPassword
+      console.log('[AUTH-SERVICE] Creating salted hash from client-side hash...');
+      try {
+        // Check if we're using a plain text fallback in development
+        let finalPasswordHash;
+        
+        if (process.env.NODE_ENV !== 'production' && passwordHash.length !== 64) {
+          console.log('[AUTH-SERVICE] Development mode: Using password hashing fallback');
+          // In development, if client couldn't hash the password, hash it on the server side
+          finalPasswordHash = this.hashPassword(passwordHash);
+        } else {
+          // Normal path - use the client-provided hash with our salt
+          const salt = randomBytes(16).toString('hex');
+          console.log('[AUTH-SERVICE] Generated salt:', salt.substring(0, 10) + '... (length: ' + salt.length + ')');
+          finalPasswordHash = `${salt}:${passwordHash}`;
+        }
+        
+        console.log('[AUTH-SERVICE] Final password format:', finalPasswordHash.substring(0, 10) + '... (length: ' + finalPasswordHash.length + ')');
+        
+        // Create user
+        console.log('[AUTH-SERVICE] Creating user in database...');
+        try {
+          console.log('[AUTH-SERVICE] Before registerUser DB call for email:', email);
+          const userId = await this.db.registerUser(email, finalPasswordHash, name);
+          console.log('[AUTH-SERVICE] After registerUser DB call - userId:', userId);
+          
+          if (!userId || userId <= 0) {
+            console.error('[AUTH-SERVICE] Registration failed - invalid user ID returned:', userId);
+            return { success: false, error: 'Database error: Invalid user ID' };
+          }
+          
+          // Verify the user was created properly
+          try {
+            console.log('[AUTH-SERVICE] Verifying user creation...');
+            const newUser = await this.db.getUserByEmail(email);
+            
+            if (!newUser) {
+              console.error('[AUTH-SERVICE] User verification failed - user not found after creation');
+              return { success: false, error: 'Database error: User not found after creation' };
+            }
+            
+            console.log('[AUTH-SERVICE] Verified user exists with ID:', newUser.id);
+            console.log('[AUTH-SERVICE] User verification details:');
+            console.log('[AUTH-SERVICE] - email matches:', newUser.email === email);
+            console.log('[AUTH-SERVICE] - has password hash:', !!newUser.password_hash);
+            console.log('[AUTH-SERVICE] - password hash format:', newUser.password_hash?.substring(0, 10) + '... (length: ' + newUser.password_hash?.length + ')');
+            console.log('[AUTH-SERVICE] - password contains salt-hash separator:', newUser.password_hash?.includes(':'));
+            
+            // Extra check to verify the salt and hash were stored correctly
+            if (newUser.password_hash && newUser.password_hash.includes(':')) {
+              const [storedSalt, storedHash] = newUser.password_hash.split(':');
+              console.log('[AUTH-SERVICE] - stored salt:', storedSalt.substring(0, 10) + '... (length: ' + storedSalt.length + ')');
+              console.log('[AUTH-SERVICE] - stored hash:', storedHash.substring(0, 10) + '... (length: ' + storedHash.length + ')');
+              console.log('[AUTH-SERVICE] - original hash match:', storedHash === passwordHash ? 'Match ✅' : 'No match ❌');
+            }
+          } catch (verifyError) {
+            console.error('[AUTH-SERVICE] Error verifying user creation:', verifyError);
+            console.error('[AUTH-SERVICE] Error stack:', verifyError instanceof Error ? verifyError.stack : 'No stack available');
+            // Continue since the user was created successfully based on the DB call
+          }
+          
+          console.log('[AUTH-SERVICE] Registration successful for email:', email);
+          console.log('=============================================');
+          return { success: true, userId };
+        } catch (dbError) {
+          console.error('[AUTH-SERVICE] Database error during user registration:', dbError);
+          console.error('[AUTH-SERVICE] Error stack:', dbError instanceof Error ? dbError.stack : 'No stack available');
+          return { success: false, error: 'Database error during registration' };
+        }
+      } catch (cryptoError) {
+        console.error('[AUTH-SERVICE] Error generating password hash:', cryptoError);
+        console.error('[AUTH-SERVICE] Error stack:', cryptoError instanceof Error ? cryptoError.stack : 'No stack available');
+        return { success: false, error: 'Error generating password hash' };
+      }
+    } catch (error) {
+      console.error('[AUTH-SERVICE] Registration with hash error:', error);
+      console.error('[AUTH-SERVICE] Error stack:', error instanceof Error ? error.stack : 'No stack available');
+      return { success: false, error: 'Registration failed' };
+    }
+  }
+
+  /**
+   * Login a user with a pre-hashed password
+   * This method is used when the client has already hashed the password
+   */
+  public async loginWithHash(email: string, passwordHash: string): Promise<{ success: boolean, token?: string, user?: any, error?: string }> {
+    try {
+      console.log('=============================================');
+      console.log('[AUTH-SERVICE] loginWithHash attempt for email:', email);
+      console.log('[AUTH-SERVICE] Hash provided by client:', passwordHash.substring(0, 10) + '... (length: ' + passwordHash.length + ')');
+      
+      // Debug what instance of db we're using
+      console.log('[AUTH-SERVICE] DATABASE INSTANCE CHECK:');
+      console.log('[AUTH-SERVICE] DB instance type:', this.db.constructor.name);
+      console.log('[AUTH-SERVICE] DB methods available:', Object.getOwnPropertyNames(Object.getPrototypeOf(this.db)));
+      
+      // Add extensive logging to debug database issues
+      console.log('[AUTH-SERVICE] Checking database connection...');
+      try {
+        const isConnected = await this.db.testConnection();
+        if (!isConnected) {
+          console.error('[AUTH-SERVICE] Database connection failed in loginWithHash');
+          return { success: false, error: 'Database connection failed' };
+        }
+        console.log('[AUTH-SERVICE] Database connection verified ✅');
+      } catch (connError) {
+        console.error('[AUTH-SERVICE] Error testing database connection:', connError);
+        return { success: false, error: 'Error testing database connection' };
+      }
+      
+      // Get user
+      console.log('[AUTH-SERVICE] Looking up user by email:', email);
+      let user;
+      try {
+        try {
+          user = await this.db.getUserByEmail(email);
+        } catch (dbError) {
+          console.error('[AUTH-SERVICE] Database error looking up user:', dbError);
+          console.error('[AUTH-SERVICE] Error stack:', dbError instanceof Error ? dbError.stack : 'No stack available');
+          
+          // Try to initialize the database if the error might be because tables don't exist
+          if (dbError.message && (
+              dbError.message.includes('relation "users" does not exist') || 
+              dbError.message.includes('no such table') ||
+              dbError.message.includes('does not exist')
+          )) {
+            console.log('[AUTH-SERVICE] Attempting to initialize database tables during login...');
+            try {
+              await this.db.initialize();
+              console.log('[AUTH-SERVICE] Database initialized, retrying user lookup...');
+              user = await this.db.getUserByEmail(email);
+            } catch (initError) {
+              console.error('[AUTH-SERVICE] Failed to initialize database during login:', initError);
+              return { success: false, error: 'Failed to initialize database' };
+            }
+          } else {
+            return { success: false, error: 'Database error looking up user' };
+          }
+        }
+        
+        console.log('[AUTH-SERVICE] User lookup result:', user ? 'Found ✅' : 'Not found ❌');
+      } catch (lookupError) {
+        console.error('[AUTH-SERVICE] Error looking up user:', lookupError);
+        console.error('[AUTH-SERVICE] Error stack:', lookupError instanceof Error ? lookupError.stack : 'No stack available');
+        return { success: false, error: 'Error looking up user' };
+      }
+      
+      if (!user) {
+        console.log('[AUTH-SERVICE] User not found with email:', email);
+        return { success: false, error: 'Invalid credentials' };
+      }
+      
+      console.log('[AUTH-SERVICE] User found:', { id: user.id, email: user.email, hasName: !!user.name });
+      console.log('[AUTH-SERVICE] Stored password format check:');
+      console.log('[AUTH-SERVICE] - password_hash exists:', !!user.password_hash);
+      console.log('[AUTH-SERVICE] - password_hash type:', typeof user.password_hash);
+      console.log('[AUTH-SERVICE] - password_hash length:', user.password_hash?.length);
+      console.log('[AUTH-SERVICE] - password_hash preview:', user.password_hash?.substring(0, 10) + '...');
+      console.log('[AUTH-SERVICE] - contains colon:', user.password_hash?.includes(':'));
+      
+      // The stored password should be in the format: salt:hash
+      // Extract the salt and stored hash
+      if (!user.password_hash || !user.password_hash.includes(':')) {
+        console.error('[AUTH-SERVICE] ❌ Invalid password hash format in database');
+        console.error('[AUTH-SERVICE] Full stored hash for debugging:', user.password_hash);
+        return { success: false, error: 'Invalid credential format in database' };
+      }
+      
+      const [salt, storedHash] = user.password_hash.split(':');
+      console.log('[AUTH-SERVICE] Extracted salt:', salt?.substring(0, 5) + '... (length: ' + salt?.length + ')');
+      console.log('[AUTH-SERVICE] Extracted stored hash:', storedHash?.substring(0, 10) + '... (length: ' + storedHash?.length + ')');
+      console.log('[AUTH-SERVICE] Client provided hash:', passwordHash.substring(0, 10) + '... (length: ' + passwordHash.length + ')');
+      
+      // Compare the hashes character by character to see where they differ
+      let mismatchPosition = -1;
+      let charMismatches = 0;
+      if (storedHash && passwordHash) {
+        for (let i = 0; i < Math.min(storedHash.length, passwordHash.length); i++) {
+          if (storedHash[i] !== passwordHash[i]) {
+            if (mismatchPosition === -1) mismatchPosition = i;
+            charMismatches++;
+          }
+        }
+        
+        console.log('[AUTH-SERVICE] Hash comparison details:');
+        console.log('[AUTH-SERVICE] - First mismatch at position:', mismatchPosition === -1 ? 'No mismatch in shared length' : mismatchPosition);
+        console.log('[AUTH-SERVICE] - Total character mismatches:', charMismatches);
+        console.log('[AUTH-SERVICE] - Length mismatch:', storedHash.length !== passwordHash.length ? 
+                   `Yes (stored: ${storedHash.length}, provided: ${passwordHash.length})` : 'No');
+      }
+      
+      // In development, we might be using plain text fallback 
+      // Check if we're using a fallback (non-SHA-256) password in development
+      let isMatch = false;
+      
+      if (process.env.NODE_ENV !== 'production' && passwordHash.length !== 64) {
+        console.log('[AUTH-SERVICE] Development mode: Using password comparison fallback');
+        // In development, if client couldn't hash the password, compare with the original password
+        isMatch = this.comparePassword(passwordHash, user.password_hash);
+      } else {
+        // Normal operation - compare the hashes directly
+        isMatch = passwordHash === storedHash;
+      }
+      
+      console.log('[AUTH-SERVICE] Password verification result:', isMatch ? 'MATCH ✅' : 'NO MATCH ❌');
+      
+      if (!isMatch) {
+        console.log('[AUTH-SERVICE] Password verification failed for user:', email);
+        return { success: false, error: 'Invalid credentials' };
+      }
+      
+      console.log('[AUTH-SERVICE] Password verified successfully for user:', email);
+      
+      // Update last login
+      try {
+        await this.db.updateLastLogin(user.id);
+        console.log('[AUTH-SERVICE] Updated last login timestamp');
+      } catch (updateError) {
+        console.error('[AUTH-SERVICE] Error updating last login:', updateError);
+        console.error('[AUTH-SERVICE] Error stack:', updateError instanceof Error ? updateError.stack : 'No stack available');
+        // Continue since this is not critical
+      }
+      
+      // Generate token
+      const token = this.createToken(user);
+      
+      // Create session
+      const sessionId = this.generateSessionId();
+      const expiresAt = new Date(Date.now() + this.SESSION_EXPIRY);
+      
+      try {
+        console.log('[AUTH-SERVICE] Creating session...');
+        await this.db.createSession(user.id, sessionId, expiresAt);
+        console.log('[AUTH-SERVICE] Created session, ID:', sessionId?.substring(0, 8) + '...');
+      } catch (sessionError) {
+        console.error('[AUTH-SERVICE] Error creating session:', sessionError);
+        console.error('[AUTH-SERVICE] Error stack:', sessionError instanceof Error ? sessionError.stack : 'No stack available');
+        return { success: false, error: 'Error creating session' };
+      }
+      
+      // Return user info (without password)
+      const userInfo = {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        sessionId
+      };
+      
+      console.log('[AUTH-SERVICE] Login successful for user:', email);
+      console.log('=============================================');
+      return { success: true, token, user: userInfo };
+    } catch (error) {
+      console.error('[AUTH-SERVICE] Login with hash error:', error);
+      console.error('[AUTH-SERVICE] Error stack:', error instanceof Error ? error.stack : 'No stack available');
+      return { success: false, error: 'Login failed' };
+    }
+  }
+  
   // Update user profile
   public async updateUserProfile(userId: number, updates: { name?: string, email?: string, profilePicture?: string, phoneNumber?: string }): Promise<{ success: boolean, error?: string }> {
     try {

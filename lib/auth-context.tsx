@@ -167,14 +167,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Hash the password client-side before sending to server
         // This is not a full security solution but adds a layer of protection
         // against plain-text password transmission
-        const passwordHash = await window.crypto.subtle.digest(
-          'SHA-256',
-          new TextEncoder().encode(password)
-        );
+        let hashHex = '';
         
-        // Convert hash to hex string
-        const hashArray = Array.from(new Uint8Array(passwordHash));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        try {
+          // Check if we're in a secure context with Web Crypto API available
+          if (window.crypto && window.crypto.subtle) {
+            const passwordHash = await window.crypto.subtle.digest(
+              'SHA-256',
+              new TextEncoder().encode(password)
+            );
+            
+            // Convert hash to hex string
+            const hashArray = Array.from(new Uint8Array(passwordHash));
+            hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+          } else {
+            // Fallback for non-secure contexts (development)
+            console.warn('Web Crypto API not available - using fallback hashing for development only');
+            // Simple development fallback - NOT secure for production!
+            // In production, force HTTPS to ensure crypto.subtle is available
+            hashHex = password; // This sends password as-is in development
+          }
+        } catch (cryptoError) {
+          console.error('Crypto error:', cryptoError);
+          // Fallback for error cases
+          hashHex = password; // This sends password as-is in development
+        }
         
         const response = await fetch('/api/auth/login', {
           method: 'POST',
@@ -256,14 +273,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Hash the password client-side before sending to server
         // This is not a full security solution but adds a layer of protection
         // against plain-text password transmission
-        const passwordHash = await window.crypto.subtle.digest(
-          'SHA-256',
-          new TextEncoder().encode(password)
-        );
+        let hashHex = '';
         
-        // Convert hash to hex string
-        const hashArray = Array.from(new Uint8Array(passwordHash));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        try {
+          // Check if we're in a secure context with Web Crypto API available
+          if (window.crypto && window.crypto.subtle) {
+            const passwordHash = await window.crypto.subtle.digest(
+              'SHA-256',
+              new TextEncoder().encode(password)
+            );
+            
+            // Convert hash to hex string
+            const hashArray = Array.from(new Uint8Array(passwordHash));
+            hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+          } else {
+            // Fallback for non-secure contexts (development)
+            console.warn('Web Crypto API not available - using fallback hashing for development only');
+            // Simple development fallback - NOT secure for production!
+            // In production, force HTTPS to ensure crypto.subtle is available
+            hashHex = password; // This sends password as-is in development
+          }
+        } catch (cryptoError) {
+          console.error('Crypto error:', cryptoError);
+          // Fallback for error cases
+          hashHex = password; // This sends password as-is in development
+        }
         
         // Use the real registration endpoint now that we've fixed the runtime issue
         const response = await fetch('/api/auth/register', {

@@ -19,10 +19,12 @@ services:
       RUNNING_IN_DOCKER: 'true'
       NEXT_TELEMETRY_DISABLED: 1
       WATCHPACK_POLLING: "true"
-      # Database connection URLs
+      # Database connection URLs - use service name instead of IP
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
       DATABASE_URL_DOCKER: postgresql://postgres:postgres@postgres:5432/socialgenius
       DATABASE_URL_HOST: postgresql://postgres:postgres@localhost:5435/socialgenius
+      # Force using hostname instead of IP
+      PG_HOST: postgres
       # Auth secret for JWT tokens
       JWT_SECRET: "social-genius-local-dev-secret-9bcd3a80-54a1-11ef-88c4"
       # API keys
@@ -70,6 +72,8 @@ services:
       - postgres_data:/var/lib/postgresql/data
       # Add initialization script to configure database on first run
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+      # Add our migrations for the new features
+      - ./database-migrations/add-google-credentials.sql:/docker-entrypoint-initdb.d/add-google-credentials.sql
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
