@@ -39,8 +39,11 @@ export function LoginForm() {
       const result = await login(email, password);
       
       if (result.success) {
-        // Login successful - redirect to dashboard
-        window.location.href = '/dashboard';
+        console.log("Login successful, redirecting to dashboard");
+        // Give the browser time to process cookies before redirecting
+        setTimeout(() => {
+          window.location.href = '/dashboard';
+        }, 1000);
       } else {
         setError(result.error || "Login failed. Please check the server connection and try again.");
       }

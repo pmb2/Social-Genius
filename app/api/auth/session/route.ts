@@ -10,20 +10,13 @@ export async function GET(request: NextRequest) {
     const isAssetRequest = request.nextUrl.pathname.includes('favicon.ico') || 
                           request.nextUrl.pathname.includes('_next');
     
-    if (!isAssetRequest) {
-      console.log("Session API called for:", request.nextUrl.pathname);
-    }
+    const url = request.nextUrl.toString();
+    const timestamp = new Date().toISOString();
+    
+    // No logging for session API to reduce noise
     
     // Try to get cookie-based session info - check both cookies for compatibility
     const sessionCookie = request.cookies.get('session') || request.cookies.get('sessionId');
-    
-    if (!isAssetRequest) {
-      console.log("Session cookies:", {
-        'session': request.cookies.get('session')?.value ? 'present' : 'missing',
-        'sessionId': request.cookies.get('sessionId')?.value ? 'present' : 'missing',
-        'using': sessionCookie?.name
-      });
-    }
     
     if (sessionCookie && sessionCookie.value) {
       try {
@@ -32,11 +25,8 @@ export async function GET(request: NextRequest) {
         const session = await authService.verifySession(sessionCookie.value);
         
         if (session && session.user) {
-          if (!isAssetRequest) {
-            console.log("Valid session found for user:", session.user.email);
-          }
-          
-          return NextResponse.json({
+          // Create the response with the authenticated user
+          const response = NextResponse.json({
             authenticated: true,
             user: {
               id: session.user.id,
@@ -44,37 +34,56 @@ export async function GET(request: NextRequest) {
               name: session.user.name || "",
               profilePicture: session.user.profilePicture,
               phoneNumber: session.user.phoneNumber
-            }
+            },
+            timestamp: timestamp
           });
+          
+          // Ensure the cookies are kept
+          const options = {
+            secure: process.env.NODE_ENV === 'production',
+            httpOnly: true,
+            sameSite: 'lax' as const,
+            maxAge: 30 * 24 * 60 * 60 // 30 days
+          };
+          
+          // Re-add the session cookie to ensure it doesn't expire
+          response.cookies.set(sessionCookie.name, sessionCookie.value, options);
+          
+          // Also set the other cookie format for compatibility
+          const otherCookieName = sessionCookie.name === 'session' ? 'sessionId' : 'session';
+          response.cookies.set(otherCookieName, sessionCookie.value, options);
+          
+          return response;
         }
       } catch (sessionError) {
-        // Just log the error and continue to return mock user
-        console.error("Error verifying session:", sessionError);
+        // Silent error handling for session endpoint
       }
     }
-    // No valid session
-    if (!isAssetRequest) {
-      console.log("No valid session found");
-    }
     
+    // No valid session
     return NextResponse.json({
       authenticated: false,
-      user: null
+      user: null,
+      timestamp: timestamp
     });
   } catch (error) {
-    console.error('Error in session endpoint:', error);
+    const timestamp = new Date().toISOString();
+    console.error(`[SESSION_API] ${timestamp} - Error in session endpoint:`, error);
+    console.error(`[SESSION_API] ${timestamp} - Error stack:`, error instanceof Error ? error.stack : 'No stack');
     
     // Return a simple 200 response for favicon requests to avoid console errors
     if (request.nextUrl.pathname.includes('favicon.ico')) {
       return NextResponse.json({
         authenticated: false,
-        user: null
+        user: null,
+        timestamp: timestamp
       });
     }
     
     return NextResponse.json({
       authenticated: false,
-      error: 'Failed to get session'
+      error: 'Failed to get session',
+      timestamp: timestamp
     }, { status: 500 });
   }
 }

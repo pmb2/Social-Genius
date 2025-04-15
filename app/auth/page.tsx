@@ -60,11 +60,11 @@ export default function AuthPage() {
                 setError(result.error || 'Login failed');
                 setIsLoading(false);
             } else {
-                // Login successful - add longer delay before redirect to allow cookies to be set
-                console.log("Login successful - redirecting to dashboard in 1500ms...");
+                // Login successful - use window.location for a hard redirect instead of Next.js router
+                console.log("Login successful - redirecting to dashboard in 1000ms...");
                 setTimeout(() => {
-                    router.push('/dashboard');
-                }, 1500);
+                    window.location.href = '/dashboard';
+                }, 1000);
             }
         } catch (error) {
             console.error('Login error:', error);

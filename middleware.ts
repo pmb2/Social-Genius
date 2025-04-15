@@ -27,32 +27,36 @@ export async function middleware(request: NextRequest) {
     pathname === route || pathname.startsWith(`${route}/`)
   );
   
+  // Only log for non-static resources and skip API polling endpoints
+  const isPollingEndpoint = pathname.includes('/api/auth/session') || 
+                            pathname.includes('/api/init-db') || 
+                            pathname.match(/\?t=\d+$/);
+                            
+  const shouldLog = !pathname.match(/\.(css|js|jpg|png|svg|ico)$/) && 
+                    !isPollingEndpoint &&
+                    !pathname.includes('/_next/');
+  
   // Create the response object
   let response;
   
   if (isPublicRoute) {
+    if (shouldLog) console.log(`[MIDDLEWARE] Allowing public route: ${pathname}`);
     response = NextResponse.next();
   } else {
     // Get session cookie (check both 'session' and 'sessionId' for compatibility)
     const sessionCookie = request.cookies.get('session')?.value || request.cookies.get('sessionId')?.value;
     
-    // Only log cookie information for non-static resources and skip frequent polling requests
-    if (!pathname.includes('/api/') && !pathname.match(/\.(css|js|jpg|png|svg|ico)$/)) {
-      console.log(`Middleware - Cookies for ${pathname}:`, {
-        'session': request.cookies.get('session')?.value ? 'present' : 'missing',
-        'sessionId': request.cookies.get('sessionId')?.value ? 'present' : 'missing',
-        'usingCookie': sessionCookie ? 'found' : 'not found'
-      });
-    }
-    
     // If there's no session cookie and it's not a public route, redirect to auth page
     if (!sessionCookie) {
+      if (shouldLog) console.log(`[MIDDLEWARE] No session cookie found for ${pathname}, redirecting to /auth`);
       const url = new URL('/auth', request.url);
       url.searchParams.set('callbackUrl', pathname);
+      url.searchParams.set('reason', 'no_session');
       return NextResponse.redirect(url);
     }
     
     // Session exists, allow the request to proceed
+    if (shouldLog && pathname !== '/dashboard') console.log(`[MIDDLEWARE] Session valid for: ${pathname}`);
     response = NextResponse.next();
   }
   

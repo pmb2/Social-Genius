@@ -1,12 +1,12 @@
-#\!/bin/bash
+#!/bin/bash
 
-# This script uses the fix-db-schema.sql file to fix the database schema issues
+# This script uses the fix-db-schema-alter.sql file to fix the database schema issues
 # It handles executing the SQL script against the Docker PostgreSQL container
 
 echo "Fixing database schema..."
 
 # Check if PostgreSQL container is running
-if \! docker ps | grep -q "social-genius_postgres"; then
+if ! docker ps | grep -q "social-genius_postgres"; then
   echo "Error: PostgreSQL container is not running. Start it with 'docker-compose -f docker-compose.dev.yml up -d'"
   exit 1
 fi
@@ -30,7 +30,7 @@ docker exec "$PG_CONTAINER" psql -U postgres -d socialgenius -f /tmp/fix-db-sche
 
 # Check if SQL execution was successful
 if [ $? -eq 0 ]; then
-  echo "Database schema fixed successfully\!"
+  echo "Database schema fixed successfully!"
 else
   echo "Error: Failed to fix database schema. Check PostgreSQL logs for details."
   exit 1
@@ -40,4 +40,4 @@ fi
 echo "Restarting app container..."
 docker-compose -f docker-compose.dev.yml restart app
 
-echo "Done\!"
+echo "Done!"

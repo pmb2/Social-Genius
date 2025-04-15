@@ -17,22 +17,74 @@ export default function DashboardPage() {
     const { user, loading, checkSession } = useAuth();
     
     useEffect(() => {
-        if (loading) {
-            setIsLoading(true);
-        } else {
-            setIsLoading(false);
+        console.log("[DASHBOARD] Component mounted or auth state changed");
+        console.log("[DASHBOARD] Auth state - loading:", loading, "user:", user ? "exists (ID: " + user.id + ")" : "null");
+        
+        // Log cookies in the dashboard component for debugging
+        if (typeof document !== 'undefined') {
+            const cookies = document.cookie.split(';').map(c => c.trim());
+            console.log("[DASHBOARD] Current cookies:", cookies);
+            const sessionCookie = cookies.find(c => c.startsWith('session='));
+            const sessionIdCookie = cookies.find(c => c.startsWith('sessionId='));
             
-            // Redirect to login if not authenticated
-            if (!user) {
-                console.log("Dashboard: No user found in context, redirecting to auth");
-                router.push('/auth');
-            } else {
-                console.log("Dashboard: User authenticated:", user.email);
-                // Don't immediately check the session, it may still be setting up
-                console.log("Dashboard: User authenticated and session active");
-            }
+            console.log("[DASHBOARD] Session cookie:", 
+                      sessionCookie ? `present (${sessionCookie.split('=')[1]?.substring(0, 8)}...)` : 'missing');
+            console.log("[DASHBOARD] SessionId cookie:", 
+                      sessionIdCookie ? `present (${sessionIdCookie.split('=')[1]?.substring(0, 8)}...)` : 'missing');
         }
-    }, [user, loading, router, checkSession]);
+        
+        if (loading) {
+            console.log("[DASHBOARD] Still loading auth state, showing loader");
+            setIsLoading(true);
+            return; // Don't do anything else while loading
+        }
+        
+        // If we already have a user, show the dashboard immediately
+        if (user) {
+            console.log("[DASHBOARD] User authenticated ID:", user.id, "Email:", user.email);
+            console.log("[DASHBOARD] User session active, showing dashboard");
+            setIsLoading(false);
+            return;
+        }
+        
+        // If no user is found but cookies exist, try to re-verify the session
+        const hasCookies = typeof document !== 'undefined' && (
+            document.cookie.includes('session=') || document.cookie.includes('sessionId=')
+        );
+        
+        console.log("[DASHBOARD] No user in context but cookies present:", hasCookies);
+        
+        // If no user is found, perform a session check after a delay
+        // to ensure cookies have been properly processed
+        const timer = setTimeout(async () => {
+            console.log("[DASHBOARD] Running delayed session check");
+            
+            try {
+                // Try to verify the session one more time before redirecting
+                console.log("[DASHBOARD] Re-checking session...");
+                const hasSession = await checkSession();
+                console.log("[DASHBOARD] Session check result:", hasSession ? "Valid session" : "No valid session");
+                console.log("[DASHBOARD] User state after check:", user ? "User present" : "No user");
+                
+                if (hasSession && user) {
+                    console.log("[DASHBOARD] Session verified on recheck, showing dashboard");
+                    setIsLoading(false);
+                } else {
+                    console.log("[DASHBOARD] No valid session found on recheck, redirecting to auth");
+                    // Use window.location for hard redirect
+                    window.location.href = '/auth?reason=no_valid_session_on_recheck';
+                }
+            } catch (error) {
+                console.error("[DASHBOARD] Error rechecking session:", error);
+                // If session check fails, redirect to login
+                window.location.href = '/auth?reason=session_check_error';
+            } finally {
+                setIsLoading(false);
+            }
+        }, 2000); // Even longer delay to ensure cookies are properly processed
+        
+        return () => clearTimeout(timer);
+    }, [user, loading, checkSession]);
 
     if (isLoading) {
         return (

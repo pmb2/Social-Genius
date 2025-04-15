@@ -82,3 +82,6 @@ export function getNextTierPlan(currentPlanId: string): Plan | undefined {
   }
   return SUBSCRIPTION_PLANS[currentIndex + 1];
 }
+
+// Export an alias for the subscription plans for backward compatibility
+export const subscriptionPlans = SUBSCRIPTION_PLANS;

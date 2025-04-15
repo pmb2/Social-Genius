@@ -241,17 +241,65 @@ class AuthService {
 
   // Verify a session
   public async verifySession(sessionId: string): Promise<any | null> {
+    const timestamp = new Date().toISOString();
     try {
+      console.log(`[AUTH_SERVICE] ${timestamp} - Verifying session ID: ${sessionId.substring(0, 8)}...`);
+
+      // First check database connection
+      try {
+        const isConnected = await this.db.testConnection();
+        if (!isConnected) {
+          console.error(`[AUTH_SERVICE] ${timestamp} - Database connection failed during session verification`);
+          return null;
+        }
+        console.log(`[AUTH_SERVICE] ${timestamp} - Database connection verified for session check`);
+      } catch (connError) {
+        console.error(`[AUTH_SERVICE] ${timestamp} - Error testing database connection:`, connError);
+        return null;
+      }
+      
+      // Try to get the session by ID
+      console.log(`[AUTH_SERVICE] ${timestamp} - Looking up session in database`);
       const session = await this.db.getSessionById(sessionId);
+      
       if (!session) {
+        console.log(`[AUTH_SERVICE] ${timestamp} - Session not found in database: ${sessionId.substring(0, 8)}...`);
+        return null;
+      }
+      
+      console.log(`[AUTH_SERVICE] ${timestamp} - Session found: ID ${session.id}, User ID ${session.userId}`);
+      
+      // Check if session is expired
+      const now = new Date();
+      const expiresAt = new Date(session.expiresAt);
+      
+      console.log(`[AUTH_SERVICE] ${timestamp} - Session expiration check:`, {
+        now: now.toISOString(),
+        expiresAt: expiresAt.toISOString(),
+        isExpired: now > expiresAt
+      });
+      
+      if (now > expiresAt) {
+        console.log(`[AUTH_SERVICE] ${timestamp} - Session expired, cleaning up`);
+        // Try to delete the expired session
+        try {
+          await this.db.deleteSession(sessionId);
+        } catch (deleteError) {
+          console.error(`[AUTH_SERVICE] ${timestamp} - Error deleting expired session:`, deleteError);
+        }
         return null;
       }
       
       // Also verify that the user exists
-      const user = await this.db.getUserById(session.user_id);
+      console.log(`[AUTH_SERVICE] ${timestamp} - Looking up user ID ${session.userId} from session`);
+      const user = await this.db.getUserById(session.userId);
+      
       if (!user) {
+        console.log(`[AUTH_SERVICE] ${timestamp} - User not found for session: ${sessionId.substring(0, 8)}...`);
         return null;
       }
+      
+      console.log(`[AUTH_SERVICE] ${timestamp} - User found: ID ${user.id}, Email ${user.email}`);
       
       // Create user object with only the fields that exist in the session/user objects
       const userObj = {
@@ -270,12 +318,25 @@ class AuthService {
         userObj['phoneNumber'] = user.phone_number;
       }
       
+      // Update the expiration time to extend the session
+      console.log(`[AUTH_SERVICE] ${timestamp} - Extending session validity by updating last access time`);
+      try {
+        // Update last login timestamp to show activity
+        await this.db.updateLastLogin(user.id);
+      } catch (updateError) {
+        console.error(`[AUTH_SERVICE] ${timestamp} - Failed to update last login:`, updateError);
+        // Continue anyway as this is not critical
+      }
+      
+      console.log(`[AUTH_SERVICE] ${timestamp} - Session verification successful for user ${user.email}`);
+      
       return {
         ...session,
         user: userObj
       };
     } catch (error) {
-      console.error('Session verification error:', error);
+      console.error(`[AUTH_SERVICE] ${timestamp} - Session verification error:`, error);
+      console.error(`[AUTH_SERVICE] ${timestamp} - Error stack:`, error instanceof Error ? error.stack : 'No stack available');
       return null;
     }
   }

@@ -47,7 +47,7 @@ export function SubscriptionUpgradeModal({
           <DialogDescription>
             {limitType === 'locations' ? (
               <>
-                You've reached the limit of {currentPlanDetails.locationRange.max} locations for your {currentPlanDetails.name} plan.
+                You've reached the limit of {currentPlanDetails.businessLimit} locations for your {currentPlanDetails.name} plan.
                 Upgrade to the {requiredPlanDetails.name} plan to add more locations and unlock additional features.
               </>
             ) : (
@@ -62,24 +62,22 @@ export function SubscriptionUpgradeModal({
         <div className="grid gap-4 py-4">
           <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
             <h3 className="text-lg font-medium">{requiredPlanDetails.name} Plan</h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-2">${requiredPlanDetails.price.monthly}/month per location</p>
+            <p className="text-gray-500 dark:text-gray-400 mb-2">${requiredPlanDetails.priceMonthly}/month</p>
             <ul className="space-y-2">
               {requiredPlanDetails.features.map((feature, index) => (
-                feature.included && (
-                  <li key={index} className="flex items-center">
-                    <svg className="w-4 h-4 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    {feature.name} {feature.limit ? `(${feature.limit})` : ''}
-                  </li>
-                )
+                <li key={index} className="flex items-center">
+                  <svg className="w-4 h-4 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  {feature}
+                </li>
               ))}
               {limitType === 'locations' && (
                 <li className="flex items-center font-medium">
                   <svg className="w-4 h-4 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
-                  Up to {requiredPlanDetails.locationRange.max === null ? 'unlimited' : requiredPlanDetails.locationRange.max} locations
+                  Up to {requiredPlanDetails.businessLimit === 9999 ? 'unlimited' : requiredPlanDetails.businessLimit} locations
                 </li>
               )}
             </ul>

@@ -106,28 +106,49 @@ export async function POST(req: NextRequest) {
       });
       
       try {
-        response.cookies.set({
-          name: 'session',
-          value: sessionId,
-          httpOnly: true,
-          path: '/',
-          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-          secure: process.env.NODE_ENV === 'production',
-          maxAge: 30 * 24 * 60 * 60 // 30 days in seconds
-        });
+        // Add cookies to the response
+        const setSessionCookies = (response: NextResponse, sessionId: string) => {
+          // Determine environment for cookie settings
+          const nodeEnv = process.env.NODE_ENV || 'development';
+          const isDev = nodeEnv === 'development';
+          const protocol = isDev ? 'http' : 'https';
+          const host = process.env.HOST || req.headers.get('host') || 'localhost:3000';
+          
+          const timestamp = new Date().toISOString();
+          console.log(`[LOGIN-API] ${timestamp} - Setting cookies with environment:`, {
+            nodeEnv,
+            isDev,
+            protocol,
+            host
+          });
+          
+          // Explicitly use relaxed settings for development to ensure cookies are set
+          const cookieOptions = {
+            name: 'session',
+            value: sessionId,
+            httpOnly: true,
+            path: '/',
+            sameSite: 'lax' as const,
+            secure: false, // For development, always set to false
+            maxAge: 30 * 24 * 60 * 60, // 30 days in seconds
+          };
+          
+          console.log(`[LOGIN-API] ${timestamp} - Using relaxed cookie options for development:`, cookieOptions);
+          
+          // Set both formats for compatibility
+          response.cookies.set('session', sessionId, cookieOptions);
+          response.cookies.set('sessionId', sessionId, cookieOptions);
+          
+          // Log the cookies that were set in the response
+          console.log(`[LOGIN-API] ${timestamp} - Cookies set in response:`, 
+                     response.cookies.getAll().map(c => `${c.name}=${c.value.substring(0, 8)}...`));
+          
+          return response;
+        };
         
-        // Also set sessionId cookie for compatibility
-        response.cookies.set({
-          name: 'sessionId',
-          value: sessionId,
-          httpOnly: true,
-          path: '/',
-          sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-          secure: process.env.NODE_ENV === 'production',
-          maxAge: 30 * 24 * 60 * 60 // 30 days in seconds
-        });
-        
-        console.log('[LOGIN-API] Cookies set successfully');
+        // Apply the cookies
+        setSessionCookies(response, sessionId);
+        console.log('[LOGIN-API] Cookies set successfully with improved method');
       } catch (cookieError) {
         console.error('[LOGIN-API] Error setting cookies:', cookieError);
         // Continue anyway since the login was successful
