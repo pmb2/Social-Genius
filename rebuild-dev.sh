@@ -39,9 +39,9 @@ if ! docker info > /dev/null 2>&1; then
   fi
 fi
 
-# Stop and remove all existing containers and volumes
-echo -e "${YELLOW}Stopping all existing containers and cleaning up...${NC}"
-docker-compose -f docker-compose.dev.yml down -v
+# Stop existing containers but preserve volumes for database persistence
+echo -e "${YELLOW}Stopping all existing containers but preserving database volumes...${NC}"
+docker-compose -f docker-compose.dev.yml down --remove-orphans # Removed the -v flag to preserve volumes
 
 # Remove any stale networks
 echo -e "${YELLOW}Removing any stale Docker networks...${NC}"
@@ -121,9 +121,11 @@ if ! docker-compose -f docker-compose.dev.yml up -d --force-recreate; then
   echo -e "${RED}Failed to start containers even with forced recreation.${NC}"
   echo -e "${YELLOW}Attempting emergency cleanup and restart...${NC}"
   
-  # Emergency cleanup
-  docker-compose -f docker-compose.dev.yml down -v --remove-orphans
-  docker system prune -f
+  # Emergency cleanup but preserve database volumes for persistence
+  docker-compose -f docker-compose.dev.yml down --remove-orphans # Removed -v flag to preserve volumes
+  # Only prune containers and networks, not volumes
+  docker container prune -f
+  docker network prune -f
   
   # Final attempt
   if ! docker-compose -f docker-compose.dev.yml up -d; then

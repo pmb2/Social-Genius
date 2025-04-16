@@ -16,49 +16,69 @@ export const SUBSCRIPTION_PLANS: Plan[] = [
   {
     id: 'basic',
     name: 'Basic',
-    description: 'Perfect for small businesses just getting started',
+    description: 'For small businesses with 1-10 locations',
     features: [
-      'Up to 5 business profiles',
-      'Basic compliance monitoring',
-      'Brand alignment checks',
-      'Limited competitor research'
+      'Basic AI-driven posting (one post per week)',
+      'Response reviews',
+      'Detailed analytics',
+      'GBP automation',
+      'Email support'
     ],
-    priceMonthly: 29.99,
-    priceAnnual: 299.99,
-    businessLimit: 5
+    priceMonthly: 199,
+    priceAnnual: 2149, // 10% discount for annual
+    businessLimit: 10
   },
   {
     id: 'professional',
     name: 'Professional',
-    description: 'Ideal for growing businesses',
+    description: 'For marketing agencies with 11-50 locations',
     features: [
-      'Up to 20 business profiles',
-      'Advanced compliance monitoring',
-      'Full brand alignment analysis',
-      'Competitor research & monitoring',
-      'Priority support'
+      'Everything in Basic, plus:',
+      'Advanced competitor analytics',
+      'Increased posting frequency',
+      'Additional social media platforms',
+      'Priority support',
+      'Bulk operations'
     ],
-    priceMonthly: 79.99,
-    priceAnnual: 799.99,
-    businessLimit: 20,
+    priceMonthly: 169,
+    priceAnnual: 1825, // 10% discount for annual
+    businessLimit: 50,
     isPopular: true
+  },
+  {
+    id: 'business',
+    name: 'Business',
+    description: 'For growing agencies with 51-250 locations',
+    features: [
+      'Everything in Professional, plus:',
+      'Higher posting frequency',
+      'Multi-location support',
+      'Enriched AI-generated content',
+      'Prioritized customer service',
+      'Advanced reporting tools'
+    ],
+    priceMonthly: 119,
+    priceAnnual: 1285, // 10% discount for annual
+    businessLimit: 250
   },
   {
     id: 'enterprise',
     name: 'Enterprise',
-    description: 'For agencies and large businesses',
+    description: 'For large enterprises with 251+ locations',
     features: [
-      'Unlimited business profiles',
-      'Full compliance suite with alerts',
-      'Advanced brand alignment tools',
-      'Comprehensive competitor intelligence',
+      'Everything in Business, plus:',
+      'Full customization options',
       'API access',
+      'White-labeling',
       'Dedicated support',
-      'Custom integration options'
+      'Multi-location management',
+      'Custom integrations',
+      'Quarterly strategy sessions',
+      'Custom feature development'
     ],
-    priceMonthly: 199.99,
-    priceAnnual: 1999.99,
-    businessLimit: 9999
+    priceMonthly: 0, // Custom pricing
+    priceAnnual: 0, // Custom pricing
+    businessLimit: 9999 // Essentially unlimited
   }
 ];
 

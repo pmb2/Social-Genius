@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Import modal-specific styles */
+@import './modal-styles.css';
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

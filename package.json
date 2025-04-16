@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
+    "dev:quiet": "NODE_NO_WARNINGS=1 SUPPRESS_FAST_REFRESH_LOGS=true next dev",
     "dev:bun": "bun --bun run next dev",
     "build": "next build",
     "build:bun": "bun --bun run next build",

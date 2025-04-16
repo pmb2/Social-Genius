@@ -5,7 +5,8 @@ class AuthService {
   private static instance: AuthService;
   private db: PostgresService;
   private JWT_SECRET: string;
-  private SESSION_EXPIRY: number = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds // 30 days in milliseconds
+  // Extended to 60 days to give more time for sessions
+  private SESSION_EXPIRY: number = 60 * 24 * 60 * 60 * 1000; // 60 days in milliseconds
 
   private constructor() {
     this.db = PostgresService.getInstance();
@@ -243,7 +244,15 @@ class AuthService {
   public async verifySession(sessionId: string): Promise<any | null> {
     const timestamp = new Date().toISOString();
     try {
+      console.log(`[AUTH_SERVICE] ${timestamp} - SESSION VERIFICATION STARTED`);
       console.log(`[AUTH_SERVICE] ${timestamp} - Verifying session ID: ${sessionId.substring(0, 8)}...`);
+      console.log(`[AUTH_SERVICE] ${timestamp} - Session ID length: ${sessionId.length}`);
+      console.log(`[AUTH_SERVICE] ${timestamp} - Environment: ${process.env.NODE_ENV || 'not set'}`);
+      console.log(`[AUTH_SERVICE] ${timestamp} - Host URL: ${process.env.NEXTAUTH_URL || 'not set'}`);
+      console.log(`[AUTH_SERVICE] ${timestamp} - Request Protocol: ${process.env.REQUEST_PROTOCOL || 'not set'}`);
+      console.log(`[AUTH_SERVICE] ${timestamp} - Using secure cookies: ${process.env.NODE_ENV === 'production' || process.env.REQUEST_PROTOCOL === 'https'}`);
+      console.log(`[AUTH_SERVICE] ${timestamp} - Using sameSite policy: ${(process.env.NODE_ENV === 'production' || process.env.REQUEST_PROTOCOL === 'https') ? 'none' : 'lax'}`);
+      
 
       // First check database connection
       try {
@@ -264,6 +273,54 @@ class AuthService {
       
       if (!session) {
         console.log(`[AUTH_SERVICE] ${timestamp} - Session not found in database: ${sessionId.substring(0, 8)}...`);
+        
+        // Try to determine if this might be a token instead of a session ID
+        if (sessionId.indexOf('.') > 0) {
+          console.log(`[AUTH_SERVICE] ${timestamp} - Session ID appears to be a token format (contains '.'). Attempting to validate as token...`);
+          
+          try {
+            // Try to parse it as a token
+            const tokenPayload = this.verifyToken(sessionId);
+            
+            if (tokenPayload) {
+              console.log(`[AUTH_SERVICE] ${timestamp} - Successfully parsed as token for user ID: ${tokenPayload.userId}`);
+              
+              // Since we have a valid token, create a temporary session object
+              const user = await this.db.getUserById(tokenPayload.userId);
+              
+              if (!user) {
+                console.log(`[AUTH_SERVICE] ${timestamp} - User not found for token user ID: ${tokenPayload.userId}`);
+                return null;
+              }
+              
+              console.log(`[AUTH_SERVICE] ${timestamp} - User found from token: ID ${user.id}, Email ${user.email}`);
+              
+              // Create temporary session
+              const tempSession = {
+                id: `token-${Date.now()}`,
+                userId: user.id,
+                expiresAt: new Date(Date.now() + this.SESSION_EXPIRY).toISOString(),
+                createdAt: new Date().toISOString(),
+                lastUsedAt: new Date().toISOString(),
+                user: {
+                  id: user.id,
+                  email: user.email,
+                  name: user.name || ""
+                }
+              };
+              
+              // Note: We're not persisting this session since it's temporary
+              console.log(`[AUTH_SERVICE] ${timestamp} - Created temporary session from token`);
+              
+              return tempSession;
+            } else {
+              console.log(`[AUTH_SERVICE] ${timestamp} - Failed to validate as token`);
+            }
+          } catch (tokenError) {
+            console.log(`[AUTH_SERVICE] ${timestamp} - Error validating as token:`, tokenError);
+          }
+        }
+        
         return null;
       }
       
@@ -348,23 +405,39 @@ class AuthService {
 
   // Parse cookies from request headers (using simple parsing)
   public parseCookies(cookieHeader?: string): Record<string, string> {
-    if (!cookieHeader) return {};
+    const timestamp = new Date().toISOString();
+    console.log(`[AUTH_SERVICE] ${timestamp} - Parsing cookies from header: ${cookieHeader ? 'present' : 'missing'}`); 
+    
+    if (!cookieHeader) {
+      console.log(`[AUTH_SERVICE] ${timestamp} - No cookie header provided`); 
+      return {};
+    }
     
     const cookies: Record<string, string> = {};
     const cookiePairs = cookieHeader.split(';');
+    
+    console.log(`[AUTH_SERVICE] ${timestamp} - Found ${cookiePairs.length} cookie pairs in header`);
     
     cookiePairs.forEach(pair => {
       const [key, value] = pair.trim().split('=');
       if (key && value) {
         cookies[key] = decodeURIComponent(value);
+        
+        // Only log session cookie keys (not values) for security
+        if (key === 'session' || key === 'sessionId') {
+          console.log(`[AUTH_SERVICE] ${timestamp} - Found ${key} cookie, length: ${value.length}, prefix: ${value.substring(0, 8)}...`);
+        }
       }
     });
+    
+    // Log all cookie keys found (but not values)
+    console.log(`[AUTH_SERVICE] ${timestamp} - Parsed cookies with keys: ${Object.keys(cookies).join(', ') || 'none'}`); 
     
     return cookies;
   }
 
-  // Create cookie options for Next.js Response.cookies
-  public getSessionCookieOptions(expiresIn: number = this.SESSION_EXPIRY): {
+  // Create cookie options for Next.js Response.cookies with header info support
+  public getSessionCookieOptions(expiresIn: number = this.SESSION_EXPIRY, headers?: Headers): {
     name: string;
     value: string;
     options: {
@@ -375,7 +448,68 @@ class AuthService {
       path: string;
     };
   } {
+    const timestamp = new Date().toISOString();
     const expires = new Date(Date.now() + expiresIn);
+    
+    // Determine environment and protocol, checking both process.env and headers
+    const isProduction = process.env.NODE_ENV === 'production';
+    
+    // Try to get protocol from headers first, then fall back to env vars
+    let requestProtocol = 'http';
+    let isSecureCookie = isProduction;  // Default to secure in production
+    let sameSiteMode: 'strict' | 'lax' | 'none' = 'lax';  // Default to lax for best compatibility
+    
+    // Check for protocol header info
+    if (headers) {
+      // First check X-Request-Protocol which is set by our middleware
+      const headerProtocol = headers.get('X-Request-Protocol');
+      if (headerProtocol) {
+        requestProtocol = headerProtocol;
+        console.log(`[AUTH_SERVICE] ${timestamp} - Protocol from header: ${requestProtocol}`);
+      }
+      
+      // Alternative: Check forwarded proto which is set by many proxies and load balancers
+      const forwardedProto = headers.get('x-forwarded-proto');
+      if (forwardedProto && !headerProtocol) {
+        requestProtocol = forwardedProto;
+        console.log(`[AUTH_SERVICE] ${timestamp} - Protocol from forwarded header: ${requestProtocol}`);
+      }
+      
+      // Check if we have explicit cookie security settings in headers
+      const secureCookieHeader = headers.get('X-Secure-Cookie');
+      if (secureCookieHeader) {
+        isSecureCookie = secureCookieHeader === 'true';
+        console.log(`[AUTH_SERVICE] ${timestamp} - Secure cookie setting from header: ${isSecureCookie}`);
+      }
+      
+      const sameSiteHeader = headers.get('X-SameSite-Policy');
+      if (sameSiteHeader && ['strict', 'lax', 'none'].includes(sameSiteHeader)) {
+        sameSiteMode = sameSiteHeader as 'strict' | 'lax' | 'none';
+        console.log(`[AUTH_SERVICE] ${timestamp} - SameSite setting from header: ${sameSiteMode}`);
+      }
+    }
+    
+    const isHttps = requestProtocol === 'https';
+    
+    // Final determination of cookie settings
+    let secure = isProduction || isHttps || isSecureCookie;
+    
+    // For development, we prioritize compatibility over security
+    // In production or HTTPS, we prioritize security
+    if (!isProduction && !isHttps) {
+      secure = false; // Disable secure for local HTTP development
+    }
+    
+    // SameSite=none requires secure=true, so adjust if needed
+    let sameSite = sameSiteMode;
+    if (sameSite === 'none' && !secure) {
+      sameSite = 'lax'; // Fallback to lax if we're using SameSite=none without secure
+    }
+    
+    console.log(`[AUTH_SERVICE] ${timestamp} - Creating session cookie options`);
+    console.log(`[AUTH_SERVICE] ${timestamp} - Environment: ${isProduction ? 'production' : 'development'}, Protocol: ${requestProtocol}`);
+    console.log(`[AUTH_SERVICE] ${timestamp} - Cookie expiration: ${expires.toISOString()} (${expiresIn/1000/60/60/24} days)`); 
+    console.log(`[AUTH_SERVICE] ${timestamp} - Final cookie settings: secure=${secure}, sameSite=${sameSite}`);
     
     // Use consistent cookie name 'session' for both Next.js and auth routes
     return {
@@ -383,8 +517,8 @@ class AuthService {
       value: '', // This will be set by the caller
       options: {
         httpOnly: true,
-        secure: true, // Always use secure cookies
-        sameSite: 'none', // Allow cross-site usage
+        secure, // Conditionally enable secure cookies based on environment
+        sameSite, // Adjust sameSite based on security settings
         expires,
         path: '/'
       }
@@ -823,25 +957,70 @@ class AuthService {
   // Update user profile
   public async updateUserProfile(userId: number, updates: { name?: string, email?: string, profilePicture?: string, phoneNumber?: string }): Promise<{ success: boolean, error?: string }> {
     try {
-      // If email is being updated, check if it already exists for another user
-      if (updates.email) {
+      // Log the update operation
+      console.log(`[AUTH_SERVICE] Updating profile for user ID ${userId}:`, updates);
+      
+      // Input validation
+      if (updates.name !== undefined && (!updates.name || updates.name.trim().length === 0)) {
+        return { success: false, error: 'Name cannot be empty' };
+      }
+      
+      if (updates.email !== undefined) {
+        if (!updates.email || !/\S+@\S+\.\S+/.test(updates.email)) {
+          return { success: false, error: 'Invalid email format' };
+        }
+        
+        // Check if email already exists for a different user
         const existingUser = await this.db.getUserByEmail(updates.email);
         if (existingUser && existingUser.id !== userId) {
           return { success: false, error: 'Email already in use by another account' };
         }
       }
       
-      const success = await this.db.updateUserProfile(userId, updates);
-      return { success };
+      // Clean up values - protect against SQL injection and trim whitespace
+      const sanitizedUpdates = { ...updates };
+      
+      if (updates.name !== undefined) {
+        sanitizedUpdates.name = updates.name.trim();
+      }
+      
+      if (updates.email !== undefined) {
+        sanitizedUpdates.email = updates.email.trim().toLowerCase();
+      }
+      
+      if (updates.phoneNumber !== undefined) {
+        sanitizedUpdates.phoneNumber = updates.phoneNumber.trim();
+      }
+      
+      // Attempt to update the profile
+      const success = await this.db.updateUserProfile(userId, sanitizedUpdates);
+      
+      if (success) {
+        console.log(`[AUTH_SERVICE] Profile updated successfully for user ID ${userId}`);
+        return { success: true };
+      } else {
+        console.error(`[AUTH_SERVICE] Database failed to update profile for user ID ${userId}`);
+        return { success: false, error: 'Database failed to update profile' };
+      }
     } catch (error) {
-      console.error('Update profile error:', error);
-      return { success: false, error: 'Failed to update profile' };
+      console.error('[AUTH_SERVICE] Update profile error:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to update profile' 
+      };
     }
   }
   
   // Get default profile picture URL
   public getDefaultProfilePicture(): string {
-    return '/images/default-avatar.png';
+    // Check if we're in a browser context
+    if (typeof window !== 'undefined') {
+      return '/default-avatar.png'; // Relative URL works in browser
+    }
+    
+    // In server context, use full URL with dynamic host detection
+    const { getBaseUrl } = require('@/lib/utils');
+    return `${getBaseUrl()}/default-avatar.png`;
   }
 }
 

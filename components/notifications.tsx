@@ -1,54 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { X, Bell, CheckCircle, Clock, Info, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/lib/auth-context';
 
 type Notification = {
   id: string;
   title: string;
   message: string;
   time: string;
+  time_ago: string;
   read: boolean;
   type: 'info' | 'success' | 'warning' | 'alert';
 };
-
-const MOCK_NOTIFICATIONS: Notification[] = [
-  {
-    id: '1',
-    title: 'New feature available',
-    message: 'Try our new competitor research tool! Get insights about your competitors with a few clicks.',
-    time: '2 hours ago',
-    read: false,
-    type: 'info'
-  },
-  {
-    id: '2',
-    title: 'Content analysis complete',
-    message: 'Your latest post analysis is ready. The engagement score is 87/100.',
-    time: 'Yesterday',
-    read: false,
-    type: 'success'
-  },
-  {
-    id: '3',
-    title: 'Subscription renewal',
-    message: 'Your subscription will renew in 7 days. Please check your payment method.',
-    time: '3 days ago',
-    read: true,
-    type: 'warning'
-  },
-  {
-    id: '4',
-    title: 'System maintenance',
-    message: 'There will be scheduled maintenance on June 15th from 2am to 4am UTC.',
-    time: '1 week ago',
-    read: true,
-    type: 'alert'
-  }
-];
 
 type NotificationsDialogProps = {
   open: boolean;
@@ -56,10 +23,48 @@ type NotificationsDialogProps = {
 };
 
 export default function NotificationsDialog({ open, onOpenChange }: NotificationsDialogProps) {
-  const [notifications, setNotifications] = useState<Notification[]>(MOCK_NOTIFICATIONS);
+  const { user } = useAuth();
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
   
   const unreadCount = notifications.filter(n => !n.read).length;
+  
+  // Fetch notifications when the dialog opens or user changes
+  useEffect(() => {
+    if (open && user) {
+      fetchNotifications();
+    }
+  }, [open, user, filter]);
+  
+  const fetchNotifications = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const unreadParam = filter === 'unread' ? '&unread=true' : '';
+      const response = await fetch(`/api/notifications?limit=50${unreadParam}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch notifications');
+      }
+      
+      const data = await response.json();
+      setNotifications(data.notifications || []);
+    } catch (err) {
+      console.error('Error fetching notifications:', err);
+      setError('Failed to load notifications. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
   
   const getTypeIcon = (type: Notification['type']) => {
     switch (type) {
@@ -74,19 +79,72 @@ export default function NotificationsDialog({ open, onOpenChange }: Notification
     }
   };
   
-  const markAllAsRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, read: true })));
+  const markAllAsRead = async () => {
+    try {
+      const response = await fetch('/api/notifications', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ markAll: true }),
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to mark notifications as read');
+      }
+      
+      // Update local state
+      setNotifications(notifications.map(n => ({ ...n, read: true })));
+    } catch (err) {
+      console.error('Error marking notifications as read:', err);
+    }
   };
   
-  const toggleRead = (id: string) => {
-    setNotifications(notifications.map(n => 
-      n.id === id ? { ...n, read: !n.read } : n
-    ));
+  const toggleRead = async (id: string) => {
+    try {
+      const response = await fetch('/api/notifications', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ notificationId: id }),
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to toggle notification read status');
+      }
+      
+      // Update local state
+      setNotifications(notifications.map(n => 
+        n.id === id ? { ...n, read: true } : n
+      ));
+    } catch (err) {
+      console.error('Error toggling notification read status:', err);
+    }
   };
   
-  const filteredNotifications = filter === 'all' 
-    ? notifications 
-    : notifications.filter(n => !n.read);
+  const deleteNotification = async (id: string) => {
+    try {
+      const response = await fetch(`/api/notifications?id=${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete notification');
+      }
+      
+      // Remove the notification from local state
+      setNotifications(notifications.filter(n => n.id !== id));
+    } catch (err) {
+      console.error('Error deleting notification:', err);
+    }
+  };
   
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -140,7 +198,24 @@ export default function NotificationsDialog({ open, onOpenChange }: Notification
         </DialogHeader>
         
         <div className="overflow-y-auto max-h-[calc(85vh-115px)]">
-          {filteredNotifications.length === 0 ? (
+          {isLoading ? (
+            <div className="flex items-center justify-center p-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+            </div>
+          ) : error ? (
+            <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
+              <AlertTriangle className="h-12 w-12 text-red-400 mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-1">Error Loading Notifications</h3>
+              <p className="text-gray-500 text-sm mb-4">{error}</p>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={fetchNotifications}
+              >
+                Try Again
+              </Button>
+            </div>
+          ) : notifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
               <Bell className="h-12 w-12 text-gray-300 mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-1">No notifications</h3>
@@ -152,14 +227,13 @@ export default function NotificationsDialog({ open, onOpenChange }: Notification
             </div>
           ) : (
             <div className="p-0">
-              {filteredNotifications.map((notification) => (
+              {notifications.map((notification) => (
                 <div 
                   key={notification.id}
                   className={cn(
-                    "flex p-4 border-b last:border-b-0 hover:bg-gray-50 cursor-pointer transition-colors",
+                    "flex p-4 border-b last:border-b-0 hover:bg-gray-50 transition-colors",
                     !notification.read && "bg-blue-50/40"
                   )}
-                  onClick={() => toggleRead(notification.id)}
                 >
                   <div className="mr-3 mt-1">
                     {getTypeIcon(notification.type)}
@@ -173,12 +247,32 @@ export default function NotificationsDialog({ open, onOpenChange }: Notification
                         {notification.title}
                       </h4>
                       <span className="text-xs text-gray-500 whitespace-nowrap ml-2">
-                        {notification.time}
+                        {notification.time_ago}
                       </span>
                     </div>
                     <p className="text-sm text-gray-600 mt-1">
                       {notification.message}
                     </p>
+                    <div className="flex justify-end mt-2">
+                      {!notification.read && (
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-6 text-xs text-blue-600 hover:text-blue-800 px-2"
+                          onClick={() => toggleRead(notification.id)}
+                        >
+                          Mark as read
+                        </Button>
+                      )}
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-6 text-xs text-red-600 hover:text-red-800 px-2"
+                        onClick={() => deleteNotification(notification.id)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}

@@ -21,3 +21,4 @@ docker exec social-genius_app_1 cp /app/services/postgres-service-fixed.ts /app/
 # Show logs
 echo "Showing logs..."
 docker-compose -f docker-compose-fixed.yml logs -f app
+export NODE_NO_WARNINGS=1

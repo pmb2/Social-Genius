@@ -122,3 +122,24 @@ export function formatBytes(bytes: number, decimals: number = 2): string {
   
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
+
+// Dynamically get the base URL of the application
+export function getBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    // Browser-side
+    return window.location.origin;
+  }
+  
+  // Server-side
+  // First check environment variables
+  if (process.env.NEXT_PUBLIC_HOST) {
+    return process.env.NEXT_PUBLIC_HOST;
+  }
+  
+  // Fallback to default values
+  const host = process.env.HOST || 'localhost';
+  const port = process.env.PORT || '3000';
+  const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+  
+  return `${protocol}://${host}:${port}`;
+}

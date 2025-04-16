@@ -10,6 +10,7 @@ The Browser-Use API service allows Social Genius to:
 2. Create, manage, and update Google Business Profiles programmatically
 3. Capture screenshots for error reporting and debugging
 4. Maintain separate browser instances for each business
+5. **NEW: Persistent Sessions** - Maintain authenticated sessions across requests
 
 ## Setup Instructions
 
@@ -69,6 +70,49 @@ The setup includes the following database schema changes:
    - `created_at`
    - `updated_at`
 
+## Session Management
+
+The new session management feature provides persistent authentication to Google accounts:
+
+### Key Features
+
+1. **Session Persistence**: Maintains authenticated Google sessions across requests
+2. **Session Reuse**: Avoids repeated logins by reusing valid sessions
+3. **Cookie Storage**: Securely stores and retrieves authentication cookies
+4. **Session Validation**: Verifies session validity before use
+5. **Auto-Refresh**: Keeps sessions alive through periodic refreshing
+
+### How it Works
+
+Sessions are stored in two places:
+
+1. **In-memory cache**: For fast access during the API server's runtime
+2. **File-based storage**: For persistence across server restarts (`browser-use-api/browser_sessions/`)
+
+Each session contains:
+- Cookies from the authenticated browser
+- localStorage data
+- sessionStorage data
+- Timestamps for tracking freshness
+
+### Authentication Flow
+
+1. **First login**:
+   - Check if an existing session exists for the business ID
+   - If not, proceed with a full authentication using the provided credentials
+   - After successful authentication, extract and save the session (cookies, localStorage, etc.)
+
+2. **Subsequent requests**:
+   - Check if a valid session exists
+   - Validate the session by attempting to access a Google account page
+   - If valid, reuse the session without requiring re-authentication
+   - If invalid, perform a full authentication again
+
+### Session API Endpoints
+
+- `GET /v1/session/{business_id}`: Check if a session exists
+- `GET /v1/session/{business_id}/validate`: Test if a session is still valid
+
 ## Troubleshooting
 
 If you encounter issues with the Browser-Use API:
@@ -93,8 +137,19 @@ If you encounter issues with the Browser-Use API:
    curl http://localhost:5055/health
    ```
 
+5. Check session status:
+   ```bash
+   curl http://localhost:5055/v1/session/{business_id}
+   ```
+
+6. Validate a session:
+   ```bash
+   curl http://localhost:5055/v1/session/{business_id}/validate
+   ```
+
 ## Security Considerations
 
 - Google credentials are encrypted before storage
+- Sessions are stored locally in the Docker container
 - Screenshots are stored locally and not exposed publicly
 - API access is restricted to the internal Docker network

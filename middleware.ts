@@ -27,21 +27,19 @@ export async function middleware(request: NextRequest) {
     pathname === route || pathname.startsWith(`${route}/`)
   );
   
-  // Completely disable middleware logging except in special debug mode
-  // This is a stronger setting than before to eliminate almost all logging
-  const skipLogging = true; 
+  // Enhanced logging for session and protocol debugging
+  const enableMiddlewareLogging = process.env.DEBUG_MIDDLEWARE === 'true' || process.env.DEBUG_SESSION === 'true';
+  const timestamp = new Date().toISOString();
   
-  // Only enable if explicitly turned on with environment variable
-  const enableMiddlewareLogging = process.env.DEBUG_MIDDLEWARE === 'true' && process.env.NODE_ENV === 'development';
+  // Detect protocol for cookie security settings
+  const protocol = request.headers.get('x-forwarded-proto') || 'http';
+  const isHttps = protocol === 'https';
   
   // Create the response object
   let response;
   
   if (isPublicRoute) {
-    // Only log if explicitly enabled with DEBUG_MIDDLEWARE=true
-    if (enableMiddlewareLogging) {
-      console.log(`[MIDDLEWARE] Public route: ${pathname}`);
-    }
+    // Public route - no need to log
     response = NextResponse.next();
   } else {
     // Get session cookie (check both 'session' and 'sessionId' for compatibility)
@@ -49,25 +47,37 @@ export async function middleware(request: NextRequest) {
     
     // If there's no session cookie and it's not a public route, redirect to auth page
     if (!sessionCookie) {
-      // Only log authentication failures when explicitly enabled
-      if (enableMiddlewareLogging) {
-        console.log(`[MIDDLEWARE] No session for ${pathname}, redirecting to /auth`);
-      }
       const url = new URL('/auth', request.url);
       url.searchParams.set('callbackUrl', pathname);
       url.searchParams.set('reason', 'no_session');
       return NextResponse.redirect(url);
     }
-    
-    // Only log when explicitly enabled with DEBUG_MIDDLEWARE=true
-    if (enableMiddlewareLogging) {
-      console.log(`[MIDDLEWARE] Session valid: ${pathname}`);
-    }
     response = NextResponse.next();
   }
   
-  // Add cache control headers for static assets and optimize caching
-  if (
+  // Add protocol and session information to all responses
+  // This helps internal components correctly set cookie security settings
+  // Reuse the protocol and isHttps variables from above
+  
+  // Apply protocol detection headers to help with cookie settings
+  response.headers.set('X-Request-Protocol', protocol);
+  response.headers.set('X-Secure-Cookie', isHttps || process.env.NODE_ENV === 'production' ? 'true' : 'false');
+  response.headers.set('X-SameSite-Policy', isHttps ? 'none' : 'lax');
+  
+  // We can't modify process.env directly in middleware, so we'll use the header approach instead
+  // Adding a header that can be read by the API routes
+  
+  // Add session debugging headers for API routes
+  if (pathname.startsWith('/api/')) {
+    response.headers.set('X-Session-Debug', 'enabled');
+    
+    // API endpoints - default no caching
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+  } 
+  // Cache static assets
+  else if (
     pathname.includes('/_next/static') || 
     pathname.includes('/static/') ||
     pathname.includes('/images/') ||
@@ -79,12 +89,9 @@ export async function middleware(request: NextRequest) {
   ) {
     // Static assets - cache for 30 days
     response.headers.set('Cache-Control', 'public, max-age=2592000, stale-while-revalidate=86400');
-  } else if (pathname.startsWith('/api/')) {
-    // API endpoints - default no caching
-    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    response.headers.set('Pragma', 'no-cache');
-    response.headers.set('Expires', '0');
-  } else if (isPublicRoute && pathname !== '/auth') {
+  } 
+  // Public routes caching
+  else if (isPublicRoute && pathname !== '/auth') {
     // Public routes (except auth) - cache for a short time with revalidation
     response.headers.set('Cache-Control', 'public, max-age=300, s-maxage=600, stale-while-revalidate=59');
   }

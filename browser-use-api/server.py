@@ -7,6 +7,9 @@ import uuid
 import json
 import random
 import logging
+import pickle
+import base64
+from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException, BackgroundTasks
@@ -52,6 +55,15 @@ except Exception as e:
 tasks: Dict[str, Dict[str, Any]] = {}
 task_cleanup_time = timedelta(hours=1)  # Clean up completed tasks after 1 hour
 
+# Browser session storage - maintains persistent state across API calls
+browser_sessions: Dict[str, Dict[str, Any]] = {}
+session_dir = Path("browser_sessions")
+session_dir.mkdir(exist_ok=True)
+
+# Browser context storage 
+# Maps business IDs to browser context data
+browser_contexts: Dict[str, Any] = {}
+
 # Model definitions
 class QueryRequest(BaseModel):
     task: str
@@ -66,6 +78,7 @@ class GoogleAuthRequest(BaseModel):
     businessId: str
     timeout: int = 90000  # 90 seconds timeout
     advanced_options: Optional[Dict[str, Any]] = None
+    reuseSession: bool = True  # Whether to reuse an existing session if available
 
 class TaskResponse(BaseModel):
     task_id: str
@@ -105,6 +118,135 @@ async def cleanup_old_tasks():
     for task_id in to_delete:
         del tasks[task_id]
 
+# Session management helper functions
+async def save_browser_session(business_id: str, cookies: List[Dict], local_storage: Dict = None, session_storage: Dict = None, metadata: Dict = None) -> bool:
+    """Save browser session data (cookies and storage) for a business ID"""
+    try:
+        session_data = {
+            "cookies": cookies,
+            "local_storage": local_storage or {},
+            "session_storage": session_storage or {},
+            "last_updated": datetime.now().isoformat(),
+            "user_agent": browser.config.user_agent if hasattr(browser.config, "user_agent") else None,
+            "metadata": metadata or {}
+        }
+        
+        # Save in memory
+        browser_sessions[business_id] = session_data
+        
+        # Save to disk for persistence
+        session_file = session_dir / f"{business_id}.pickle"
+        with open(session_file, "wb") as f:
+            pickle.dump(session_data, f)
+        
+        # Log details about the saved session
+        cookies_count = len(cookies) if cookies else 0
+        storage_items = len(local_storage or {}) + len(session_storage or {})
+        metadata_str = ', '.join(f"{k}: {v}" for k, v in (metadata or {}).items())
+        
+        logger.info(f"Saved browser session for business {business_id} with {cookies_count} cookies, {storage_items} storage items{' and metadata: ' + metadata_str if metadata else ''}")
+        return True
+    except Exception as e:
+        logger.error(f"Error saving browser session for business {business_id}: {str(e)}")
+        return False
+
+async def load_browser_session(business_id: str) -> Optional[Dict]:
+    """Load browser session data for a business ID"""
+    try:
+        # Check memory cache first
+        if business_id in browser_sessions:
+            logger.info(f"Loaded browser session from memory for business {business_id}")
+            return browser_sessions[business_id]
+        
+        # Otherwise check disk
+        session_file = session_dir / f"{business_id}.pickle"
+        if not session_file.exists():
+            logger.info(f"No saved browser session found for business {business_id}")
+            return None
+        
+        # Load from disk
+        with open(session_file, "rb") as f:
+            session_data = pickle.load(f)
+        
+        # Update memory cache
+        browser_sessions[business_id] = session_data
+        logger.info(f"Loaded browser session from disk for business {business_id}")
+        
+        return session_data
+    except Exception as e:
+        logger.error(f"Error loading browser session for business {business_id}: {str(e)}")
+        return None
+
+async def apply_session_to_browser(browser_instance, session_data: Dict) -> bool:
+    """Apply session data to a browser instance"""
+    try:
+        if not session_data or not session_data.get("cookies"):
+            return False
+        
+        # Apply cookies to the browser
+        for cookie in session_data["cookies"]:
+            try:
+                await browser_instance.page.context.add_cookies([cookie])
+            except Exception as cookie_error:
+                logger.warning(f"Error setting cookie: {str(cookie_error)}")
+        
+        # Set local storage if applicable and browser supports it
+        local_storage = session_data.get("local_storage", {})
+        if local_storage and hasattr(browser_instance, "page") and hasattr(browser_instance.page, "evaluate"):
+            for key, value in local_storage.items():
+                try:
+                    await browser_instance.page.evaluate(f"localStorage.setItem('{key}', '{value}')")
+                except Exception as ls_error:
+                    logger.warning(f"Error setting localStorage item: {str(ls_error)}")
+        
+        # Set session storage if applicable and browser supports it
+        session_storage = session_data.get("session_storage", {})
+        if session_storage and hasattr(browser_instance, "page") and hasattr(browser_instance.page, "evaluate"):
+            for key, value in session_storage.items():
+                try:
+                    await browser_instance.page.evaluate(f"sessionStorage.setItem('{key}', '{value}')")
+                except Exception as ss_error:
+                    logger.warning(f"Error setting sessionStorage item: {str(ss_error)}")
+        
+        logger.info(f"Applied browser session with {len(session_data['cookies'])} cookies")
+        return True
+    except Exception as e:
+        logger.error(f"Error applying browser session: {str(e)}")
+        return False
+
+async def extract_browser_session(browser_instance) -> Dict:
+    """Extract session data from a browser instance"""
+    try:
+        # Extract cookies
+        cookies = await browser_instance.page.context.cookies()
+        
+        # Extract localStorage
+        local_storage = {}
+        try:
+            local_storage = await browser_instance.page.evaluate("Object.assign({}, localStorage)")
+        except Exception as ls_error:
+            logger.warning(f"Error getting localStorage: {str(ls_error)}")
+        
+        # Extract sessionStorage
+        session_storage = {}
+        try:
+            session_storage = await browser_instance.page.evaluate("Object.assign({}, sessionStorage)")
+        except Exception as ss_error:
+            logger.warning(f"Error getting sessionStorage: {str(ss_error)}")
+        
+        session_data = {
+            "cookies": cookies,
+            "local_storage": local_storage,
+            "session_storage": session_storage,
+            "last_updated": datetime.now().isoformat(),
+            "user_agent": browser.config.user_agent if hasattr(browser.config, "user_agent") else None
+        }
+        
+        return session_data
+    except Exception as e:
+        logger.error(f"Error extracting browser session: {str(e)}")
+        return {"cookies": [], "local_storage": {}, "session_storage": {}}
+
 # Regular query endpoint
 @app.post("/v1/query", response_model=QueryResponse)
 async def query(request: QueryRequest):
@@ -132,7 +274,17 @@ async def google_auth(request: GoogleAuthRequest, background_tasks: BackgroundTa
     # Log start of authentication (no sensitive info)
     logger.info(f"Starting Google authentication task {task_id} for business {request.businessId}")
     
-    # Start authentication in background
+    # Check if we have advanced options
+    advanced_options = request.advanced_options or {}
+    
+    # Add session handling options
+    if "reuse_session" not in advanced_options:
+        advanced_options["reuse_session"] = request.reuseSession
+        
+    if "persist_session" not in advanced_options:
+        advanced_options["persist_session"] = True
+    
+    # Start authentication in background with enhanced session options
     background_tasks.add_task(
         perform_google_auth,
         task_id,
@@ -141,7 +293,7 @@ async def google_auth(request: GoogleAuthRequest, background_tasks: BackgroundTa
         request.url,
         request.businessId,
         request.timeout,
-        request.advanced_options
+        advanced_options
     )
     
     return TaskResponse(task_id=task_id)
@@ -199,16 +351,60 @@ async def perform_google_auth(
         Report clearly if login succeeded or exactly which type of failure occurred.
         """
         
+        # Create screenshots directory for this task
+        screenshots_dir = f"screenshots/{business_id}/{task_id}"
+        os.makedirs(screenshots_dir, exist_ok=True)
+        
+        # Create a list to track critical points during authentication
+        critical_points = [
+            "initial_load",
+            "email_entered",
+            "password_page",
+            "password_entered",
+            "verification_challenge",
+            "completed"
+        ]
+        
+        # Custom browser behavior that captures screenshots at critical points
+        async def take_screenshot_at_point(point_name):
+            try:
+                screenshot_path = f"{screenshots_dir}/{point_name}.png"
+                await browser.screenshot(path=screenshot_path)
+                logger.info(f"Captured screenshot at '{point_name}' point for task {task_id}")
+            except Exception as e:
+                logger.warning(f"Failed to capture screenshot at '{point_name}': {str(e)}")
+        
         # Create agent for this authentication task
         agent = Agent(
             task=auth_task,
             browser=browser
         )
         
+        # Set up custom callback for browser actions 
+        # (This requires browser-use library version that supports callbacks)
+        try:
+            if hasattr(agent, 'add_event_listener'):
+                # If browser-use has event support
+                agent.add_event_listener('navigate', lambda _: take_screenshot_at_point('navigation'))
+                agent.add_event_listener('input', lambda _: take_screenshot_at_point('input'))
+                agent.add_event_listener('click', lambda _: take_screenshot_at_point('click'))
+                logger.info("Registered screenshot event listeners")
+            else:
+                logger.warning("Event listeners not supported in this version of browser-use")
+        except Exception as e:
+            logger.warning(f"Failed to set up event listeners: {str(e)}")
+        
+        # Take initial screenshot
+        await take_screenshot_at_point("initial")
+        
         # Set a timeout for the task
         try:
             # Execute the authentication task
+            logger.info(f"Starting authentication task with timeout of {timeout/1000} seconds")
             result = await asyncio.wait_for(agent.run(), timeout=timeout/1000)
+            
+            # Take final screenshot  
+            await take_screenshot_at_point("completed")
             
             # Parse the result to determine if login was successful
             final_result = result.final_result()
@@ -217,9 +413,25 @@ async def perform_google_auth(
             # Create a screenshots directory if it doesn't exist
             os.makedirs("screenshots", exist_ok=True)
             
-            # Take a screenshot of the final state
-            screenshot_path = f"screenshots/{business_id}_{task_id}.png"
-            await agent.browser.screenshot(path=screenshot_path)
+            # Create timestamped screenshots folder for this task
+            screenshots_dir = f"screenshots/{business_id}/{task_id}"
+            os.makedirs(screenshots_dir, exist_ok=True)
+            
+            # Take multiple screenshots - final state and page structure
+            final_screenshot_path = f"{screenshots_dir}/final_state.png"
+            await agent.browser.screenshot(path=final_screenshot_path)
+            
+            # Try to capture DOM structure for debugging
+            try:
+                page_html = await agent.browser.page.content()
+                with open(f"{screenshots_dir}/page_structure.html", "w") as f:
+                    f.write(page_html)
+                logger.info(f"Captured page HTML structure for task {task_id}")
+            except Exception as e:
+                logger.warning(f"Failed to capture page HTML: {str(e)}")
+            
+            # Log the successful screenshot capture
+            logger.info(f"Screenshots saved to {screenshots_dir}")
             
             # Analyze the result for specific login outcomes
             final_result_lower = final_result.lower()
@@ -293,13 +505,46 @@ async def perform_google_auth(
             # Check for success
             if any(indicator in final_result_lower for indicator in success_indicators):
                 # Success - authenticated
+                logger.info(f"Authentication successful for task {task_id}, business {business_id}")
+                
+                # Extract and save session data for future use
+                try:
+                    # Get session cookies and storage
+                    session_data = await extract_browser_session(agent)
+                    
+                    # Check if we have persist_session in options
+                    persist_session = advanced_options.get("persist_session", True)
+                    
+                    if persist_session and session_data and session_data.get("cookies"):
+                        # Save the session for future use
+                        session_saved = await save_browser_session(
+                            business_id,
+                            session_data["cookies"],
+                            session_data["local_storage"],
+                            session_data["session_storage"]
+                        )
+                        
+                        logger.info(
+                            f"Session {'saved successfully' if session_saved else 'failed to save'} " +
+                            f"for business {business_id} with {len(session_data['cookies'])} cookies"
+                        )
+                    else:
+                        logger.info(f"Session persistence disabled for business {business_id}")
+                        
+                except Exception as session_error:
+                    logger.error(f"Error saving session for business {business_id}: {str(session_error)}")
+                
+                # Success - authenticated
                 tasks[task_id].update({
                     "status": "completed",
                     "completed_at": datetime.now().isoformat(),
                     "result": {
                         "success": True,
                         "message": "Successfully authenticated with Google",
-                        "screenshot": screenshot_path
+                        "screenshot": final_screenshot_path,
+                        "screenshots_dir": screenshots_dir,
+                        "session_saved": True,
+                        "cookies_count": len(session_data.get("cookies", [])) if 'session_data' in locals() else 0
                     }
                 })
                 logger.info(f"Authentication task {task_id} succeeded")
@@ -326,7 +571,8 @@ async def perform_google_auth(
                         "error": error_message,
                         "error_code": error_code,
                         "message": error_message,
-                        "screenshot": screenshot_path,
+                        "screenshot": final_screenshot_path,
+                        "screenshots_dir": screenshots_dir,
                         "details": final_result[:500]  # Include part of the result for debugging
                     }
                 })
@@ -402,6 +648,211 @@ async def terminate_task(task_id: str):
     else:
         return {"message": f"Task is already {tasks[task_id]['status']}"}
 
+# Screenshot listing endpoint
+@app.get("/v1/screenshot/{business_id}/{task_id}")
+async def list_screenshots(business_id: str, task_id: str):
+    """List all screenshots for a task"""
+    screenshots_dir = f"screenshots/{business_id}/{task_id}"
+    
+    # Check if the directory exists
+    if not os.path.exists(screenshots_dir):
+        raise HTTPException(status_code=404, detail="No screenshots found for this task")
+    
+    # List all PNG files in the directory
+    try:
+        screenshot_files = [
+            f for f in os.listdir(screenshots_dir) 
+            if f.endswith('.png')
+        ]
+        
+        # Also include HTML files for debugging
+        html_files = [
+            f for f in os.listdir(screenshots_dir)
+            if f.endswith('.html')
+        ]
+        
+        return {
+            "business_id": business_id,
+            "task_id": task_id,
+            "screenshots": screenshot_files,
+            "html_files": html_files,
+            "directory": screenshots_dir
+        }
+    except Exception as e:
+        logger.error(f"Error listing screenshots: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error listing screenshots: {str(e)}")
+
+# Get specific screenshot endpoint
+@app.get("/v1/screenshot/{business_id}/{task_id}/{screenshot_name}")
+async def get_screenshot(business_id: str, task_id: str, screenshot_name: str):
+    """Get a specific screenshot for a task"""
+    screenshot_path = f"screenshots/{business_id}/{task_id}/{screenshot_name}"
+    
+    # Check if the file exists
+    if not os.path.exists(screenshot_path):
+        raise HTTPException(status_code=404, detail="Screenshot not found")
+    
+    # Return the screenshot file
+    try:
+        return fastapi.responses.FileResponse(
+            screenshot_path, 
+            media_type="image/png",
+            filename=f"{task_id}_{screenshot_name}"
+        )
+    except Exception as e:
+        logger.error(f"Error retrieving screenshot: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving screenshot: {str(e)}")
+
+# Session check endpoint
+@app.get("/v1/session/{business_id}")
+async def check_session(business_id: str):
+    """Check if we have a valid session for the business"""
+    try:
+        # Load the session from memory or disk
+        session = await load_browser_session(business_id)
+        
+        if not session:
+            return {
+                "has_session": False,
+                "message": "No session found for this business"
+            }
+        
+        # Get information about the session
+        cookies_count = len(session.get("cookies", []))
+        last_updated = session.get("last_updated", "unknown")
+        
+        # Simple expiration check - 7 days
+        is_expired = False
+        if last_updated != "unknown":
+            try:
+                last_updated_date = datetime.fromisoformat(last_updated)
+                is_expired = (datetime.now() - last_updated_date) > timedelta(days=7)
+            except:
+                # If we can't parse the date, assume it's expired
+                is_expired = True
+        
+        return {
+            "has_session": True,
+            "cookies_count": cookies_count,
+            "last_updated": last_updated,
+            "is_expired": is_expired,
+            "message": "Session exists"
+        }
+    except Exception as e:
+        logger.error(f"Error checking session for business {business_id}: {str(e)}")
+        return {
+            "has_session": False,
+            "error": str(e),
+            "message": "Error checking session"
+        }
+
+# Session validation endpoint
+@app.get("/v1/session/{business_id}/validate")
+async def validate_session(business_id: str, request: fastapi.Request):
+    """Validate if the session for the business is still working"""
+    try:
+        # Check for session ID in headers 
+        x_session_id = request.headers.get("X-Session-ID")
+        if x_session_id:
+            logger.info(f"Session validation for business {business_id} includes X-Session-ID header: {x_session_id[:8]}...")
+        
+        # Attempt to extract session ID from cookies as well
+        cookies = request.cookies
+        cookie_session_id = cookies.get("session") or cookies.get("sessionId")
+        if cookie_session_id:
+            logger.info(f"Session validation for business {business_id} includes session cookie: {cookie_session_id[:8]}...")
+        
+        # Load the session
+        session = await load_browser_session(business_id)
+        
+        if not session:
+            return {
+                "valid": False,
+                "message": "No session found for this business"
+            }
+        
+        # Create an agent to check the session
+        validation_agent = Agent(
+            task="Navigate to https://myaccount.google.com/ and check if you're still logged in",
+            browser=browser
+        )
+        
+        # Apply the session to the browser
+        session_applied = await apply_session_to_browser(browser, session)
+        
+        if not session_applied:
+            return {
+                "valid": False,
+                "message": "Failed to apply session to browser"
+            }
+        
+        # Run the validation task
+        validation_result = await asyncio.wait_for(validation_agent.run(), timeout=30)
+        final_text = validation_result.final_result().lower()
+        
+        # Check if we're logged in
+        is_logged_in = any(indicator in final_text for indicator in [
+            "logged in",
+            "google account",
+            "personal info",
+            "you're signed in",
+            "welcome to your account"
+        ])
+        
+        # Take screenshot for record
+        screenshots_dir = "screenshots/session_validation"
+        os.makedirs(screenshots_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        screenshot_path = f"{screenshots_dir}/{business_id}_{timestamp}.png"
+        await browser.screenshot(path=screenshot_path)
+        
+        if is_logged_in:
+            # Success, update the session
+            updated_session = await extract_browser_session(browser)
+            
+            if updated_session and updated_session.get("cookies"):
+                # Save the updated session
+                await save_browser_session(
+                    business_id,
+                    updated_session["cookies"],
+                    updated_session["local_storage"],
+                    updated_session["session_storage"]
+                )
+                
+                # If we have a session ID from the headers, associate it with this session
+                if x_session_id:
+                    # Store metadata about the session
+                    updated_session["associated_session_id"] = x_session_id
+                    logger.info(f"Associated session ID {x_session_id[:8]}... with business {business_id}")
+                    
+                    # Update the saved session with this additional metadata
+                    await save_browser_session(
+                        business_id,
+                        updated_session["cookies"],
+                        updated_session["local_storage"],
+                        updated_session["session_storage"],
+                        metadata={"associated_session_id": x_session_id}
+                    )
+            
+            return {
+                "valid": True,
+                "message": "Session is valid and working",
+                "screenshot": screenshot_path
+            }
+        else:
+            return {
+                "valid": False,
+                "message": "Session is not valid (not logged in)",
+                "screenshot": screenshot_path
+            }
+    except Exception as e:
+        logger.error(f"Error validating session for business {business_id}: {str(e)}")
+        return {
+            "valid": False,
+            "error": str(e),
+            "message": "Error validating session"
+        }
+
 # Browser status endpoint
 @app.get("/v1/browser/status")
 async def browser_status():
@@ -411,7 +862,8 @@ async def browser_status():
         "config": {
             "headless": browser.config.headless
         },
-        "uptime_seconds": (datetime.now() - datetime(1970, 1, 1)).total_seconds()  # Dummy uptime
+        "uptime_seconds": (datetime.now() - datetime(1970, 1, 1)).total_seconds(),  # Dummy uptime
+        "active_sessions_count": len(browser_sessions)
     }
 
 # Start the server if running as script

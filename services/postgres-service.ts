@@ -208,18 +208,19 @@ class PostgresServiceFixed {
     console.log('Initialize method called - creating tables if needed');
     
     const client = await this.pool.connect();
+    
+    // Create vector extension outside of transaction
     try {
-      // Start a transaction
+      await client.query('CREATE EXTENSION IF NOT EXISTS vector');
+      console.log('Vector extension created or already exists');
+    } catch (e) {
+      console.error('Error creating vector extension:', e);
+    }
+    
+    // 1. First create the users table (no dependencies)
+    try {
+      console.log('Creating users table...');
       await client.query('BEGIN');
-      
-      // Create vector extension
-      try {
-        await client.query('CREATE EXTENSION IF NOT EXISTS vector');
-      } catch (e) {
-        console.error('Error creating vector extension:', e);
-      }
-      
-      // Create tables
       await client.query(`
         CREATE TABLE IF NOT EXISTS users (
           id SERIAL PRIMARY KEY,
@@ -228,20 +229,42 @@ class PostgresServiceFixed {
           password_hash TEXT NOT NULL,
           profile_picture TEXT,
           phone_number TEXT,
-          created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-          updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-          last_login TIMESTAMP
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          last_login TIMESTAMP WITH TIME ZONE
         );
-        
+      `);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error creating users table:', error.message);
+    }
+    
+    // 2. Create sessions table (depends on users)
+    try {
+      console.log('Creating sessions table...');
+      await client.query('BEGIN');
+      await client.query(`
         CREATE TABLE IF NOT EXISTS sessions (
           id SERIAL PRIMARY KEY,
           user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
           session_id TEXT UNIQUE NOT NULL,
-          created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-          expires_at TIMESTAMP NOT NULL,
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
           data JSONB
         );
-        
+      `);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error creating sessions table:', error.message);
+    }
+    
+    // 3. Create businesses table (depends on users)
+    try {
+      console.log('Creating businesses table...');
+      await client.query('BEGIN');
+      await client.query(`
         CREATE TABLE IF NOT EXISTS businesses (
           id SERIAL PRIMARY KEY,
           business_id TEXT UNIQUE NOT NULL,
@@ -251,11 +274,22 @@ class PostgresServiceFixed {
           google_auth_status VARCHAR(50) DEFAULT 'not_connected',
           google_email VARCHAR(255),
           google_credentials_encrypted TEXT,
-          google_auth_timestamp TIMESTAMP,
-          created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-          updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+          google_auth_timestamp TIMESTAMP WITH TIME ZONE,
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
-        
+      `);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error creating businesses table:', error.message);
+    }
+    
+    // 4. Create documents table (depends on users and businesses)
+    try {
+      console.log('Creating documents table...');
+      await client.query('BEGIN');
+      await client.query(`
         CREATE TABLE IF NOT EXISTS documents (
           id SERIAL PRIMARY KEY,
           document_id TEXT UNIQUE NOT NULL,
@@ -264,19 +298,57 @@ class PostgresServiceFixed {
           user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
           business_id TEXT REFERENCES businesses(business_id) ON DELETE CASCADE,
           metadata JSONB,
-          created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-          updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
-        
+      `);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error creating documents table:', error.message);
+    }
+    
+    // 5. Create document_chunks table (without foreign key first)
+    try {
+      console.log('Creating document_chunks table...');
+      await client.query('BEGIN');
+      await client.query(`
         CREATE TABLE IF NOT EXISTS document_chunks (
           id SERIAL PRIMARY KEY,
-          document_id TEXT REFERENCES documents(document_id) ON DELETE CASCADE,
+          document_id TEXT,
           chunk_index INTEGER,
           content TEXT,
           embedding VECTOR(1536),
-          created_at TIMESTAMP NOT NULL DEFAULT NOW()
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
-        
+      `);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error creating document_chunks table:', error.message);
+    }
+    
+    // 5a. Add foreign key constraint in a separate transaction
+    try {
+      await client.query('BEGIN');
+      await client.query(`
+        ALTER TABLE IF EXISTS document_chunks 
+        ADD CONSTRAINT IF NOT EXISTS fk_document_chunks_document_id 
+        FOREIGN KEY (document_id) 
+        REFERENCES documents(document_id) 
+        ON DELETE CASCADE;
+      `);
+      await client.query('COMMIT');
+    } catch (fkError) {
+      await client.query('ROLLBACK');
+      console.warn('Note: Could not add foreign key constraint to document_chunks table:', fkError.message);
+    }
+    
+    // 6. Create task_logs table (no critical dependencies)
+    try {
+      console.log('Creating task_logs table...');
+      await client.query('BEGIN');
+      await client.query(`
         CREATE TABLE IF NOT EXISTS task_logs (
           id SERIAL PRIMARY KEY,
           task_id VARCHAR(255) NOT NULL,
@@ -286,38 +358,67 @@ class PostgresServiceFixed {
           result TEXT,
           error TEXT,
           screenshot_path TEXT,
-          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
       `);
-      
-      // Add indexes (ignoring errors if they already exist)
-      try {
-        await client.query(`
-          CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
-          CREATE INDEX IF NOT EXISTS idx_sessions_session_id ON sessions(session_id);
-          CREATE INDEX IF NOT EXISTS idx_businesses_user_id ON businesses(user_id);
-          CREATE INDEX IF NOT EXISTS idx_documents_user_id ON documents(user_id);
-          CREATE INDEX IF NOT EXISTS idx_documents_business_id ON documents(business_id);
-          CREATE INDEX IF NOT EXISTS idx_document_chunks_document_id ON document_chunks(document_id);
-          CREATE INDEX IF NOT EXISTS idx_task_logs_business_id ON task_logs(business_id);
-          CREATE INDEX IF NOT EXISTS idx_task_logs_task_id ON task_logs(task_id);
-        `);
-      } catch (error) {
-        console.warn('Error creating some indexes (they may already exist):', error);
-      }
-      
-      // Commit the transaction
       await client.query('COMMIT');
-      console.log('Tables created successfully!');
     } catch (error) {
-      // Rollback on error
       await client.query('ROLLBACK');
-      console.error('Error initializing database:', error);
-      throw error;
-    } finally {
-      client.release();
+      console.error('Error creating task_logs table:', error.message);
     }
+    
+    // 7. Create notifications table (depends on users)
+    try {
+      console.log('Creating notifications table...');
+      await client.query('BEGIN');
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS notifications (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          title TEXT NOT NULL,
+          message TEXT NOT NULL,
+          notification_type TEXT NOT NULL CHECK (notification_type IN ('info', 'success', 'warning', 'alert')),
+          read BOOLEAN DEFAULT FALSE,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          read_at TIMESTAMP WITH TIME ZONE
+        );
+      `);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error creating notifications table:', error.message);
+    }
+    
+    // Add indexes one by one, each in their own transaction
+    console.log('Creating indexes...');
+    const indexQueries = [
+      'CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)',
+      'CREATE INDEX IF NOT EXISTS idx_sessions_session_id ON sessions(session_id)',
+      'CREATE INDEX IF NOT EXISTS idx_businesses_user_id ON businesses(user_id)',
+      'CREATE INDEX IF NOT EXISTS idx_documents_user_id ON documents(user_id)',
+      'CREATE INDEX IF NOT EXISTS idx_documents_business_id ON documents(business_id)',
+      'CREATE INDEX IF NOT EXISTS idx_document_chunks_document_id ON document_chunks(document_id)',
+      'CREATE INDEX IF NOT EXISTS idx_task_logs_business_id ON task_logs(business_id)',
+      'CREATE INDEX IF NOT EXISTS idx_task_logs_task_id ON task_logs(task_id)',
+      'CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)',
+      'CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read)',
+      'CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, read)'
+    ];
+    
+    for (const indexQuery of indexQueries) {
+      try {
+        await client.query('BEGIN');
+        await client.query(indexQuery);
+        await client.query('COMMIT');
+      } catch (indexError) {
+        await client.query('ROLLBACK');
+        console.warn(`Error creating index with query "${indexQuery}":`, indexError.message);
+      }
+    }
+    
+    console.log('Tables and indexes created successfully!');
+    client.release();
   }
 
   /**
@@ -384,7 +485,7 @@ class PostgresServiceFixed {
       console.log('Inserting user into database...');
       const result = await client.query(
         `INSERT INTO users (email, password_hash, name, created_at, updated_at)
-         VALUES ($1, $2, $3, NOW(), NOW())
+         VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
          RETURNING id`,
         [email, passwordHash, name || null]
       );
@@ -438,7 +539,7 @@ class PostgresServiceFixed {
       }
       
       // Add the updated_at timestamp
-      setClause.push(`updated_at = NOW()`);
+      setClause.push(`updated_at = CURRENT_TIMESTAMP`);
       
       // Add the user ID to the values array
       values.push(userId);
@@ -469,13 +570,13 @@ class PostgresServiceFixed {
       if (existingSession.rows.length > 0) {
         // Update the existing session
         await this.pool.query(
-          'UPDATE sessions SET expires_at = $1, updated_at = NOW() WHERE session_id = $2',
+          'UPDATE sessions SET expires_at = $1 WHERE session_id = $2',
           [expiresAt, sessionId]
         );
       } else {
         // Create a new session
         await this.pool.query(
-          'INSERT INTO sessions (user_id, session_id, created_at, expires_at) VALUES ($1, $2, NOW(), $3)',
+          'INSERT INTO sessions (user_id, session_id, created_at, expires_at) VALUES ($1, $2, CURRENT_TIMESTAMP, $3)',
           [userId, sessionId, expiresAt]
         );
       }
@@ -551,7 +652,7 @@ class PostgresServiceFixed {
   public async updateLastLogin(userId: number): Promise<boolean> {
     try {
       const result = await this.pool.query(
-        'UPDATE users SET last_login = NOW() WHERE id = $1 RETURNING id',
+        'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1 RETURNING id',
         [userId]
       );
       return result.rowCount > 0;
@@ -588,7 +689,7 @@ class PostgresServiceFixed {
       
       const result = await client.query(
         `INSERT INTO businesses (business_id, user_id, name, status, created_at, updated_at)
-         VALUES ($1, $2, $3, 'active', NOW(), NOW())
+         VALUES ($1, $2, $3, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
          RETURNING id`,
         [businessId, userId, businessName]
       );
@@ -731,6 +832,226 @@ class PostgresServiceFixed {
     } catch (error) {
       console.error('Error getting Google auth status:', error);
       return null;
+    }
+  }
+
+  /**
+   * Create a notification for a user
+   * @param userId The user ID
+   * @param title The notification title
+   * @param message The notification message
+   * @param type The notification type
+   * @returns The notification ID
+   */
+  public async createNotification(
+    userId: number,
+    title: string,
+    message: string,
+    type: 'info' | 'success' | 'warning' | 'alert'
+  ): Promise<number> {
+    try {
+      // First check if the notifications table exists
+      const tableCheckResult = await this.pool.query(
+        `SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'notifications'
+        )`
+      );
+      
+      const tableExists = tableCheckResult.rows[0].exists;
+      
+      // If the table doesn't exist, create it
+      if (!tableExists) {
+        await this.pool.query(`
+          CREATE TABLE IF NOT EXISTS notifications (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            message TEXT NOT NULL,
+            notification_type TEXT NOT NULL CHECK (notification_type IN ('info', 'success', 'warning', 'alert')),
+            read BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            read_at TIMESTAMP WITH TIME ZONE
+          );
+          
+          CREATE INDEX IF NOT EXISTS notifications_user_id_idx ON notifications(user_id);
+          CREATE INDEX IF NOT EXISTS notifications_read_idx ON notifications(read);
+          CREATE INDEX IF NOT EXISTS notifications_user_read_idx ON notifications(user_id, read);
+        `);
+      }
+
+      const result = await this.pool.query(
+        `INSERT INTO notifications (user_id, title, message, notification_type)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id`,
+        [userId, title, message, type]
+      );
+      
+      return result.rows[0].id;
+    } catch (error) {
+      console.error('Error creating notification:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all user IDs from the database
+   * @returns Array of user IDs
+   */
+  public async getAllUserIds(): Promise<number[]> {
+    try {
+      const result = await this.pool.query(
+        'SELECT id FROM users'
+      );
+      
+      return result.rows.map(row => row.id);
+    } catch (error) {
+      console.error('Error getting all user IDs:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get notifications for a user
+   * @param userId The user ID
+   * @param limit Max number of notifications to retrieve
+   * @param unreadOnly Whether to only return unread notifications
+   * @returns Array of notifications
+   */
+  public async getNotifications(
+    userId: number,
+    limit: number = 50,
+    unreadOnly: boolean = false
+  ): Promise<any[]> {
+    try {
+      let query = `
+        SELECT id, title, message, notification_type, read, created_at, read_at
+        FROM notifications
+        WHERE user_id = $1
+      `;
+      
+      const params: any[] = [userId];
+      
+      if (unreadOnly) {
+        query += ' AND read = FALSE';
+      }
+      
+      query += ' ORDER BY created_at DESC';
+      
+      if (limit > 0) {
+        query += ` LIMIT $${params.length + 1}`;
+        params.push(limit);
+      }
+      
+      const result = await this.pool.query(query, params);
+      
+      return result.rows;
+    } catch (error) {
+      console.error('Error getting notifications:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get the count of unread notifications for a user
+   * @param userId The user ID
+   * @returns The count of unread notifications
+   */
+  public async getUnreadNotificationCount(userId: number): Promise<number> {
+    try {
+      // Check if notifications table exists
+      const tableCheckResult = await this.pool.query(
+        `SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'notifications'
+        )`
+      );
+      
+      const tableExists = tableCheckResult.rows[0].exists;
+      
+      // If table doesn't exist, return 0
+      if (!tableExists) {
+        return 0;
+      }
+      
+      const result = await this.pool.query(
+        'SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND read = FALSE',
+        [userId]
+      );
+      
+      return parseInt(result.rows[0].count, 10);
+    } catch (error) {
+      console.error('Error getting unread notification count:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Mark a notification as read
+   * @param notificationId The notification ID
+   * @param userId The user ID (for security)
+   * @returns Whether the operation was successful
+   */
+  public async markNotificationAsRead(notificationId: number, userId: number): Promise<boolean> {
+    try {
+      const result = await this.pool.query(
+        `UPDATE notifications 
+         SET read = TRUE, read_at = CURRENT_TIMESTAMP 
+         WHERE id = $1 AND user_id = $2
+         RETURNING id`,
+        [notificationId, userId]
+      );
+      
+      return result.rowCount > 0;
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Mark all notifications as read for a user
+   * @param userId The user ID
+   * @returns The number of notifications marked as read
+   */
+  public async markAllNotificationsAsRead(userId: number): Promise<number> {
+    try {
+      const result = await this.pool.query(
+        `UPDATE notifications 
+         SET read = TRUE, read_at = CURRENT_TIMESTAMP 
+         WHERE user_id = $1 AND read = FALSE
+         RETURNING id`,
+        [userId]
+      );
+      
+      return result.rowCount;
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Delete a notification
+   * @param notificationId The notification ID
+   * @param userId The user ID (for security)
+   * @returns Whether the operation was successful
+   */
+  public async deleteNotification(notificationId: number, userId: number): Promise<boolean> {
+    try {
+      const result = await this.pool.query(
+        `DELETE FROM notifications 
+         WHERE id = $1 AND user_id = $2
+         RETURNING id`,
+        [notificationId, userId]
+      );
+      
+      return result.rowCount > 0;
+    } catch (error) {
+      console.error('Error deleting notification:', error);
+      return false;
     }
   }
 }

@@ -134,16 +134,41 @@ export const GET = createAuthRoute(async (req: NextRequest, userId: number) => {
 // Add a new business for the authenticated user
 export const POST = createAuthRoute(async (req: NextRequest, userId: number) => {
   try {
-    console.log(`Creating new business for user ID: ${userId}`);
+    console.log(`Creating new business for user ID: ${userId}, type: ${typeof userId}`);
     
-    // Double check user id
-    if (!userId) {
-      console.error('POST business: userId is null or undefined');
+    // Double check user id and ensure it's a valid number
+    if (!userId || isNaN(Number(userId))) {
+      console.error(`POST business: userId is invalid: ${userId}, type: ${typeof userId}`);
+      
+      // Check request cookies and headers to diagnose authentication issues
+      const cookieHeader = req.headers.get('cookie') || '';
+      const cookies = Array.from(req.cookies.getAll());
+      const cookieNames = cookies.map(c => c.name);
+      
+      console.error(`Authentication context: Session cookie present: ${
+        cookies.some(c => c.name === 'session' || c.name === 'sessionId')
+      }, Cookie names: [${cookieNames.join(', ')}]`);
+      
+      // Check if we have an Authorization header that might contain a token
+      const authHeader = req.headers.get('authorization');
+      if (authHeader) {
+        console.log(`Authorization header present: ${authHeader.substring(0, 15)}...`);
+      }
+      
       return NextResponse.json({ 
         success: false, 
-        error: 'Invalid or expired session' 
+        error: 'Invalid or expired session. Please refresh the page and try again.',
+        context: {
+          cookiesPresent: cookieNames.length > 0,
+          sessionCookiePresent: cookies.some(c => c.name === 'session' || c.name === 'sessionId'),
+          authHeaderPresent: !!authHeader,
+          xSessionIdPresent: !!req.headers.get('x-session-id')
+        }
       }, { status: 401 });
     }
+    
+    // Convert to number if it's a string (sometimes happens with NextJS)
+    const userIdNum = Number(userId);
     
     // Get auth service
     const authService = AuthService.getInstance();
@@ -153,7 +178,12 @@ export const POST = createAuthRoute(async (req: NextRequest, userId: number) => 
     try {
       const bodyText = await req.text();
       body = JSON.parse(bodyText);
-      console.log('Request body parsed:', { name: body.name ? 'Present' : 'Missing' });
+      console.log('Request body parsed:', { 
+        name: body.name ? `"${body.name}"` : 'Missing',
+        type: body.type || 'Not specified',
+        authPending: body.authPending || false,
+        email: body.email ? 'Present' : 'Not provided'
+      });
     } catch (parseError) {
       console.error('Error parsing request body:', parseError);
       return NextResponse.json({ 
@@ -174,16 +204,10 @@ export const POST = createAuthRoute(async (req: NextRequest, userId: number) => 
     
     // Create business in database
     try {
-      console.log(`Creating business for user ${userId} with name "${name}"`);
+      console.log(`Creating business for user ${userIdNum} with name "${name}"`);
       
-      // Ensure userId is a number
-      if (typeof userId !== 'number') {
-        console.error(`Invalid userId type: ${typeof userId}. Converting to number.`);
-        userId = Number(userId);
-      }
-      
-      // Create the business
-      const result = await authService.addBusiness(userId, name);
+      // Create the business with validated userId
+      const result = await authService.addBusiness(userIdNum, name);
       console.log('Business creation result:', result);
       
       if (!result.success) {
@@ -195,11 +219,11 @@ export const POST = createAuthRoute(async (req: NextRequest, userId: number) => 
       }
       
       // Clear cache for this user to ensure fresh data on next fetch
-      businessesCache.delete(userId);
+      businessesCache.delete(userIdNum);
       
-      // Return success with the new business ID
-      console.log(`Business created successfully with ID: ${result.businessId}`);
-      return NextResponse.json({
+      // Add session cookie to response if it's missing from the request
+      // This helps with session continuity in case the client lost its cookie
+      const response = NextResponse.json({
         success: true,
         businessId: result.businessId
       }, { 
@@ -211,15 +235,20 @@ export const POST = createAuthRoute(async (req: NextRequest, userId: number) => 
           'Expires': '0'
         }
       });
+      
+      // Return success with the new business ID
+      console.log(`Business created successfully with ID: ${result.businessId}`);
+      return response;
     } catch (error) {
       console.error('Error adding business:', error);
       return NextResponse.json({
         success: false,
-        error: 'Failed to add business'
+        error: error instanceof Error ? error.message : 'Failed to add business'
       }, { status: 500 });
     }
   } catch (error) {
     console.error('Unexpected error adding business:', error);
+    console.error(error instanceof Error ? error.stack : 'No stack available');
     return NextResponse.json({
       success: false,
       error: 'Internal server error'

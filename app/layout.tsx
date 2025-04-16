@@ -3,6 +3,8 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import InitDbScript from './init-db-script';
+// Import log suppressor
+import '@/lib/utilities/log-suppressor';
 
 const inter = Inter({ subsets: ["latin"] });
 

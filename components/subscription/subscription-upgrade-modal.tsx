@@ -1,9 +1,10 @@
 'use client';
 
 import React from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '../ui/dialog';
 import { Button } from '../ui/button';
 import { useRouter } from 'next/navigation';
+import { X } from 'lucide-react';
 import { subscriptionPlans } from '../../lib/subscription/plans';
 
 interface SubscriptionUpgradeModalProps {
@@ -40,11 +41,23 @@ export function SubscriptionUpgradeModal({
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle className="text-xl font-semibold text-[#FF1681]">
-            Upgrade Your Plan
-          </DialogTitle>
-          <DialogDescription>
+        <div className="relative">
+          <DialogClose asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute right-4 top-4 h-8 w-8 rounded-full bg-white border shadow-md hover:bg-gray-50 z-10"
+            >
+              <X className="h-4 w-4" />
+              <span className="sr-only">Close</span>
+            </Button>
+          </DialogClose>
+          
+          <DialogHeader>
+            <DialogTitle className="text-xl font-semibold text-[#FF1681]">
+              Upgrade Your Plan
+            </DialogTitle>
+            <DialogDescription>
             {limitType === 'locations' ? (
               <>
                 You've reached the limit of {currentPlanDetails.businessLimit} locations for your {currentPlanDetails.name} plan.
@@ -62,7 +75,7 @@ export function SubscriptionUpgradeModal({
         <div className="grid gap-4 py-4">
           <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
             <h3 className="text-lg font-medium">{requiredPlanDetails.name} Plan</h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-2">${requiredPlanDetails.priceMonthly}/month</p>
+            <p className="text-gray-500 dark:text-gray-400 mb-2">${requiredPlanDetails.priceMonthly}/month per location</p>
             <ul className="space-y-2">
               {requiredPlanDetails.features.map((feature, index) => (
                 <li key={index} className="flex items-center">
@@ -92,6 +105,7 @@ export function SubscriptionUpgradeModal({
             Upgrade Now
           </Button>
         </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );

@@ -8,23 +8,98 @@ export async function authMiddleware(
 ): Promise<NextResponse> {
   const authService = AuthService.getInstance();
   
-  // Get the session ID from cookies - check both "session" and "sessionId" for compatibility
-  const sessionId = req.cookies.get('session')?.value || req.cookies.get('sessionId')?.value;
+  // Get all cookies from the request
+  const allCookies = Array.from(req.cookies.getAll());
+  const cookieHeader = req.headers.get('cookie');
   
-  // Only log auth details for non-API requests to reduce noise
-  if (!req.nextUrl.pathname.includes('/api/')) {
-    console.log('Auth middleware cookies:', {
-      sessionCookie: req.cookies.get('session')?.value ? 'Present' : 'Missing',
-      sessionIdCookie: req.cookies.get('sessionId')?.value ? 'Present' : 'Missing'
-    });
+  // Try multiple ways to get session ID
+  let sessionId = null;
+  
+  // Method 1: Use NextRequest.cookies API
+  sessionId = req.cookies.get('session')?.value || req.cookies.get('sessionId')?.value;
+  
+  // Method 2: If that fails, try parsing cookie header directly
+  if (!sessionId && cookieHeader) {
+    const parsedCookies = authService.parseCookies(cookieHeader);
+    sessionId = parsedCookies['session'] || parsedCookies['sessionId'];
   }
   
+  // Method 3: As a last resort, check all cookies
   if (!sessionId) {
-    // Return proper JSON response
-    return NextResponse.json({
+    for (const cookie of allCookies) {
+      if (cookie.name === 'session' || cookie.name === 'sessionId') {
+        sessionId = cookie.value;
+        break;
+      }
+    }
+  }
+  
+  // Method 4: Check for session in authorization header (for API clients)
+  if (!sessionId) {
+    const authHeader = req.headers.get('authorization');
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7);
+      if (token.length > 10) { // Basic validation for token format
+        sessionId = token;
+        console.log(`Auth middleware - Using token from Authorization header: ${sessionId.substring(0, 8)}...`);
+      }
+    }
+  }
+  
+  // Method 5: Check for X-Session-ID header (for browser-use-api)
+  if (!sessionId) {
+    const sessionHeader = req.headers.get('x-session-id');
+    if (sessionHeader && sessionHeader.length > 10) {
+      sessionId = sessionHeader;
+      console.log(`Auth middleware - Using session from X-Session-ID header: ${sessionId.substring(0, 8)}...`);
+    }
+  }
+  
+  // Check for XMLHttpRequest header to identify AJAX requests
+  const isAjaxRequest = req.headers.get('X-Requested-With') === 'XMLHttpRequest';
+  
+  // Log all auth details for debugging the session issue
+  console.log(`Auth middleware request: ${req.method} ${req.nextUrl.pathname}`, {
+    sessionCookie: req.cookies.get('session')?.value ? 'Present' : 'Missing',
+    sessionIdCookie: req.cookies.get('sessionId')?.value ? 'Present' : 'Missing',
+    cookieHeaderPresent: !!cookieHeader,
+    cookieHeaderLength: cookieHeader ? cookieHeader.length : 0,
+    sessionIdFound: !!sessionId,
+    sessionIdSource: !sessionId ? 'None' : 
+                    req.cookies.get('session')?.value ? 'Cookie API (session)' :
+                    req.cookies.get('sessionId')?.value ? 'Cookie API (sessionId)' :
+                    cookieHeader && (authService.parseCookies(cookieHeader)['session'] || 
+                                   authService.parseCookies(cookieHeader)['sessionId']) ? 'Cookie Header Parse' :
+                    req.headers.get('authorization') ? 'Authorization Header' :
+                    req.headers.get('x-session-id') ? 'X-Session-ID Header' : 'Cookie Iteration',
+    sessionIdPrefix: sessionId ? sessionId.substring(0, 8) + '...' : 'None',
+    sessionIdLength: sessionId ? sessionId.length : 0,
+    isAjaxRequest: isAjaxRequest ? 'Yes' : 'No',
+    cookieNames: allCookies.map(c => c.name),
+    referer: req.headers.get('referer') || 'None',
+    origin: req.headers.get('origin') || 'None',
+    userAgent: req.headers.get('user-agent') || 'None',
+    contentType: req.headers.get('content-type') || 'None'
+  });
+  
+  // No session found in any source
+  if (!sessionId) {
+    // Return proper JSON response with CORS headers for AJAX requests
+    const response = NextResponse.json({
       success: false,
-      error: 'Authentication required'
+      error: 'Authentication required - No session cookie found',
+      fix: 'Please ensure cookies are enabled in your browser'
     }, { status: 401 });
+    
+    // Add CORS headers for AJAX requests
+    if (isAjaxRequest) {
+      response.headers.set('Access-Control-Allow-Origin', '*');
+      response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie');
+      response.headers.set('Access-Control-Allow-Credentials', 'true');
+    }
+    
+    return response;
   }
   
   // Verify session

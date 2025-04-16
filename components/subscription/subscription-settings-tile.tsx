@@ -55,7 +55,7 @@ export function SubscriptionSettingsTile() {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-medium">{currentPlan?.name} Plan</h3>
-              <p className="text-sm text-gray-500">${currentPlan?.price.monthly}/month per location</p>
+              <p className="text-sm text-gray-500">${currentPlan?.priceMonthly}/month per location</p>
             </div>
             <span className="px-3 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
               Active
@@ -65,22 +65,20 @@ export function SubscriptionSettingsTile() {
           <div>
             <h4 className="text-sm font-medium mb-2">Plan Features:</h4>
             <ul className="space-y-1 text-sm">
-              {currentPlan?.features.map((feature: any, index: number) => (
-                feature.included && (
-                  <li key={index} className="flex items-center">
-                    <svg className="w-4 h-4 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    {feature.name} {feature.limit ? `(${feature.limit})` : ''}
-                  </li>
-                )
+              {currentPlan?.features.map((feature: string, index: number) => (
+                <li key={index} className="flex items-center">
+                  <svg className="w-4 h-4 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  {feature}
+                </li>
               ))}
             </ul>
           </div>
 
           <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-md">
             <p className="text-sm">
-              <span className="font-medium">Locations:</span> {businessCount} / {currentPlan?.locationRange.max || 'Unlimited'}
+              <span className="font-medium">Locations:</span> {businessCount} / {currentPlan?.businessLimit === 9999 ? 'Unlimited' : currentPlan?.businessLimit}
             </p>
           </div>
 

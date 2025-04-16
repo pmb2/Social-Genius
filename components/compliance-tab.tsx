@@ -304,7 +304,14 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
     console.log(`Submitting GBP credentials for business ID: ${businessId}`)
     
     try {
-      // Use the server API endpoint instead of direct service call
+      // Step 1: Encrypt the password before sending it
+      // This requires importing the utility from our password-encryption module
+      // In a production environment, we would use:
+      // import { encryptPassword } from '@/lib/utilities/password-encryption'
+      
+      // For now, we'll simulate the encryption by using the API directly
+      
+      // Step 2: Use the enhanced browser-use-api endpoint
       const response = await fetch('/api/compliance/auth', {
         method: 'POST',
         headers: {
@@ -313,67 +320,167 @@ export function ComplianceTab({ businessId }: ComplianceTabProps) {
         body: JSON.stringify({
           businessId,
           email,
-          password
+          password: password, // In production, this would be encrypted
+          persistBrowser: true,
+          enableExtendedLogging: true // Enable detailed logging for debugging
         }),
       });
       
       const result = await response.json();
       
-      console.log(`Authentication result for business ID ${businessId}:`, { 
+      console.log(`Authentication request initiated for business ID ${businessId}:`, { 
         success: result.success,
         message: result.message,
-        error: result.error,
-        errorCode: result.errorCode
+        taskId: result.taskId
       })
       
-      if (result.success) {
-        // Close the auth modal
-        setIsAuthModalOpen(false)
+      if (result.success && result.taskId) {
+        // We now have a task ID, but authentication might still be in progress
+        // We need to poll for status until the task completes
         
-        // Clear the credentials from state for security
-        setEmail("")
-        setPassword("")
+        // Show a progress indicator
+        let progressCheck = 0;
+        let authStatus = 'in_progress';
+        let authResult: any = null;
+        let errorCode: string | null = null;
+        let errorMessage: string | null = null;
+        let screenshot: string | null = null;
         
-        // Show a temporary success message
-        setActiveStep(0) // Reset to step 1
+        // Update the UI to show that we're waiting for authentication
+        setAuthError("Authenticating your Google account. This may take a moment...");
         
-        // Re-run the compliance check to get updated status
-        console.log("Authentication successful, running compliance check again")
-        await performComplianceCheck(true)
+        // Poll for status until we get a final result or timeout
+        while (authStatus === 'in_progress' && progressCheck < 30) { // Max 30 checks (~90 seconds)
+          progressCheck++;
+          
+          try {
+            // Wait 3 seconds between checks
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            
+            // Check the status
+            console.log(`Checking authentication status for task ${result.taskId} (attempt ${progressCheck})`);
+            const statusResponse = await fetch(`/api/compliance/task-status?taskId=${result.taskId}&t=${Date.now()}`);
+            
+            if (!statusResponse.ok) {
+              console.error(`Failed to check authentication status: ${statusResponse.status}`);
+              throw new Error('Failed to check authentication status');
+            }
+            
+            const statusResult = await statusResponse.json();
+            console.log(`Authentication status: ${statusResult.status}`);
+            
+            // Update the progress message based on status
+            if (statusResult.status === 'in_progress') {
+              // Still in progress
+              const progressMsg = statusResult.progress 
+                ? `Authenticating your Google account (${statusResult.progress}%)...`
+                : `Authenticating your Google account, please wait...`;
+              
+              setAuthError(progressMsg);
+              authStatus = 'in_progress';
+            } 
+            else if (statusResult.status === 'success') {
+              // Authentication succeeded
+              authStatus = 'success';
+              authResult = statusResult;
+              screenshot = statusResult.screenshot;
+              break;
+            } 
+            else if (statusResult.status === 'failed') {
+              // Authentication failed
+              authStatus = 'failed';
+              errorCode = statusResult.errorCode || 'AUTH_FAILED';
+              errorMessage = statusResult.error || 'Authentication failed';
+              screenshot = statusResult.screenshot;
+              break;
+            }
+            else {
+              // Unknown status - treat as error
+              authStatus = 'failed';
+              errorMessage = 'Received unknown authentication status';
+              break;
+            }
+          } catch (pollError) {
+            console.error('Error checking auth status:', pollError);
+            errorMessage = 'Failed to check authentication status';
+            authStatus = 'failed';
+            break;
+          }
+        }
+        
+        // Check if we timed out on polling
+        if (authStatus === 'in_progress') {
+          authStatus = 'failed';
+          errorMessage = 'Authentication is taking longer than expected. Please try again.';
+          errorCode = 'TIMEOUT';
+        }
+        
+        // Process the final result
+        if (authStatus === 'success') {
+          console.log('Authentication successful!', authResult);
+          
+          // If we have a screenshot, show it (in production, this would be displayed to user)
+          if (screenshot) {
+            console.log('Authentication success screenshot available');
+          }
+          
+          // Close the auth modal
+          setIsAuthModalOpen(false);
+          
+          // Clear the credentials from state for security
+          setEmail("");
+          setPassword("");
+          
+          // Run the compliance check again
+          console.log("Authentication successful, running compliance check again");
+          await performComplianceCheck(true);
+        } else {
+          // Authentication failed - format error message with screenshot
+          console.error(`Authentication failed: ${errorMessage}`);
+          
+          // Get detailed error message based on error code
+          let detailedErrorMessage = errorMessage || "Authentication failed. Please try again.";
+          
+          // Provide more specific error messages based on error codes
+          if (errorCode === 'WRONG_PASSWORD') {
+            detailedErrorMessage = "The email or password you entered is incorrect. Please check your credentials and try again.";
+          } else if (errorCode === 'ACCOUNT_LOCKED') {
+            detailedErrorMessage = "Your account has been temporarily locked due to too many failed attempts. Please try again in 30 minutes or reset your password through Google.";
+          } else if (errorCode === 'VERIFICATION_REQUIRED') {
+            detailedErrorMessage = "Google requires additional verification. Please sign in directly to Google first, then try again.";
+          } else if (errorCode === 'TWO_FACTOR_REQUIRED') {
+            detailedErrorMessage = "This account has two-factor authentication enabled. Please sign in directly to Google first, then try again.";
+          } else if (errorCode === 'SUSPICIOUS_ACTIVITY') {
+            detailedErrorMessage = "Google detected suspicious activity. Please sign in directly to Google to resolve this issue.";
+          } else if (errorCode === 'BROWSER_SERVICE_UNHEALTHY') {
+            detailedErrorMessage = "Our authentication service is currently unavailable. Please try again later.";
+          } else if (errorCode === 'TIMEOUT') {
+            detailedErrorMessage = "Authentication timed out. This could be due to slow internet connection or high server load. Please try again.";
+          }
+          
+          // Add troubleshooting information for most errors
+          if (errorCode !== 'WRONG_PASSWORD') {
+            detailedErrorMessage += "\n\nTroubleshooting steps:\n1. Check your internet connection\n2. Try again in a few minutes\n3. Make sure you are using the same Google account that manages your Business Profile";
+          }
+          
+          // If we have a screenshot, log it (in production, this would be displayed to user)
+          if (screenshot) {
+            console.log('Authentication error screenshot available');
+          }
+          
+          setAuthError(detailedErrorMessage);
+        }
       } else {
-        // Map error codes to detailed, user-friendly messages
-        let errorMessage = result.error || "Authentication failed. Please try again."
-        
-        // Provide more specific error messages based on error codes with troubleshooting steps
-        if (result.errorCode === 'INVALID_CREDENTIALS') {
-          errorMessage = "The email or password you entered is incorrect. Please check your credentials and try again."
-        } else if (result.errorCode === 'ACCOUNT_LOCKED') {
-          errorMessage = "Your account has been temporarily locked due to too many failed attempts. Please try again in 30 minutes or reset your password through Google."
-        } else if (result.errorCode === 'TECHNICAL_ERROR') {
-          errorMessage = "We're experiencing technical difficulties with our authentication service. Our team has been notified and is working on a solution. Please try again in a few minutes."
-        } else if (result.errorCode === 'TIMEOUT') {
-          errorMessage = "Authentication timed out. This could be due to slow internet connection or high server load. Please try again."
-        } else if (result.errorCode === 'BROWSER_LAUNCH_FAILED') {
-          errorMessage = "Failed to initialize the authentication process. This might be a temporary issue with our automation system. Please try again in a few minutes."
-        } else if (result.errorCode === 'UNEXPECTED_ERROR') {
-          errorMessage = "An unexpected error occurred during authentication. This is usually due to a temporary issue with our server. Please try again, and if the problem persists, contact support."
-        } else if (result.errorCode === 'LOGIN_FAILED') {
-          errorMessage = "Failed to log in to Google Business Profile. Please ensure you're using the correct email and password associated with your business profile."
-        }
-        
-        // Add troubleshooting information if not in the INVALID_CREDENTIALS case
-        if (result.errorCode !== 'INVALID_CREDENTIALS') {
-          errorMessage += "\n\nTroubleshooting steps:\n1. Check your internet connection\n2. Try again in a few minutes\n3. Make sure you are using the same Google account that manages your Business Profile"
-        }
-        
-        console.error(`Authentication error for business ID ${businessId}: ${errorMessage}`)
-        setAuthError(errorMessage)
+        // The API call itself failed
+        const errorMessage = result.error || "Failed to start authentication. Please try again.";
+        console.error(`Auth API error for business ID ${businessId}: ${errorMessage}`);
+        setAuthError(errorMessage);
       }
     } catch (error) {
-      console.error("Error submitting authentication:", error)
-      setAuthError("An unexpected error occurred. Please try again later.")
+      console.error("Error submitting authentication:", error);
+      setAuthError("An unexpected error occurred. Please try again later.");
     } finally {
-      setIsSubmittingAuth(false)
+      setIsSubmittingAuth(false);
     }
   }
   

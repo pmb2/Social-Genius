@@ -19,6 +19,11 @@ services:
       RUNNING_IN_DOCKER: 'true'
       NEXT_TELEMETRY_DISABLED: 1
       WATCHPACK_POLLING: "true"
+      NODE_NO_WARNINGS: 1
+      SUPPRESS_FAST_REFRESH_LOGS: "true"
+      NO_COLOR: 1
+      NEXT_WEBPACK_LOGGING: "error"
+      NEXT_SUPPRESS_LOGS: 1
       # Database connection URLs with hard-coded IP
       DATABASE_URL: postgresql://postgres:postgres@172.18.0.2:5432/socialgenius
       DATABASE_URL_DOCKER: postgresql://postgres:postgres@172.18.0.2:5432/socialgenius
@@ -66,7 +71,12 @@ services:
              export NODE_PG_FORCE_NATIVE=0 &&
              export PGHOST=172.18.0.2 &&
              export RUNNING_IN_DOCKER=true &&
-             NEXT_PUBLIC_HOST=http://18.223.171.255:3000 npm run dev -- -H 0.0.0.0"
+             export NODE_NO_WARNINGS=1 &&
+             export SUPPRESS_FAST_REFRESH_LOGS=true &&
+             export NO_COLOR=1 &&
+             export NEXT_WEBPACK_LOGGING=error &&
+             export NEXT_SUPPRESS_LOGS=1 &&
+             NODE_OPTIONS=\"--no-warnings\" npm run dev -- -H 0.0.0.0"
 
   # PostgreSQL with pgvector for unified database
   postgres:

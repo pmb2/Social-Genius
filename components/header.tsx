@@ -1,25 +1,113 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogClose, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import Image from 'next/image';
-import { LogOut, User, Settings, Bell, HelpCircle, X } from 'lucide-react';
+import { LogOut, User, Settings, Bell, HelpCircle, X, Building2 } from 'lucide-react';
 import FeedbackModal from './feedback-modal';
 import NotificationsDialog from './notifications';
+import ProfileSettingsTile from './profile-settings-tile';
+import { SubscriptionPlansModal } from './subscription/subscription-plans-modal';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
+import { subscriptionPlans } from '@/lib/subscription/plans';
+import { useStableModal } from '@/lib/useStableModal';
 
-export function Header() {
+interface HeaderProps {
+  businessCount?: number;
+}
+
+export function Header({ businessCount = 0 }: HeaderProps) {
   const router = useRouter();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [profileSettingsOpen, setProfileSettingsOpen] = useState(false);
+  // Use our stable modal hook for subscription modal
+  const subscriptionModal = useStableModal(false);
   const [feedbackType, setFeedbackType] = useState("feedback");
+  const [notificationCount, setNotificationCount] = useState(0);
+  const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
   
   // Use our custom auth context
   const { user, logout } = useAuth();
+  
+  // Get user's subscription plan
+  const userSubscription = user?.subscription || 'basic';
+  const currentPlan = subscriptionPlans.find(plan => plan.id === userSubscription) || subscriptionPlans[0];
+  const locationLimit = currentPlan.businessLimit;
+  
+  // Fetch notification count when user is authenticated
+  useEffect(() => {
+    if (user) {
+      fetchNotificationCount();
+      
+      // Set up a timer to periodically refresh notification count
+      // Using a longer interval to reduce refresh frequency and potential disruptions
+      const timer = setInterval(() => {
+        // Don't refresh if a modal is open, as this could disrupt user experience
+        if (typeof window !== 'undefined' && !window.__modalOpen) {
+          fetchNotificationCount();
+        }
+      }, 10 * 60000); // Check every 10 minutes to further reduce refresh frequency
+      
+      return () => {
+        clearInterval(timer);
+      };
+    }
+  }, [user]);
+  
+  // Function to fetch notification count from API
+  const fetchNotificationCount = async () => {
+    if (!user) return;
+    
+    // Avoid state update if we're already loading
+    if (!isLoadingNotifications) {
+      setIsLoadingNotifications(true);
+    }
+    
+    try {
+      const response = await fetch('/api/notifications/count', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+          'X-Notification-Check': 'true',
+        },
+        credentials: 'include',
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        // Only update if count has changed to avoid unnecessary re-renders
+        if (data.unreadCount !== notificationCount) {
+          setNotificationCount(data.unreadCount || 0);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching notification count:', error);
+    } finally {
+      setIsLoadingNotifications(false);
+    }
+  };
+  
+  // Function to handle notification clicks and mark them as read
+  const handleOpenNotifications = () => {
+    setNotificationsOpen(true);
+  };
+  
+  // Handle notification dialog close event to refresh notification count
+  const handleNotificationsOpenChange = (open: boolean) => {
+    setNotificationsOpen(open);
+    if (!open) {
+      // Refresh notification count when notification dialog closes
+      setTimeout(() => {
+        fetchNotificationCount();
+      }, 500);
+    }
+  };
   
   const handleLogout = async () => {
     try {
@@ -37,32 +125,34 @@ export function Header() {
       <div className="flex justify-between items-center px-8 py-4 bg-black">
         <h1 className="text-xl text-white">Dashboard</h1>
         
-        <div className="flex items-center space-x-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-white hover:bg-white/10 hover:text-white rounded-full relative"
-            title="Notifications"
-            onClick={() => setNotificationsOpen(true)}
-          >
-            <Bell className="h-5 w-5" />
-            <span className="absolute top-0 right-0 h-3 w-3 bg-blue-500 rounded-full"></span>
-          </Button>
+        <div className="flex items-center">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button 
                 variant="ghost" 
                 size="icon" 
-                className="rounded-full p-0 h-auto w-auto hover:scale-105 transition-transform"
+                className="rounded-full p-0 h-auto w-auto hover:scale-105 transition-transform relative z-10"
                 title={user?.email || "User"}
               >
+                {/* Notification indicator on avatar */}
+                {notificationCount > 0 && (
+                  <span className="absolute -top-1 -right-1 h-4 w-4 bg-blue-500 rounded-full z-10 border-2 border-black flex items-center justify-center text-[10px] font-bold text-white">
+                    {notificationCount}
+                  </span>
+                )}
                 <Image
-                  src={user?.profilePicture || "/images/default-avatar.png"}
+                  src={user?.profilePicture || "/default-avatar.png"}
                   alt="Profile"
-                  className="rounded-full w-12 h-12 object-cover border-2 border-white/40"
+                  className="rounded-full w-12 h-12 object-cover border-2 border-white/40 z-10"
                   width={48}
                   height={48}
-                  style={{ width: "48px", height: "48px" }}
+                  style={{ 
+                    width: "48px", 
+                    height: "48px",
+                    display: "block", // Ensure it's displayed as a block
+                    opacity: 1, // Ensure it's fully visible
+                    visibility: "visible" // Ensure it's visible
+                  }}
                   priority
                 />
               </Button>
@@ -70,11 +160,16 @@ export function Header() {
             <DropdownMenuContent align="end" className="w-56">
               <div className="flex items-center p-2 mb-1">
                 <Image
-                  src={user?.profilePicture || "/images/default-avatar.png"}
+                  src={user?.profilePicture || "/default-avatar.png"}
                   alt="Profile"
-                  className="rounded-full w-8 h-8 object-cover mr-2"
+                  className="rounded-full w-8 h-8 object-cover mr-2 z-10"
                   width={32}
                   height={32}
+                  style={{ 
+                    display: "block", // Ensure it's displayed as a block
+                    opacity: 1, // Ensure it's fully visible
+                    visibility: "visible" // Ensure it's visible
+                  }}
                 />
                 <div className="flex flex-col">
                   <span className="font-medium text-sm">{user?.name || "User"}</span>
@@ -82,13 +177,36 @@ export function Header() {
                 </div>
               </div>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => router.push('/dashboard')}>
+              <DropdownMenuItem onClick={() => setProfileSettingsOpen(true)}>
                 <User className="mr-2 h-4 w-4" />
                 <span>Profile Settings</span>
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setNotificationsOpen(true)}>
+              <DropdownMenuItem onSelect={() => {
+                  // Force close the dropdown menu
+                  const closeEvent = new Event('mousedown', { bubbles: true });
+                  document.dispatchEvent(closeEvent);
+                  
+                  // Open subscription modal using stable hook after a short delay
+                  setTimeout(() => {
+                    subscriptionModal.open();
+                  }, 100);
+                }}>
+                <Building2 className="mr-2 h-4 w-4" />
+                <div className="flex justify-between w-full">
+                  <span>Locations</span>
+                  <span className="text-xs font-medium bg-clip-text text-transparent bg-gradient-to-r from-[#FFAB1A] via-[#FF1681] to-[#0080FF]">
+                    {businessCount} / {locationLimit === 9999 ? '∞' : locationLimit}
+                  </span>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleOpenNotifications} className="relative">
                 <Bell className="mr-2 h-4 w-4" />
                 <span>Notifications</span>
+                {notificationCount > 0 && (
+                  <span className="ml-auto inline-flex items-center justify-center w-5 h-5 text-[10px] font-bold text-white bg-blue-500 rounded-full">
+                    {notificationCount}
+                  </span>
+                )}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => {
                 setFeedbackType("feedback");
@@ -132,12 +250,18 @@ export function Header() {
               {/* User Profile Section */}
               <div className="flex items-center p-3 mb-4 bg-gray-50 rounded-lg">
                 <Image
-                  src={user?.profilePicture || "/images/default-avatar.png"}
+                  src={user?.profilePicture || "/default-avatar.png"}
                   alt="Profile"
-                  className="rounded-full w-16 h-16 object-cover mr-3"
+                  className="rounded-full w-16 h-16 object-cover mr-3 z-10"
                   width={64}
                   height={64}
-                  style={{ width: "64px", height: "64px" }}
+                  style={{ 
+                    width: "64px", 
+                    height: "64px",
+                    display: "block", 
+                    opacity: 1, 
+                    visibility: "visible" 
+                  }}
                 />
                 <div>
                   <p className="font-medium">{user?.name || "User"}</p>
@@ -152,8 +276,7 @@ export function Header() {
                   className="w-full justify-start px-3 py-2 h-10 text-gray-700 hover:bg-gray-100 hover:text-gray-900"
                   onClick={() => {
                     setSettingsOpen(false);
-                    // Now profile settings are directly on dashboard
-                    router.push('/dashboard');
+                    setTimeout(() => setProfileSettingsOpen(true), 100); // Slight delay to avoid animation conflicts
                   }}
                 >
                   <User className="h-4 w-4 mr-3" />
@@ -162,14 +285,19 @@ export function Header() {
                 
                 <Button
                   variant="ghost"
-                  className="w-full justify-start px-3 py-2 h-10 text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                  className="w-full justify-start px-3 py-2 h-10 text-gray-700 hover:bg-gray-100 hover:text-gray-900 relative"
                   onClick={() => {
                     setSettingsOpen(false);
-                    setTimeout(() => setNotificationsOpen(true), 100); // Slight delay to avoid animation conflicts
+                    setTimeout(() => handleOpenNotifications(), 100); // Slight delay to avoid animation conflicts
                   }}
                 >
                   <Bell className="h-4 w-4 mr-3" />
                   Notifications
+                  {notificationCount > 0 && (
+                    <span className="ml-auto inline-flex items-center justify-center w-5 h-5 text-[10px] font-bold text-white bg-blue-500 rounded-full">
+                      {notificationCount}
+                    </span>
+                  )}
                 </Button>
                 
                 <Button
@@ -211,7 +339,62 @@ export function Header() {
       {/* Notifications Modal */}
       <NotificationsDialog
         open={notificationsOpen}
-        onOpenChange={setNotificationsOpen}
+        onOpenChange={handleNotificationsOpenChange}
+      />
+
+      {/* Profile Settings Modal */}
+      <Dialog 
+        open={profileSettingsOpen} 
+        onOpenChange={(open) => {
+          // On close, ensure we clean up any lingering event handlers
+          if (!open) {
+            setTimeout(() => {
+              const event = new Event('mousedown', { bubbles: true });
+              document.dispatchEvent(event);
+            }, 50);
+          }
+          setProfileSettingsOpen(open);
+        }}
+      >
+        <DialogContent className="max-w-3xl p-0 overflow-auto">
+          <DialogTitle className="sr-only">Profile Settings</DialogTitle>
+          <div className="p-6">
+            <ProfileSettingsTile 
+              isStandalone={true} 
+              onClose={() => {
+                setProfileSettingsOpen(false);
+                // Force cleanup of events
+                setTimeout(() => {
+                  const event = new Event('mousedown', { bubbles: true });
+                  document.dispatchEvent(event);
+                }, 50);
+              }} 
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Subscription Plans Modal */}
+      <SubscriptionPlansModal
+        isOpen={subscriptionModal.isOpen}
+        onClose={() => {
+          // Close without delay to prevent UI glitches
+          subscriptionModal.close();
+          
+          // Force the DOM to clean up any stuck elements
+          if (typeof document !== 'undefined') {
+            setTimeout(() => {
+              document.body.style.pointerEvents = '';
+              document.body.style.overflow = '';
+              
+              // Force redraw
+              document.body.offsetHeight;
+            }, 0);
+          }
+        }}
+        currentPlan={userSubscription}
+        locationsUsed={businessCount}
+        locationsLimit={locationLimit}
       />
     </>
   );

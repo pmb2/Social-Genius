@@ -38,11 +38,11 @@ const nextConfig = {
   // We're using 'standalone' as specified above for production
   // Enable memory cache
   staticPageGenerationTimeout: 180, // 3 minutes timeout for static generation
-  reactStrictMode: process.env.NODE_ENV === 'production' ? false : true, // Disable in production for better performance
+  reactStrictMode: false, // Disable strict mode completely to prevent double renders and modal issues
   compiler: {
-    removeConsole: process.env.NODE_ENV === 'production' ? {
+    removeConsole: {
       exclude: ['error', 'warn'],
-    } : false,
+    },
   },
   // Improve bundle sizes and performance
   swcMinify: true,
@@ -51,11 +51,39 @@ const nextConfig = {
       transform: 'lucide-react/dist/esm/icons/{{member}}',
     },
   },
-  // Add console logging for debug information
+  // Enhanced logging for debugging - keep detailed logs for fetch operations
   logging: {
     fetches: {
-      fullUrl: true,
+      fullUrl: true, // Show full URLs for fetch operations to help debug API issues
     },
+    // Keep Fast Refresh logs at debug level for development, error for production
+    staticGeneration: {
+      level: process.env.NODE_ENV === 'production' ? 'error' : 'info',
+    },
+    builds: {
+      level: process.env.NODE_ENV === 'production' ? 'error' : 'info',
+    },
+  },
+  // Disable Fast Refresh console outputs
+  onDemandEntries: {
+    // Silent mode for Fast Refresh
+    silent: true,
+  },
+  
+  // Environment variables for session and cookie security
+  env: {
+    // Add critical cookie security settings
+    REQUEST_PROTOCOL: process.env.REQUEST_PROTOCOL || 'http',
+    COOKIE_SECURE: process.env.NODE_ENV === 'production' ? 'true' : 'false',
+    COOKIE_SAMESITE: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    // Disable middleware logs by default (set to 'true' only when debugging)
+    DEBUG_SESSION: 'false',
+    DEBUG_MIDDLEWARE: 'false',
+    // Enable log suppression
+    SUPPRESS_FAST_REFRESH_LOGS: 'true',
+    // Browser automation settings
+    BROWSER_API_URL: process.env.BROWSER_API_URL || 'http://localhost:5055',
+    BROWSER_API_TIMEOUT: '60000',
   },
   // Configure server-related options
   experimental: {
@@ -193,6 +221,16 @@ const nextConfig = {
         compression: 'gzip',
         profile: false,
       };
+      
+      // Silence webpack development output
+      config.infrastructureLogging = {
+        level: 'error', // Only show errors
+      };
+      
+      // Disable noisy webpack performance hints
+      config.performance = {
+        hints: false,
+      };
     }
     
     // Add tree shaking hint and optimize modules
@@ -212,21 +250,32 @@ const nextConfig = {
     
     return config;
   },
-  // Disable security headers in development to avoid HTTP issues
+  // Header configuration
   async headers() {
-    return process.env.NODE_ENV === 'production' 
-      ? [
-        {
-          source: '/:path*',
-          headers: [
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          // Add protocol detection header for all requests
+          {
+            key: 'X-Protocol-Detection',
+            value: 'enabled',
+          },
+          // Add session debugging header
+          {
+            key: 'X-Session-Debug',
+            value: 'enabled',
+          },
+          // Only add security headers in production
+          ...(process.env.NODE_ENV === 'production' ? [
             {
               key: 'Strict-Transport-Security',
               value: 'max-age=63072000; includeSubDomains; preload',
-            },
-          ],
-        },
-      ]
-      : [];
+            }
+          ] : [])
+        ],
+      },
+    ];
   },
   // Only enable HTTPS redirect in production
   async redirects() {

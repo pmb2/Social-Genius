@@ -19,6 +19,12 @@ services:
       RUNNING_IN_DOCKER: 'true'
       NEXT_TELEMETRY_DISABLED: 1
       WATCHPACK_POLLING: "true"
+      # Log suppression flags
+      NODE_NO_WARNINGS: 1
+      SUPPRESS_FAST_REFRESH_LOGS: "true"
+      NO_COLOR: 1
+      NEXT_WEBPACK_LOGGING: "error"
+      NEXT_SUPPRESS_LOGS: 1
       # Database connection URLs - use service name instead of IP
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
       DATABASE_URL_DOCKER: postgresql://postgres:postgres@postgres:5432/socialgenius
@@ -57,7 +63,12 @@ services:
              cd /app && 
              if [ ! -d 'dist' ]; then mkdir -p dist; fi &&
              export PATH=\"/app/node_modules/.bin:$PATH\" &&
-             NEXT_PUBLIC_HOST=http://18.223.171.255:3000 npm run dev -- -H 0.0.0.0"
+             export NODE_NO_WARNINGS=1 &&
+             export SUPPRESS_FAST_REFRESH_LOGS=true &&
+             export NO_COLOR=1 &&
+             export NEXT_WEBPACK_LOGGING=error &&
+             export NEXT_SUPPRESS_LOGS=1 &&
+             NODE_OPTIONS=\"--no-warnings\" npm run dev -- -H 0.0.0.0"
 
   # PostgreSQL with pgvector for unified database
   postgres:
@@ -68,12 +79,22 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: socialgenius
+      # Important: Don't recreate the database if it already exists
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+      # Set explicit data directory for better persistence
+      PGDATA: /var/lib/postgresql/data/pgdata
+      # Make postgres log more information
+      POSTGRES_LOGGING: "true"
+      # Force storage of data in mapped volume, not ephemeral container
+      PGDATA_FORCE_MAP: "true"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # Add initialization script to configure database on first run
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
       # Add our migrations for the new features
       - ./database-migrations/add-google-credentials.sql:/docker-entrypoint-initdb.d/add-google-credentials.sql
+      # Add our schema fix script
+      - ./fix-db-schema-alter.sql:/docker-entrypoint-initdb.d/fix-db-schema-alter.sql
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -128,4 +149,6 @@ networks:
     driver: bridge
 
 volumes:
+  # Explicitly name the postgres volume for persistence
   postgres_data:
+    name: social-genius-postgres-data

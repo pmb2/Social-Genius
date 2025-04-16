@@ -9,6 +9,7 @@ Social Genius is an innovative web application designed to help businesses optim
 - [Project Structure](#project-structure)
 - [Available Services](#available-services)
 - [Development Notes](#development-notes)
+- [Troubleshooting](#troubleshooting)
 - [Deployment Guide](#deployment-guide)
 
 ## Key Features
@@ -89,6 +90,46 @@ If you encounter any missing modules, you can run:
 - Use the module-manifest.json file to keep track of components and their dependencies
 - Run the check-missing-modules.js script to identify missing modules and packages
 - Always restart the app container after making changes to the manifest
+
+## Troubleshooting
+
+### Database Issues
+
+If you encounter database-related errors, such as:
+- "column 'document_id' referenced in foreign key constraint does not exist"
+- "column 'updated_at' of relation 'users' does not exist"
+- Connection issues with the PostgreSQL database
+- Authentication failures due to database schema problems
+
+Use the provided fix scripts:
+
+```bash
+# Fix database schema issues
+./fix-db-schema.sh
+
+# Fix the users table updated_at column issue (for registration errors)
+./fix-users-table.sh
+
+# Apply all fixes including DB connection and schema issues
+./fix-all.sh
+
+# Make sure all scripts are executable
+./make-scripts-executable.sh
+```
+
+For more detailed information about the database fixes, see:
+- [DATABASE_FIX_README.md](./DATABASE_FIX_README.md) - Comprehensive documentation on database fixes
+- [POSTGRES_MANAGEMENT.md](./docs/POSTGRES_MANAGEMENT.md) - General PostgreSQL management guidance
+- [PGVECTOR_INTEGRATION.md](./docs/PGVECTOR_INTEGRATION.md) - Information on the vector database integration
+
+### Console Noise Reduction
+
+To reduce development console noise (especially [Fast Refresh] messages), use:
+
+```bash
+# Start development with reduced console noise
+./start-dev-quiet.sh
+```
 
 ## Deployment Guide
 

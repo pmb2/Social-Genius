@@ -152,9 +152,26 @@ if [ "$RUNNING_CONTAINERS" -gt 0 ]; then
   echo -e "${GREEN}Web app: http://localhost:${APP_PORT}${NC}"
   echo -e "${GREEN}pgAdmin: http://localhost:${PGADMIN_PORT} (login with admin@socialgenius.com / admin)${NC}"
   
-  # Always show logs
-  echo -e "${YELLOW}Showing logs...${NC}"
-  docker-compose -f docker-compose.dev.yml logs -f app
+  # Always show logs with filtering to reduce noise
+  echo -e "${YELLOW}Showing filtered logs (removing Next.js noise while preserving business logs)...${NC}"
+  
+  # Set environment variables for the Docker logs command
+  export SUPPRESS_FAST_REFRESH_LOGS=true
+  export DEBUG_SESSION=false
+  export DEBUG_MIDDLEWARE=false
+  export NODE_NO_WARNINGS=1
+  export NO_COLOR=1
+  export NEXT_WEBPACK_LOGGING=error
+  export NEXT_SUPPRESS_LOGS=1
+  
+  # Keep business-critical logs while filtering out Next.js noise, but ensure the stream doesn't die
+  # MUCH simpler filtering that only removes compilation messages
+  # The trick is to use a single grep with alternation instead of multiple pipes
+  docker-compose -f docker-compose.dev.yml logs -f app | grep -v -E '(Compiled in|compiled|✓ Compiled|modules\)$|webpack|event compiled client)'
+  
+  # If the above command exits for any reason, make sure we're still showing logs
+  echo -e "${YELLOW}Log stream interrupted. Restarting log view...${NC}"
+  docker-compose -f docker-compose.dev.yml logs -f
 else
   echo -e "${RED}Containers may have started but aren't running. Check docker ps for status.${NC}"
   docker ps -a

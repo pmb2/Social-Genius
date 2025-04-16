@@ -3,7 +3,6 @@
 import { BusinessProfileDashboard } from "@/components/business-profile-dashboard"
 import { FeedbackButton } from "@/components/feedback-button"
 import { Header } from "@/components/header"
-import ProfileSettingsTile from "@/components/profile-settings-tile"
 import NotificationSettingsTile from "@/components/notification-settings-tile"
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -12,6 +11,7 @@ import { useAuth } from "@/lib/auth-context";
 export default function DashboardPage() {
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(true);
+    const [businessCount, setBusinessCount] = useState(0);
 
     // Use our custom auth context
     const { user, loading, checkSession } = useAuth();
@@ -37,6 +37,16 @@ export default function DashboardPage() {
             return;
         }
         
+        // Only check session if absolutely necessary
+        // and only if no dialogs are open to prevent disruption
+        const isModalOpen = typeof window !== 'undefined' && window.__modalOpen === true;
+            
+        if (isModalOpen) {
+            // Don't disrupt open dialogs with auth checks - assume valid for now
+            setIsLoading(false);
+            return;
+        }
+        
         // If no user is found but cookies exist, try to re-verify the session
         const hasCookies = typeof document !== 'undefined' && (
             document.cookie.includes('session=') || document.cookie.includes('sessionId=')
@@ -45,6 +55,15 @@ export default function DashboardPage() {
         // If no user is found, perform a session check after a delay
         // to ensure cookies have been properly processed
         const timer = setTimeout(async () => {
+            // Check again if any dialogs have been opened in the meantime
+            const isModalOpen = typeof window !== 'undefined' && window.__modalOpen === true;
+                
+            if (isModalOpen) {
+                // Don't disrupt open dialogs with auth checks
+                setIsLoading(false);
+                return;
+            }
+            
             // Only log if debug is enabled
             if (debugEnabled) {
                 console.log("[DASHBOARD] Running delayed session check");
@@ -57,19 +76,33 @@ export default function DashboardPage() {
                 if (hasSession && user) {
                     setIsLoading(false);
                 } else {
-                    // Redirect to auth page without reloading the whole window
-                    router.push('/auth?reason=session_expired');
+                    // Only redirect if no dialogs are open
+                    const isModalOpen = typeof window !== 'undefined' && window.__modalOpen === true;
+                        
+                    if (!isModalOpen) {
+                        // Redirect to auth page without reloading the whole window
+                        router.push('/auth?reason=session_expired');
+                    } else {
+                        // Just mark as loaded but don't redirect yet
+                        setIsLoading(false);
+                    }
                 }
             } catch (error) {
                 if (debugEnabled) {
                     console.error("[DASHBOARD] Session check error");
                 }
-                // Redirect to auth page without reloading the whole window
-                router.push('/auth?reason=session_error');
-            } finally {
+                
+                // Only redirect if no dialogs are open
+                const isModalOpen = typeof window !== 'undefined' && window.__modalOpen === true;
+                    
+                if (!isModalOpen) {
+                    // Redirect to auth page without reloading the whole window
+                    router.push('/auth?reason=session_error');
+                }
+                
                 setIsLoading(false);
             }
-        }, 1000); // Reduced delay to improve responsiveness
+        }, 1500); // Increased delay to improve responsiveness and reduce frequency
         
         return () => clearTimeout(timer);
     }, [user, loading, checkSession]);
@@ -84,17 +117,8 @@ export default function DashboardPage() {
 
     return (
         <div className="min-w-[800px] scrollbar-hide overflow-auto">
-            <Header />
-            <BusinessProfileDashboard/>
-            
-            {/* Settings tiles */}
-            <div className="max-w-[1200px] mx-auto my-8 px-8">
-                <h2 className="text-xl font-semibold mb-4 bg-gradient-to-r from-[#FFAB1A] via-[#FF1681] to-[#0080FF] text-transparent bg-clip-text inline-block">Quick Settings</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <ProfileSettingsTile />
-                    <NotificationSettingsTile />
-                </div>
-            </div>
+            <Header businessCount={businessCount} />
+            <BusinessProfileDashboard onBusinessCountChange={setBusinessCount} />
             
             <div className="fixed bottom-6 right-6">
                 <FeedbackButton/>

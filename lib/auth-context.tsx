@@ -17,6 +17,7 @@ type AuthContextType = {
   register: (email: string, password: string, name?: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   checkSession: () => Promise<boolean>;
+  updateUser: (updates: Partial<User>) => Promise<boolean>;
 };
 
 // Create the context with a default value
@@ -27,6 +28,7 @@ const AuthContext = createContext<AuthContextType>({
   register: async () => ({ success: false }),
   logout: async () => {},
   checkSession: async () => false,
+  updateUser: async () => false,
 });
 
 // Context provider component
@@ -35,21 +37,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   // Check if the user is already logged in when the app loads
+  // and set up periodic session refresh - but only once
   useEffect(() => {
     // Minimal logging for authentication flow
     const showDebug = process.env.NODE_ENV === 'development' && process.env.DEBUG_AUTH === 'true';
     if (showDebug) console.log("AuthProvider: Starting initial auth check");
     
     let isActive = true; // Track if component is still mounted
+    let sessionRefreshTimer: NodeJS.Timeout | null = null;
     
-    const initAuth = async () => {
+    // Function to check session status and update state
+    const checkSessionAndUpdateState = async () => {
+      if (!isActive) return;
+      
       try {
         const sessionActive = await checkSession();
         
         // Only update state if component is still mounted
         if (!isActive) return;
         
-        if (!sessionActive) {
+        if (!sessionActive && user !== null) {
           setUser(null);
         }
       } catch (error) {
@@ -57,11 +64,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!isActive) return;
         
         // Minimal error logging - only show in development with debugging enabled
-        const showDebug = process.env.NODE_ENV === 'development' && process.env.DEBUG_AUTH === 'true';
         if (showDebug) {
           console.error("Auth init error:", error instanceof Error ? error.message : 'Unknown error');
         }
-        setUser(null);
+        
+        // Only set to null if previously not null to avoid unnecessary state changes
+        if (user !== null) {
+          setUser(null);
+        }
       } finally {
         // Only update state if component is still mounted
         if (!isActive) return;
@@ -70,14 +80,122 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
     
-    // Initialize auth without delay
-    initAuth();
+    // Function to set up periodic session refresh
+    const setupSessionRefresh = () => {
+      // Clear any existing timer
+      if (sessionRefreshTimer) {
+        clearInterval(sessionRefreshTimer);
+      }
+      
+      // Set up a new timer that checks the session every 30 minutes
+      // This ensures the session remains active during long periods of user activity
+      // with minimal disruption to user experience
+      sessionRefreshTimer = setInterval(() => {
+        if (!isActive || !user) return; // Skip if component unmounted or no user
+        
+        // Only check if we have an active user to avoid unnecessary requests
+        if (showDebug) console.log("Preparing for periodic session refresh check");
+        
+        // Check for app state issues that would disrupt the user experience
+        const isModalOpen = typeof window !== 'undefined' && window.__modalOpen === true;
+        const isFocused = typeof document !== 'undefined' && document.hasFocus();
+        const hasActiveInputs = typeof document !== 'undefined' && 
+          (document.activeElement instanceof HTMLInputElement || 
+           document.activeElement instanceof HTMLTextAreaElement ||
+           document.activeElement instanceof HTMLTextAreaElement ||
+           document.activeElement?.closest('form') !== null);
+        
+        // Create a decision log for debugging
+        if (showDebug) {
+          console.log(`Session check conditions: 
+            Modal open: ${isModalOpen}
+            Document focused: ${isFocused}
+            Active inputs: ${hasActiveInputs}`);
+        }
+            
+        // Always use the silent check method that doesn't trigger page refreshes
+        // This prevents modals from being interrupted during session checks
+        if (showDebug) console.log("Using silent session check to prevent UI disruption");
+        checkSessionSilently();
+        
+        // Previous approach was causing issues with auto-refreshing:
+        /*
+        if (isModalOpen || hasActiveInputs) {
+          // User is actively interacting with a modal or input - use completely silent check
+          if (showDebug) console.log("User is actively working - using completely silent check");
+          // Skip session check entirely while user is working
+          return;
+        } else if (!isFocused) {
+          // Tab not focused - use silent check
+          if (showDebug) console.log("Tab not focused - using silent session check");
+          checkSessionSilently();
+        } else {
+          // Normal case - tab is focused but no modals/inputs - use quiet check
+          if (showDebug) console.log("Tab focused, no modals - using quiet session check");
+          checkSessionQuietly();
+        }
+        */
+      }, 30 * 60 * 1000); // 30 minutes - doubled to reduce disruption
+    };
     
-    // Cleanup function to prevent state updates after unmount
+    // A quieter version of checkSession that doesn't trigger UI updates unless necessary
+    const checkSessionQuietly = async () => {
+      try {
+        const response = await fetch('/api/auth/session?t=' + Date.now(), {
+          method: 'GET',
+          headers: {
+            'X-Session-Check': 'quiet',
+            'Cache-Control': 'no-cache'
+          },
+          credentials: 'include'
+        });
+        
+        // Only process if we got an error or session is invalid
+        if (!response.ok) {
+          // Session is invalid, update state
+          if (user !== null) {
+            setUser(null);
+          }
+        }
+      } catch (error) {
+        // Network error - don't do anything to avoid disrupting user
+        if (showDebug) console.log('Quiet session check network error - continuing');
+      }
+    };
+    
+    // A completely silent version that never updates UI state
+    // Used when modals/dialogs are open to avoid disrupting user experience
+    const checkSessionSilently = async () => {
+      try {
+        await fetch('/api/auth/session?t=' + Date.now(), {
+          method: 'GET',
+          headers: {
+            'X-Session-Check': 'silent',
+            'Cache-Control': 'no-cache'
+          },
+          credentials: 'include'
+        });
+        // Do nothing with the response
+        // This just keeps the session cookie alive without any state updates
+      } catch (error) {
+        // Completely silent - no logging, no state changes
+      }
+    };
+    
+    // Initialize auth without delay
+    checkSessionAndUpdateState();
+    
+    // Set up the session refresh mechanism
+    setupSessionRefresh();
+    
+    // Cleanup function to prevent state updates and clear timers after unmount
     return () => {
       isActive = false;
+      if (sessionRefreshTimer) {
+        clearInterval(sessionRefreshTimer);
+      }
     };
-  }, []);
+  }, []); // No dependencies - only run once on mount to prevent rerenders
 
   // Function to check the current session
   const checkSession = async (): Promise<boolean> => {
@@ -91,18 +209,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       // Use a longer timeout for session check to ensure it completes
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout (increased from 10s)
       
       try {
+        // Make an explicit no-cache request to ensure we always get fresh session data
+        // Also ensure the browser sends cookies with every request to avoid session issues
+        document.cookie = "cookie_check=1; path=/; SameSite=Lax;";
+        
         const response = await fetch(url, {
           method: 'GET',
           headers: {
             'Cache-Control': 'no-cache, no-store, must-revalidate',
             'Pragma': 'no-cache',
             'Expires': '0',
+            'X-Session-Check': 'true' // Custom header to identify session checks
           },
-          credentials: 'include',
-          signal: controller.signal
+          credentials: 'include', // Important: Include cookies in the request
+          signal: controller.signal,
+          cache: 'no-store' // Additional no-cache setting
         });
         
         clearTimeout(timeoutId);
@@ -111,7 +235,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!response.ok) {
           // Only log errors in development
           if (process.env.NODE_ENV === 'development') {
-            console.error('Session API error:', response.status);
+            console.error('Session API error:', response.status, response.statusText);
+            // Try to get more error details if possible
+            try {
+              const errorText = await response.text();
+              console.error('Session API error details:', errorText.substring(0, 200));
+            } catch (e) {
+              // Silently ignore read error
+            }
           }
           
           // Only update user state if it's currently not null
@@ -125,6 +256,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         // Make sure we have valid JSON before parsing
         if (!text) {
+          if (showDebug) console.log('Empty response from session API');
           if (user !== null) {
             setUser(null);
           }
@@ -137,6 +269,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch (parseError) {
           // Always log parse errors as these indicate a real problem
           console.error('JSON parse error:', parseError instanceof Error ? parseError.message : 'Invalid JSON');
+          console.error('Response text (first 100 chars):', text.substring(0, 100));
           
           if (user !== null) {
             setUser(null);
@@ -145,6 +278,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         
         if (data.authenticated && data.user) {
+          if (showDebug) console.log('Session is valid, user authenticated');
+          
           // Important: Only update user state if it's different or null
           // This prevents unnecessary re-renders
           const userChanged = !user || 
@@ -153,11 +288,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                              user.name !== data.user.name;
                              
           if (userChanged) {
+            if (showDebug) console.log('User data changed, updating state');
             setUser(data.user);
           }
           
           return true;
         } else {
+          if (showDebug) console.log('Session check failed: not authenticated');
           if (user !== null) {
             setUser(null);
           }
@@ -167,16 +304,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearTimeout(timeoutId);
       }
     } catch (error) {
-      // Only log errors if debugging is enabled
-      const showDebug = process.env.NODE_ENV === 'development' && process.env.DEBUG_AUTH === 'true';
-      if (showDebug) {
+      // Log network errors which might indicate connectivity issues
+      if (process.env.NODE_ENV === 'development') {
         console.error('Session check failed:', error instanceof Error ? error.message : 'Unknown error');
+        if (error instanceof Error && error.stack) {
+          console.error('Error stack:', error.stack);
+        }
       }
       
-      if (user !== null) {
-        setUser(null);
+      // If there's a network error, don't automatically log out the user
+      // This prevents logging out during temporary connectivity issues
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        // Network error during fetch - don't change user state
+        if (showDebug) console.log('Network error during session check - keeping current session state');
+        return !!user; // Return true if we have a user, false otherwise
+      } else {
+        // For other errors, log out
+        if (user !== null) {
+          setUser(null);
+        }
+        return false;
       }
-      return false;
     }
   };
 
@@ -475,6 +623,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Update user profile
+  const updateUser = async (updates: Partial<User>): Promise<boolean> => {
+    try {
+      if (!user) return false;
+      
+      // Update local state immediately for better UX
+      setUser({ ...user, ...updates });
+      
+      // Call the API to update the user in the backend
+      const response = await fetch('/api/auth/user', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+        credentials: 'include',
+        cache: 'no-store'
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success) {
+        // Update the user state with the response from the server
+        if (data.user) {
+          setUser(prev => ({
+            ...prev,
+            ...data.user
+          }));
+        }
+        return true;
+      } else {
+        // If the API call fails, revert the local state change
+        console.error('Failed to update user profile:', data.error);
+        // Refresh the session to get the current user data
+        await checkSession();
+        return false;
+      }
+    } catch (error) {
+      console.error('Update user error:', error);
+      // Refresh the session to get the current user data
+      await checkSession();
+      return false;
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -484,6 +675,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         register,
         logout,
         checkSession,
+        updateUser,
       }}
     >
       {children}
