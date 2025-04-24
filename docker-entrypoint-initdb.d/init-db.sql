@@ -7,15 +7,11 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- Create documents table for storing vectorized content
 CREATE TABLE IF NOT EXISTS documents (
   id SERIAL PRIMARY KEY,
-  document_id TEXT UNIQUE NOT NULL,
-  title TEXT,
-  content TEXT,
-  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-  business_id TEXT REFERENCES businesses(business_id) ON DELETE CASCADE,
-  metadata JSONB,
+  collection_name TEXT NOT NULL,
+  content TEXT NOT NULL,
+  metadata JSONB NOT NULL,
   embedding vector(1536),
-  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create memories table for storing business memories
@@ -39,7 +35,6 @@ CREATE TABLE IF NOT EXISTS users (
   profile_picture TEXT,
   phone_number TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   last_login TIMESTAMP WITH TIME ZONE
 );
 

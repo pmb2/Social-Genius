@@ -14,9 +14,16 @@ services:
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: dev-secret-key-change-me
       BROWSER_USE_API_URL: http://browser-use-api:5055
+      REDIS_URL: redis://redis:6380
+      REDIS_PREFIX: "social-genius:dev:"
+      SESSION_TTL: 86400
     volumes:
       - .:/app
       - /app/node_modules
+    depends_on:
+      - postgres
+      - browser-use-api
+      - redis
     command: sh -c "echo 'Waiting for database to be ready...' && sleep 5 && echo 'Starting application...' && cd /app && npm run dev -- -H 0.0.0.0"
 
   # PostgreSQL with development settings
@@ -59,14 +66,49 @@ services:
       - HOST=0.0.0.0
       - MAX_CONCURRENT_BROWSERS=10
       - SCREENSHOT_PATH=/app/screenshots
+      - REDIS_URL=redis://redis:6380
     ports:
       - "5055:5055"
     restart: unless-stopped
+    depends_on:
+      - redis
+    networks:
+      - social_genius_network
+      
+  # Redis for session sharing and caching
+  redis:
+    image: redis:alpine
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+      - ./src/config/redis.conf:/usr/local/etc/redis/redis.conf
+    restart: unless-stopped
+    command: redis-server /usr/local/etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - social_genius_network
+      
+  # Redis Commander for development
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    restart: always
+    environment:
+      - REDIS_HOSTS=local:redis:6380
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
     networks:
       - social_genius_network
 
 volumes:
   postgres_data:
+  redis_data:
   
 networks:
   social_genius_network:

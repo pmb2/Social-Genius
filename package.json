@@ -15,6 +15,11 @@
     "lint": "next lint",
     "install:browsers": "playwright install chromium",
     "test:compliance": "node test-compliance.mjs",
+    "test:redis": "node src/scripts/test-redis.js",
+    "redis:monitor": "redis-cli monitor",
+    "redis:info": "redis-cli info all",
+    "browser:monitor": "node src/scripts/monitor-browser-sessions.js",
+    "browser:monitor:demo": "node src/scripts/monitor-browser-sessions.js --demo",
     "postinstall": "npm run install:browsers",
     "check-deps": "node scripts/check-missing-modules.js"
   },
