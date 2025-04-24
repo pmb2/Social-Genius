@@ -1,119 +1,46 @@
 version: '3.8'
 services:
-  # Development mode for Next.js app with hot reloading
+  # Development overrides
   app:
     build:
       context: .
       dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+      - "3001:3000"
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: dev-secret-key-change-me
+      BROWSER_USE_API_URL: http://browser-use-api:5055
     volumes:
       - .:/app
       - /app/node_modules
-      - /app/.next
-      - /app/dist
-    ports:
-      - "0.0.0.0:3000:3000"
-      - "0.0.0.0:3001:3000"
-    environment:
-      NODE_ENV: development
-      # Docker environment flag
-      RUNNING_IN_DOCKER: 'true'
-      NEXT_TELEMETRY_DISABLED: 1
-      WATCHPACK_POLLING: "true"
-      # Log suppression flags
-      NODE_NO_WARNINGS: 1
-      SUPPRESS_FAST_REFRESH_LOGS: "true"
-      NO_COLOR: 1
-      NEXT_WEBPACK_LOGGING: "error"
-      NEXT_SUPPRESS_LOGS: 1
-      # Database connection URLs - use service name instead of IP
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
-      DATABASE_URL_DOCKER: postgresql://postgres:postgres@postgres:5432/socialgenius
-      DATABASE_URL_HOST: postgresql://postgres:postgres@localhost:5435/socialgenius
-      # Force using hostname instead of IP
-      PG_HOST: postgres
-      # Auth secret for JWT tokens
-      JWT_SECRET: "social-genius-local-dev-secret-9bcd3a80-54a1-11ef-88c4"
-      # API keys
-      GROQ_API_KEY: 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
-      EXA_API_KEY: f5c132ea-a9ae-4977-a59b-f79ee13ea44f
-      OPENAI_API_KEY: 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
-      # Browser-use API URL
-      BROWSER_USE_API_URL: http://browser-use-api:5055
-      # Add Next.js specific env vars with NEXT_PUBLIC_ prefix for client-side access
-      NEXT_PUBLIC_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
-      NEXT_PUBLIC_GROQ_API_KEY: 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
-      NEXT_PUBLIC_EXA_API_KEY: f5c132ea-a9ae-4977-a59b-f79ee13ea44f
-      NEXT_PUBLIC_OPENAI_API_KEY: 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
-      # Add PATH to include node_modules/.bin
-      PATH: /app/node_modules/.bin:${PATH}
-    env_file:
-      - .env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      browser-use-api:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - social_genius_network
-    command: >
-      sh -c "echo 'Waiting for database to be ready...' &&
-             sleep 5 &&
-             echo 'Starting application...' &&
-             cd /app && 
-             if [ ! -d 'dist' ]; then mkdir -p dist; fi &&
-             export PATH=\"/app/node_modules/.bin:$PATH\" &&
-             export NODE_NO_WARNINGS=1 &&
-             export SUPPRESS_FAST_REFRESH_LOGS=true &&
-             export NO_COLOR=1 &&
-             export NEXT_WEBPACK_LOGGING=error &&
-             export NEXT_SUPPRESS_LOGS=1 &&
-             NODE_OPTIONS=\"--no-warnings\" npm run dev -- -H 0.0.0.0"
+    command: sh -c "echo 'Waiting for database to be ready...' && sleep 5 && echo 'Starting application...' && cd /app && npm run dev -- -H 0.0.0.0"
 
-  # PostgreSQL with pgvector for unified database
+  # PostgreSQL with development settings
   postgres:
     image: pgvector/pgvector:pg14
-    ports:
-      - "5435:5432"
     environment:
-      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
       POSTGRES_DB: socialgenius
-      # Important: Don't recreate the database if it already exists
-      POSTGRES_INITDB_ARGS: "--data-checksums"
-      # Set explicit data directory for better persistence
-      PGDATA: /var/lib/postgresql/data/pgdata
-      # Make postgres log more information
-      POSTGRES_LOGGING: "true"
-      # Force storage of data in mapped volume, not ephemeral container
-      PGDATA_FORCE_MAP: "true"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # Add initialization script to configure database on first run
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
-      # Add our migrations for the new features
-      - ./database-migrations/add-google-credentials.sql:/docker-entrypoint-initdb.d/add-google-credentials.sql
-      # Add our schema fix script
-      - ./fix-db-schema-alter.sql:/docker-entrypoint-initdb.d/fix-db-schema-alter.sql
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    networks:
-      - social_genius_network
-    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "max_connections=100", "-c", "work_mem=16MB"]
-
-  # pgAdmin for database management (optional)
+      - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
+    ports:
+      - "5435:5432"
+    
+  # pgAdmin for database management
   pgadmin:
     image: dpage/pgadmin4
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@socialgenius.com
       PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_LISTEN_PORT: 5050
     ports:
-      - "5050:80"
+      - "5050:5050"
     depends_on:
       - postgres
     networks:
@@ -122,11 +49,11 @@ services:
   # Browser-Use API Service for automation
   browser-use-api:
     build:
-      context: ./browser-use-api
+      context: ./src/api/browser-use
       dockerfile: Dockerfile
     container_name: social-genius-browser-api
     volumes:
-      - ./browser-use-api/screenshots:/app/screenshots
+      - ./src/api/browser-use/screenshots:/app/screenshots
     environment:
       - PORT=5055
       - HOST=0.0.0.0
@@ -135,20 +62,12 @@ services:
     ports:
       - "5055:5055"
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5055/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
     networks:
       - social_genius_network
 
+volumes:
+  postgres_data:
+  
 networks:
   social_genius_network:
     driver: bridge
-
-volumes:
-  # Explicitly name the postgres volume for persistence
-  postgres_data:
-    name: social-genius-postgres-data

@@ -46,7 +46,7 @@ RUN npx playwright install-deps chromium
 # Rebuild the source code only when needed
 FROM base AS builder
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /src/app/node_modules ./node_modules
 COPY . .
 
 # Set environment variables
@@ -105,9 +105,9 @@ RUN groupadd -r nextjs && useradd -r -g nextjs nextjs
 USER nextjs
 
 # Copy necessary files
-COPY --from=builder --chown=nextjs:nextjs /app/public ./public
-COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nextjs /src/app/public ./public
+COPY --from=builder --chown=nextjs:nextjs /src/app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nextjs /src/app/.next/static ./.next/static
 
 # Create and set permissions for temp directory (for PDF processing)
 USER root

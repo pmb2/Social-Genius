@@ -4,9 +4,10 @@ import plugin from "tailwindcss/plugin";
 const config: Config = {
     darkMode: ["class"],
     content: [
-    "./pages/**/*.{js,ts,jsx,tsx,mdx}",
-    "./components/**/*.{js,ts,jsx,tsx,mdx}",
-    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
+    // Remove old paths since we've moved everything to src/
   ],
   theme: {
   	extend: {
@@ -50,6 +51,12 @@ const config: Config = {
   				'3': 'hsl(var(--chart-3))',
   				'4': 'hsl(var(--chart-4))',
   				'5': 'hsl(var(--chart-5))'
+  			},
+  			gradientColorStops: {
+  				"gradient-1": "#0080FF",
+  				"gradient-2": "#FF1681",
+  				"gradient-3": "#C939D6",
+  				"gradient-4": "#EDAB2B",
   			}
   		},
   		borderRadius: {

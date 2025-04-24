@@ -7,7 +7,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx.conf/default.conf:/etc/nginx/conf.d/default.conf
       - ./ssl:/etc/nginx/ssl
     restart: unless-stopped
     depends_on:
@@ -22,7 +22,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        DATABASE_URL: postgresql://postgres:postgres@postgres:5435/socialgenius
+        DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
     depends_on:
       - postgres
       - browser-use-api
@@ -30,7 +30,8 @@ services:
       - "3000:3000"
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5435/socialgenius
+      RUNNING_IN_DOCKER: 'true'
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
       NEXTAUTH_URL: https://localhost
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-your-secure-nextauth-secret}
       BROWSER_USE_API_URL: http://browser-use-api:5055
@@ -61,11 +62,11 @@ services:
   # Browser-Use API Service for automation
   browser-use-api:
     build:
-      context: ./browser-use-api
+      context: ./src/api/browser-use
       dockerfile: Dockerfile
     container_name: social-genius-browser-api
     volumes:
-      - ./browser-use-api/screenshots:/app/screenshots
+      - ./src/api/browser-use/screenshots:/app/screenshots
     environment:
       - PORT=5055
       - HOST=0.0.0.0

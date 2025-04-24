@@ -165,9 +165,9 @@ if [ "$RUNNING_CONTAINERS" -gt 0 ]; then
   export NEXT_SUPPRESS_LOGS=1
   
   # Keep business-critical logs while filtering out Next.js noise, but ensure the stream doesn't die
-  # MUCH simpler filtering that only removes compilation messages
+  # Filter out build asset logs, compilation messages, and other Next.js noise
   # The trick is to use a single grep with alternation instead of multiple pipes
-  docker-compose -f docker-compose.dev.yml logs -f app | grep -v -E '(Compiled in|compiled|✓ Compiled|modules\)$|webpack|event compiled client)'
+  docker-compose -f docker-compose.dev.yml logs -f app | grep -v -E '(Compiled in|compiled|✓ Compiled|modules\)$|webpack|event compiled client|assets by|asset |% \(0 affected|% modules flagged|% of exports|% root snapshot|queue items processed|chunk groups|new snapshots created|File info in cache|Directory info in cache|Managed items|\+ [0-9]+ hidden lines|modules hashed|0% children snapshot|entries tested|entries updated|\s+$|LOG from webpack|\[compared for emit\]|\[emitted\]|\[cached\]|compiled successfully|Ready in [0-9]+ms|bytes|Entrypoint|orphan modules|runtime modules|modules by path|\+ [0-9]+ modules|\+ [0-9]+ assets|Replaced "process\.env|cacheable modules|[0-9]+% \([0-9]+ affected|javascript modules|css modules|File timestamp snapshot|Directory timestamp snapshot|Missing items snapshot|code generated [\(0-9]|really resolved|Warning:|Component Stack:|Source map error|Stack|Resource URL|The resource at|Unable to check|Failed to load|\<anonymous code\>|[0-9]+\s+[a-zA-Z0-9$_@]|snapshot|[0-9]+% children|Managed files)'
   
   # If the above command exits for any reason, make sure we're still showing logs
   echo -e "${YELLOW}Log stream interrupted. Restarting log view...${NC}"
