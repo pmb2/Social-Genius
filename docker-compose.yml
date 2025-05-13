@@ -7,11 +7,12 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./src/nginx/conf/app.conf:/etc/nginx/conf.d/default.conf
       - ./ssl:/etc/nginx/ssl
     restart: unless-stopped
     depends_on:
       - app
+      - browser-use-api
     networks:
       - social_genius_network
 
@@ -22,24 +23,26 @@ services:
       dockerfile: Dockerfile
       args:
         DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - postgres
+      - browser-use-api
+      - redis
     ports:
       - "3000:3000"
     environment:
       NODE_ENV: production
       RUNNING_IN_DOCKER: 'true'
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
-      DATABASE_URL_DOCKER: postgresql://postgres:postgres@postgres:5432/socialgenius
       NEXTAUTH_URL: https://localhost
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-your-secure-nextauth-secret}
-      NODE_PG_FORCE_NATIVE: '0'
+      BROWSER_USE_API_URL: http://browser-use-api:5055
+      # Use host.docker.internal to improve reliability
+      REDIS_URL: redis://host.docker.internal:6380
+      REDIS_PREFIX: "social-genius:"
+      SESSION_TTL: 86400
     restart: unless-stopped
-    command: >
-      sh -c "
-        node node_modules_patch.cjs &&
-        npm start
-      "
     networks:
       - social_genius_network
 
@@ -47,7 +50,7 @@ services:
   postgres:
     image: pgvector/pgvector:pg14
     ports:
-      - "5435:5432"  # Maps host port 5435 to container port 5432
+      - "5435:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -62,6 +65,56 @@ services:
       retries: 5
     networks:
       - social_genius_network
+      
+  # Browser-Use API Service for automation
+  browser-use-api:
+    build:
+      context: ./src/api/browser-use
+      dockerfile: Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    container_name: social-genius-browser-api
+    volumes:
+      - ./src/api/browser-use/screenshots:/app/screenshots
+    environment:
+      - PORT=5055
+      - HOST=0.0.0.0
+      - MAX_CONCURRENT_BROWSERS=10
+      - SCREENSHOT_PATH=/app/screenshots
+      - REDIS_URL=redis://host.docker.internal:6380
+    ports:
+      - "5055:5055"
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5055/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - social_genius_network
+      
+  # Redis for session sharing and caching
+  redis:
+    image: redis:alpine
+    container_name: social-genius-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+      - ./src/config/redis.conf:/usr/local/etc/redis/redis.conf
+    restart: unless-stopped
+    command: redis-server /usr/local/etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - social_genius_network
 
 networks:
   social_genius_network:
@@ -69,3 +122,4 @@ networks:
 
 volumes:
   postgres_data:
+  redis_data:

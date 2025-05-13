@@ -1,8 +1,8 @@
-FROM node:18-slim
+FROM node:18
 
 WORKDIR /app
 
-# Install dependencies required for Playwright and PostgreSQL
+# Install dependencies required for Playwright
 RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     libnss3 \
@@ -30,32 +30,17 @@ RUN apt-get update && apt-get install -y \
     xvfb \
     python3 \
     python3-pip \
-    # PostgreSQL development library needed for compiling native modules
-    postgresql-client \
-    postgresql-common \
-    libpq-dev \
-    build-essential \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy package information
 COPY package.json package-lock.json ./
 
-# Disable native PostgreSQL modules
-ENV NODE_PG_FORCE_NATIVE=0
-ENV DEBUG_DATABASE=true
-ENV PG_DEBUG=true
+# Install dependencies (with legacy peer deps to avoid version conflicts)
+RUN npm ci --legacy-peer-deps
 
-# Install dependencies without using native modules
-RUN npm ci --ignore-scripts --legacy-peer-deps
-
-# Make sure all Radix UI components are installed
-RUN npm install --ignore-scripts @radix-ui/react-dropdown-menu @radix-ui/react-icons @radix-ui/react-dialog @radix-ui/react-slot @radix-ui/react-label @radix-ui/react-tabs
-
-# Create a direct pg package without native bindings for more control
-RUN mkdir -p /app/node_modules/pg-pure
-COPY pg-patch.cjs /app/node_modules/pg-pure/
-RUN echo 'module.exports = require("../../pg-patch.cjs");' > /app/node_modules/pg-pure/index.js
+# Make sure the Radix UI dropdown menu is installed
+RUN npm install @radix-ui/react-dropdown-menu
 
 # Install Playwright browsers
 RUN npx playwright install chromium
@@ -66,6 +51,12 @@ RUN mkdir -p /app/browser_cookies && chmod 777 /app/browser_cookies
 
 # Copy source code
 COPY . .
+
+# Verify Next.js is installed and accessible
+RUN npm list next
+RUN echo "Node.js binary path: $(which node)"
+RUN echo "NPM binary path: $(which npm)"
+RUN ls -la /app/node_modules/.bin/
 
 # Create .env.local file to override Next.js environment variables
 RUN echo "NEXT_PUBLIC_DATABASE_URL=$DATABASE_URL" > .env.local
@@ -81,8 +72,7 @@ ENV NODE_ENV=development
 ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV WATCHPACK_POLLING=true
-ENV NODE_PG_FORCE_NATIVE=0
-ENV RUNNING_IN_DOCKER=true
+ENV PATH="/app/node_modules/.bin:${PATH}"
 
 # Ensure Playwright browsers are properly installed and accessible
 RUN chmod -R 755 /root/.cache/ms-playwright
@@ -91,8 +81,5 @@ RUN ls -la /root/.cache/ms-playwright
 # Expose port
 EXPOSE 3000
 
-# Install pg modules without using native bindings
-RUN npm install --ignore-scripts pg pg-pool
-
-# Apply pg-patch and start the development server
-CMD ["sh", "-c", "node pg-patch.cjs && node node_modules_patch.cjs && node fix-pg-pool.cjs && export NODE_OPTIONS='--max-old-space-size=4096' && npm run dev"]
+# Start development server
+CMD ["npm", "run", "dev"]

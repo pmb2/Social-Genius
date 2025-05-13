@@ -1,0 +1,72 @@
+/* Modal-related styles */
+.modal-open {
+  /* Ensure body doesn't have unintended styles when modals are open */
+  overflow: auto !important;
+  padding-right: 0 !important;
+  position: relative !important;
+}
+
+/* Ensure dialog elements have correct z-index and don't overlap */
+[data-state="open"] {
+  z-index: 100;
+}
+
+/* Improve dialog overlay styling */
+[data-dialog-overlay][data-state="open"] {
+  z-index: 50;
+}
+
+/* Ensure buttons in dialogs have proper clickability */
+[data-dialog-content][data-state="open"] button {
+  pointer-events: auto;
+}
+
+/* Radix UI Dialog fixes */
+
+/* Fix Radix UI Dialog overlay z-index */
+[data-radix-popper-content-wrapper] {
+  z-index: 100 !important;
+}
+
+/* Fix Radix UI animation and cleanup issues - more specific to only target dialog elements */
+[role="dialog"][data-state="closed"],
+[data-dialog-overlay][data-state="closed"],
+[data-dialog-content][data-state="closed"] {
+  animation: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Fix for invisible barriers left after dialogs close */
+body::after,
+body::before {
+  content: none !important;
+}
+
+/* Reset any potential focus traps when dialog is closed */
+body:not(:has([role="dialog"][data-state="open"])) [data-focus-guard],
+body:not(:has([role="dialog"][data-state="open"])) [data-focus-lock-disabled] {
+  display: none !important;
+}
+
+/* Fix for invisible Radix overlay causing interaction issues */
+.fixed.inset-0:not([data-dialog-overlay]) {
+  pointer-events: auto !important;
+}
+
+/* Make sure content under dialogs can be interacted with when dialogs are closed */
+body:not(:has([role="dialog"][data-state="open"])) {
+  pointer-events: auto !important;
+}
+
+/* Ensure images are visible and display correctly */
+img, Image {
+  display: block !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+/* Emergency class for when interaction is stuck */
+.force-interactive * {
+  pointer-events: auto !important;
+}

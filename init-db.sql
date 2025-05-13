@@ -7,11 +7,15 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- Create documents table for storing vectorized content
 CREATE TABLE IF NOT EXISTS documents (
   id SERIAL PRIMARY KEY,
-  collection_name TEXT NOT NULL,
-  content TEXT NOT NULL,
-  metadata JSONB NOT NULL,
+  document_id TEXT UNIQUE NOT NULL,
+  title TEXT,
+  content TEXT,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  business_id TEXT REFERENCES businesses(business_id) ON DELETE CASCADE,
+  metadata JSONB,
   embedding vector(1536),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create memories table for storing business memories
@@ -26,13 +30,16 @@ CREATE TABLE IF NOT EXISTS memories (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create users table for authentication
+-- Create users table for authentication with profile fields
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   name TEXT,
+  profile_picture TEXT,
+  phone_number TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   last_login TIMESTAMP WITH TIME ZONE
 );
 
@@ -43,11 +50,12 @@ CREATE TABLE IF NOT EXISTS businesses (
   name TEXT NOT NULL,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   status TEXT DEFAULT 'noncompliant',
+  description TEXT,
+  industry TEXT,
+  website TEXT,
+  logo_url TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  auth_status TEXT DEFAULT 'pending',
-  browser_instance TEXT,
-  credentials JSONB,
-  last_login TIMESTAMP WITH TIME ZONE,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (business_id, user_id)
 );
 
@@ -58,6 +66,17 @@ CREATE TABLE IF NOT EXISTS sessions (
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create business_credentials table
+CREATE TABLE IF NOT EXISTS business_credentials (
+  id SERIAL PRIMARY KEY,
+  business_id INTEGER NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  credential_type TEXT NOT NULL,
+  credential_value TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(business_id, credential_type)
 );
 
 -- Create indexes for faster vector similarity search for documents
