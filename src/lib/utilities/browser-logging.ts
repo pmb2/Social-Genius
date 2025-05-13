@@ -396,3 +396,140 @@ function sanitizeData(data: any): any {
   
   return sanitized;
 }
+
+/**
+ * Get a timestamp-based filename for a screenshot
+ * @param userId The user ID
+ * @param description A brief description of the screenshot
+ * @param extension The file extension (default: png)
+ * @returns A formatted string with the screenshot path
+ */
+export function getScreenshotFilename(
+  userId: string | number, 
+  description: string,
+  extension: string = 'png'
+): string {
+  const timestamp = Date.now();
+  // Sanitize description to be safe for filenames
+  const safeDescription = description.replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase();
+  
+  return `${userId}/${timestamp}-${safeDescription}.${extension}`;
+}
+
+/**
+ * Creates a directory structure for a user's screenshots
+ * @param userId The user ID
+ * @returns The path to the user's screenshot directory
+ */
+export function ensureUserScreenshotDirectory(userId: string | number): string {
+  const baseDir = '/home/ubuntu/Social-Genius/src/api/browser-use/screenshots';
+  const userDir = `${baseDir}/${userId}`;
+  
+  // In a browser environment, return the path only - we can't create directories
+  if (typeof window !== 'undefined') {
+    return userDir;
+  }
+  
+  // In Node.js environment, create the directory if it doesn't exist
+  try {
+    const fs = require('fs');
+    if (!fs.existsSync(baseDir)) {
+      fs.mkdirSync(baseDir, { recursive: true });
+    }
+    if (!fs.existsSync(userDir)) {
+      fs.mkdirSync(userDir, { recursive: true });
+    }
+    
+    return userDir;
+  } catch (error) {
+    console.error(`Error creating screenshot directory for user ${userId}:`, error);
+    return userDir; // Return the path anyway
+  }
+}
+
+/**
+ * Capture a page screenshot with error handling and validation
+ * @param page The Playwright page object
+ * @param userId User ID to organize screenshots
+ * @param description Brief description of the screenshot
+ * @param options Additional options
+ * @returns Path to the screenshot or null if failed
+ */
+export async function capturePageScreenshot(
+  page: any,
+  userId: string | number,
+  description: string,
+  options?: {
+    fullPage?: boolean;
+    path?: string;
+    returnBase64?: boolean;
+    traceId?: string;
+  }
+): Promise<string | null> {
+  try {
+    const screenshotDir = ensureUserScreenshotDirectory(userId);
+    const timestamp = Date.now();
+    const safeDescription = description.replace(/[^a-zA-Z0-9-_]/g, '-').toLowerCase();
+    const filename = `${timestamp}-${safeDescription}.png`;
+    const path = options?.path || `${screenshotDir}/${filename}`;
+    
+    // Create a UUID for this screenshot
+    const screenshotId = `${userId}-${timestamp}-${Math.random().toString(36).substring(2, 7)}`;
+    
+    // Log with trace information if provided
+    const logPrefix = options?.traceId ? `[Screenshot:${options.traceId}]` : '[Screenshot]';
+    console.log(`${logPrefix} Capturing screenshot "${description}" for user ${userId}`);
+    
+    // Capture the screenshot
+    const buffer = await page.screenshot({ 
+      path: path,
+      fullPage: options?.fullPage !== false,
+      // Add a small delay to ensure the page is rendered
+      timeout: 5000
+    });
+    
+    // Verify the file was created and is a valid image
+    const fs = require('fs');
+    if (fs.existsSync(path)) {
+      const fileStats = fs.statSync(path);
+      if (fileStats.size > 0) {
+        // Check the first bytes to confirm it's a PNG file
+        const fileBuffer = fs.readFileSync(path, { start: 0, end: 8 });
+        const isPNG = fileBuffer.length > 8 && 
+                    fileBuffer[0] === 0x89 && 
+                    fileBuffer[1] === 0x50 && 
+                    fileBuffer[2] === 0x4E && 
+                    fileBuffer[3] === 0x47;
+        
+        if (isPNG) {
+          console.log(`${logPrefix} ✅ Successfully captured screenshot: ${path} (${fileStats.size} bytes)`);
+        } else {
+          console.error(`${logPrefix} ❌ File is not a valid PNG image: ${path}`);
+          // Try to rename the file to indicate it's not a valid PNG
+          try {
+            const newPath = `${path}.invalid`;
+            fs.renameSync(path, newPath);
+            console.log(`${logPrefix} Renamed invalid PNG to ${newPath}`);
+          } catch (renameErr) {
+            console.error(`${logPrefix} Failed to rename invalid PNG:`, renameErr);
+          }
+        }
+      } else {
+        console.error(`${logPrefix} ❌ Screenshot file is empty: ${path}`);
+      }
+    } else {
+      console.error(`${logPrefix} ❌ Failed to create screenshot file: ${path}`);
+    }
+    
+    // Return as base64 if requested
+    if (options?.returnBase64 && buffer) {
+      return `data:image/png;base64,${buffer.toString('base64')}`;
+    }
+    
+    return path;
+  } catch (error) {
+    const logPrefix = options?.traceId ? `[Screenshot:${options.traceId}]` : '[Screenshot]';
+    console.error(`${logPrefix} ❌ Failed to capture screenshot (${description}):`, error);
+    return null;
+  }
+}

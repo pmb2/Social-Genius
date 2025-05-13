@@ -23,6 +23,8 @@ services:
       dockerfile: Dockerfile
       args:
         DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - postgres
       - browser-use-api
@@ -36,7 +38,8 @@ services:
       NEXTAUTH_URL: https://localhost
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-your-secure-nextauth-secret}
       BROWSER_USE_API_URL: http://browser-use-api:5055
-      REDIS_URL: redis://redis:6380
+      # Use host.docker.internal to improve reliability
+      REDIS_URL: redis://host.docker.internal:6380
       REDIS_PREFIX: "social-genius:"
       SESSION_TTL: 86400
     restart: unless-stopped
@@ -68,6 +71,8 @@ services:
     build:
       context: ./src/api/browser-use
       dockerfile: Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     container_name: social-genius-browser-api
     volumes:
       - ./src/api/browser-use/screenshots:/app/screenshots
@@ -76,12 +81,13 @@ services:
       - HOST=0.0.0.0
       - MAX_CONCURRENT_BROWSERS=10
       - SCREENSHOT_PATH=/app/screenshots
-      - REDIS_URL=redis://redis:6380
+      - REDIS_URL=redis://host.docker.internal:6380
     ports:
       - "5055:5055"
     restart: unless-stopped
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5055/health"]
       interval: 30s
@@ -94,6 +100,7 @@ services:
   # Redis for session sharing and caching
   redis:
     image: redis:alpine
+    container_name: social-genius-redis
     ports:
       - "6380:6379"
     volumes:

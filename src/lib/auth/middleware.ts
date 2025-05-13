@@ -11,7 +11,7 @@ import {
 // Middleware to authenticate requests
 export async function authMiddleware(
   req: NextRequest,
-  handler: (req: NextRequest, userId: number) => Promise<NextResponse>,
+  handler: (req: NextRequest, userId: number | string | undefined) => Promise<NextResponse>,
   options?: { bypassAuth?: boolean } // Add options for bypassing auth
 ): Promise<NextResponse> {
   // Generate a unique trace ID for this authentication request
@@ -166,57 +166,69 @@ export async function authMiddleware(
       headers.set('X-Mock-User-ID', String(tempUserId));
       headers.set('X-Mock-User-Email', 'test@example.com');
       
-      // Create a new request with the modified headers
-      const reqWithTrace = new NextRequest(req.nextUrl.href, {
-        method: req.method,
-        headers: headers,
-        body: req.body ? req.body : undefined,
-        duplex: 'half'
+      try {
+        // Modify the original request headers instead of creating a new request object
+        // This avoids potential issues with the body or other request properties
+        for (const [key, value] of headers.entries()) {
+          req.headers.set(key, value);
+        }
+        
+        // Add traceId as a custom property
+        // @ts-ignore - Adding a custom property to the request
+        req.traceId = traceId;
+        
+        log(`Auth bypass: Proceeding to handler with temporary user ID ${tempUserId}`, LogLevel.WARN);
+        
+        // Call the handler with the temporary user ID using the original request
+        const handlerResponse = await handler(req, tempUserId);
+        
+        // Ensure trace ID is passed along
+        handlerResponse.headers.set('X-Trace-ID', traceId);
+        
+        logExit({
+          status: handlerResponse.status,
+          success: true,
+          userId: tempUserId,
+          bypassUsed: true
+        });
+        
+        return handlerResponse;
+      } catch (error) {
+        log(`Error in bypassed auth handler`, LogLevel.ERROR, {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : 'No stack available'
+        });
+        
+        const response = NextResponse.json({
+          success: false,
+          error: 'Internal server error in bypassed auth',
+          traceId,
+          timestamp: new Date().toISOString()
+        }, { status: 500 });
+        
+        logExit({
+          status: 500,
+          success: false,
+          reason: 'Handler error in bypassed auth'
+        }, error);
+        
+        return response;
+      }
+    } catch (outerError) {
+      // Handle any outer errors
+      log(`Fatal error in auth bypass handler`, LogLevel.ERROR, {
+        error: outerError instanceof Error ? outerError.message : String(outerError),
+        stack: outerError instanceof Error ? outerError.stack : 'No stack available'
       });
       
-      // Add traceId as a custom property
-      // @ts-ignore - Adding a custom property to the request
-      reqWithTrace.traceId = traceId;
-      
-      log(`Auth bypass: Proceeding to handler with temporary user ID ${tempUserId}`, LogLevel.WARN);
-      
-      // Call the handler with the temporary user ID
-      const handlerResponse = await handler(reqWithTrace, tempUserId);
-      
-      // Ensure trace ID is passed along
-      handlerResponse.headers.set('X-Trace-ID', traceId);
-      
-      logExit({
-        status: handlerResponse.status,
-        success: true,
-        userId: tempUserId,
-        bypassUsed: true
-      });
-      
-      return handlerResponse;
-    } catch (error) {
-      log(`Error in bypassed auth handler`, LogLevel.ERROR, {
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : 'No stack available'
-      });
-      
-      const response = NextResponse.json({
+      return NextResponse.json({
         success: false,
-        error: 'Internal server error in bypassed auth',
-        traceId,
-        timestamp: new Date().toISOString()
+        error: 'Fatal error in auth bypass',
+        traceId
       }, { status: 500 });
-      
-      logExit({
-        status: 500,
-        success: false,
-        reason: 'Handler error in bypassed auth'
-      }, error);
-      
-      return response;
     }
   }
-
+  
   // Determine session source (with safe access)
   let sessionIdSource = 'None';
   if (sessionId) {
@@ -443,26 +455,70 @@ export async function authMiddleware(
   }
   
   try {
-    // Add trace ID to the request object for downstream handlers
-    const reqWithTrace = req.clone();
+    // Don't clone the request - work with the original request directly
     // @ts-ignore - Adding a custom property to the request
-    reqWithTrace.traceId = traceId;
+    req.traceId = traceId;
     
     log(`Authentication successful, proceeding to handler`, LogLevel.INFO, {
       userId: session.user_id,
       email: session.user_email || 'unknown'
     });
     
-    // Call the handler with the authenticated user ID
-    const handlerResponse = await handler(reqWithTrace, session.user_id);
+    // Convert user_id to a number to ensure consistent type
+    const userId = typeof session.user_id === 'string' ? parseInt(session.user_id, 10) : session.user_id;
     
-    logExit({
-      status: handlerResponse.status,
-      success: true,
-      userId: session.user_id
-    });
+    // Add user ID directly to the original request's headers
+    req.headers.set('X-User-ID', String(userId));
     
-    return handlerResponse;
+    try {
+      // Pass the userId directly to the handler instead of creating a new request object
+      // This avoids potential issues with the body or other request properties
+      log(`Calling handler with userId: ${userId}, type: ${typeof userId}`, LogLevel.INFO);
+      
+      // We're working directly with the original request, which already has the traceId and X-User-ID header
+      
+      // Call the handler with the original request and the userId
+      const handlerResponse = await handler(req, userId);
+      
+      logExit({
+        status: handlerResponse.status,
+        success: true,
+        userId: userId
+      });
+      
+      return handlerResponse;
+    } catch (proxyError) {
+      log(`Error creating request for handler: ${proxyError instanceof Error ? proxyError.message : String(proxyError)}`, LogLevel.ERROR);
+      
+      // Fallback approach: call handler directly with original request
+      log(`Falling back to direct handler call with userId: ${userId}`, LogLevel.WARN);
+      try {
+        const directResponse = await handler(req, userId);
+        
+        logExit({
+          status: directResponse.status,
+          success: true,
+          userId: userId,
+          fallback: true
+        });
+        
+        return directResponse;
+      } catch (directError) {
+        log(`Error in fallback handler call: ${directError instanceof Error ? directError.message : String(directError)}`, LogLevel.ERROR);
+        
+        logExit({
+          status: 500,
+          success: false,
+          error: directError
+        });
+        
+        return NextResponse.json({
+          success: false,
+          error: 'Failed to process request',
+          traceId
+        }, { status: 500 });
+      }
+    }
   } catch (error) {
     log(`Error in authenticated handler`, LogLevel.ERROR, {
       error: error instanceof Error ? error.message : String(error),
@@ -493,7 +549,7 @@ export function withAuth(handler: (req: NextRequest, userId?: number) => Promise
 }
 
 export function createAuthRoute(
-  handler: (req: NextRequest, userId: number) => Promise<NextResponse>,
+  handler: (req: NextRequest, userId: number | string | undefined) => Promise<NextResponse>,
   options?: { bypassAuth?: boolean } // Add options for bypassing auth
 ) {
   return async function(req: NextRequest) {

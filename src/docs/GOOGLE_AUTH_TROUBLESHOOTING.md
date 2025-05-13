@@ -225,7 +225,56 @@ const allCookies = req.cookies && typeof req.cookies.getAll === 'function' ?
 
 ### Viewing Screenshots
 
-Authentication screenshots are captured for both successful and failed attempts. To view them:
+Authentication screenshots are captured for both successful and failed attempts at key points during the login process including:
+- Initial page load
+- Before entering credentials
+- After entering email
+- After entering password
+- On page navigation events
+- After successful/failed login
+- During any retry attempts
+
+#### Using Screenshot Utility Tools
+
+We've added several tools to make working with screenshots easier:
+
+**1. List Screenshots Tool**
+
+List all available screenshots for a user:
+
+```bash
+# List all users with screenshots
+node src/scripts/list-screenshots.js
+
+# List screenshots for a specific user
+node src/scripts/list-screenshots.js USER_ID
+```
+
+**2. View Screenshots Tool**
+
+Open a screenshot in your browser:
+
+```bash
+# View a specific screenshot
+node src/scripts/view-screenshot.js USER_ID SCREENSHOT_FILENAME
+```
+
+**3. Test Authentication with Screenshots**
+
+Run a test authentication with automatic screenshot capture:
+
+```bash
+# Set test credentials
+export TEST_EMAIL="your-test-email@gmail.com"
+export TEST_PASSWORD="your-password"
+
+# Run the test script
+node src/scripts/test-google-auth.js
+```
+
+#### Manual Screenshot Access
+
+For Docker environments, you can also access screenshots directly:
 
 1. Go to the browser-use-api container: `docker exec -it social-genius-browser-api /bin/bash`
 2. Navigate to the screenshots directory: `cd /app/screenshots`
@@ -234,6 +283,16 @@ Authentication screenshots are captured for both successful and failed attempts.
    ```
    docker cp social-genius-browser-api:/app/screenshots/FILENAME ./FILENAME
    ```
+
+#### Screenshot API Endpoint
+
+Screenshots can also be accessed via API:
+
+```
+GET /api/compliance/auth-screenshots?userId={userId}&listAll=true
+```
+
+This returns a list of all screenshots with metadata for the specified user ID.
 
 ### Checking Logs
 

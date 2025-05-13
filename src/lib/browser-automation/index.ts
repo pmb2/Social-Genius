@@ -26,10 +26,11 @@ export interface BrowserTaskResult {
   result?: any;
   error?: string;
   screenshot?: string;
-  traceId?: string;    // Optional trace ID for cross-component tracking
-  startTime?: number;  // Optional timestamp when the task started
-  endTime?: number;    // Optional timestamp when the task completed
-  duration?: number;   // Optional duration in milliseconds
+  traceId: string;     // Trace ID for cross-component tracking
+  startTime?: number;  // Timestamp when the task started
+  endTime?: number;    // Timestamp when the task completed
+  duration?: number;   // Duration in milliseconds
+  screenshots?: string[]; // Array of screenshot paths
 }
 
 // Browser Automation Service
@@ -60,30 +61,44 @@ export class BrowserAutomationService {
       reuseSession?: boolean;
       persistSession?: boolean;
       debug?: boolean;
+      takeScreenshots?: boolean;
     }
   ): Promise<BrowserTaskResult> {
+    // Generate a unique trace ID for this authentication request
+    const traceId = `auth-${businessId}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const reuseSession = options?.reuseSession !== false; // Default to true
     const persistSession = options?.persistSession !== false; // Default to true
+    const takeScreenshots = options?.takeScreenshots !== false; // Default to true
     
     try {
+      // Import screenshot utilities 
+      const { ensureUserScreenshotDirectory, capturePageScreenshot } = await import('@/lib/utilities/browser-logging');
+      
+      // Ensure screenshot directory exists
+      if (takeScreenshots) {
+        const screenshotDir = ensureUserScreenshotDirectory(businessId);
+        console.log(`[BROWSER_AUTOMATION:${traceId}] Screenshot directory prepared: ${screenshotDir}`);
+      }
+      
       // Add more visible logging with clear prefix and timestamp
       const timestamp = new Date().toISOString();
       const debug = options?.debug || process.env.BROWSER_DEBUG === 'true' || false;
       
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - 🚀 STARTING GOOGLE AUTHENTICATION`);
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - Business ID: ${businessId}`);
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - User email: ${email}`);
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - Password type: ${typeof password === 'string' ? 'string' : 'credential object'}`);
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - Reuse session: ${reuseSession}`);
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - Persist session: ${persistSession}`);
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - Debug mode: ${debug}`);
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - Process ID: ${process.pid}`);
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - Node environment: ${process.env.NODE_ENV || 'not set'}`);
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - 🚀 STARTING GOOGLE AUTHENTICATION`);
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Business ID: ${businessId}`);
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - User email: ${email}`);
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Password type: ${typeof password === 'string' ? 'string' : 'credential object'}`);
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Reuse session: ${reuseSession}`);
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Persist session: ${persistSession}`);
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Take screenshots: ${takeScreenshots}`);
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Debug mode: ${debug}`);
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Process ID: ${process.pid}`);
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Node environment: ${process.env.NODE_ENV || 'not set'}`);
       
       // Extract actual password - either use the string directly or extract from credential object
       let actualPassword = password;
       if (typeof password !== 'string' && password && password.encryptedPassword) {
-        console.log(`[BROWSER_AUTOMATION] ${timestamp} - Using encrypted password from credential object`);
+        console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Using encrypted password from credential object`);
         // For development/testing, just use the encrypted password directly
         actualPassword = password.encryptedPassword;
       }
@@ -96,10 +111,10 @@ export class BrowserAutomationService {
         BROWSER_POLLING_INTERVAL: process.env.BROWSER_POLLING_INTERVAL || 'not set',
         BROWSER_VERBOSE_LOGGING: process.env.BROWSER_VERBOSE_LOGGING || 'not set',
       };
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - Environment variables:`, JSON.stringify(relevantEnvVars));
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Environment variables:`, JSON.stringify(relevantEnvVars));
       
       // Log API configuration for debugging
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - API Configuration:`, {
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - API Configuration:`, {
         apiUrl: BrowserAutomationConfig.apiUrl,
         apiVersion: BrowserAutomationConfig.apiVersion,
         authEndpoint: BrowserAutomationConfig.getEndpointUrl('googleAuth'),
@@ -113,14 +128,15 @@ export class BrowserAutomationService {
         { 
           businessId, 
           email, 
-          options: { reuseSession, persistSession, debug },
+          options: { reuseSession, persistSession, debug, takeScreenshots },
           timestamp: new Date().toISOString(),
           apiConfig: {
             url: BrowserAutomationConfig.apiUrl,
             version: BrowserAutomationConfig.apiVersion,
             timeout: BrowserAutomationConfig.timeouts.auth
           }
-        }
+        },
+        traceId
       );
       
       // First, check if we have a valid existing session if reuse is enabled
@@ -128,7 +144,9 @@ export class BrowserAutomationService {
         logBrowserOperation(
           OperationCategory.SESSION,
           `Checking for existing session for business ${businessId}`,
-          LogLevel.INFO
+          LogLevel.INFO,
+          undefined,
+          traceId
         );
         
         // Check if we have a session
@@ -139,7 +157,9 @@ export class BrowserAutomationService {
           logBrowserOperation(
             OperationCategory.SESSION,
             `Found existing session for business ${businessId}, validating...`,
-            LogLevel.INFO
+            LogLevel.INFO,
+            undefined,
+            traceId
           );
           
           // Validate session
@@ -150,18 +170,21 @@ export class BrowserAutomationService {
             logBrowserOperation(
               OperationCategory.SESSION,
               `Successfully reused existing valid session for business ${businessId}`,
-              LogLevel.INFO
+              LogLevel.INFO,
+              undefined,
+              traceId
             );
             
             // Return success result with reused session
             return {
-              taskId: `reused-${Date.now()}`,
+              taskId: `reused-${traceId}`,
               businessId,
               status: 'success',
               result: {
                 reusedSession: true,
                 message: 'Successfully reused existing Google session',
-                validationScreenshot: validation.screenshot
+                validationScreenshot: validation.screenshot,
+                traceId: traceId
               }
             };
           }
@@ -169,16 +192,18 @@ export class BrowserAutomationService {
           logBrowserOperation(
             OperationCategory.SESSION,
             `Existing session for business ${businessId} is invalid, creating new login session`,
-            LogLevel.WARN
+            LogLevel.WARN,
+            undefined,
+            traceId
           );
         }
       }
       
       // Add thorough API connection logging with timestamp
       const apiUrl = BrowserAutomationConfig.apiUrl;
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - 🔌 CONNECTING TO BROWSER API`);
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - API URL: ${apiUrl}`);
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - API Timeout: ${BrowserAutomationConfig.timeouts.auth}ms`);
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - 🔌 CONNECTING TO BROWSER API`);
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - API URL: ${apiUrl}`);
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - API Timeout: ${BrowserAutomationConfig.timeouts.auth}ms`);
       
       // Check environment variables that might affect the connection
       const envVars = {
@@ -186,36 +211,82 @@ export class BrowserAutomationService {
         BROWSER_API_URL: process.env.BROWSER_API_URL || 'not set',
         BROWSER_API_PORT: process.env.BROWSER_API_PORT || 'not set'
       };
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - Environment variables:`, JSON.stringify(envVars));
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Environment variables:`, JSON.stringify(envVars));
       
-      // Try to ping the API to confirm accessibility
+      // Try to ping the API to confirm accessibility with fallbacks
       try {
         const pingStart = Date.now();
-        console.log(`[BROWSER_AUTOMATION] ${timestamp} - Pinging API before auth request...`);
-        const healthUrl = BrowserAutomationConfig.getEndpointUrl('health');
-        console.log(`[BROWSER_AUTOMATION] ${timestamp} - Health URL: ${healthUrl}`);
+        console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Pinging API before auth request...`);
+        let healthUrl = BrowserAutomationConfig.getEndpointUrl('health');
+        console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Initial Health URL: ${healthUrl}`);
         
         // Log each step of the connection process in detail
-        console.log(`[BROWSER_AUTOMATION] ${timestamp} - DNS lookup for: ${new URL(healthUrl).hostname}`);
-        console.log(`[BROWSER_AUTOMATION] ${timestamp} - Connection attempt starting...`);
+        console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - DNS lookup for: ${new URL(healthUrl).hostname}`);
+        console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Connection attempt starting...`);
         
-        // Only wait 3 seconds for the health check
-        const healthResponse = await axios.get(healthUrl, { timeout: 3000 })
-          .catch(error => {
-            console.error(`[BROWSER_AUTOMATION] ${timestamp} - API health check failed:`, error.message);
-            return { data: { status: 'unhealthy', error: error.message } };
-          });
+        // Try to connect with fallback mechanism
+        let pingSuccess = false;
+        let pingTime = 0;
+        let healthResponse = null;
+        let attemptCount = 0;
+        const maxAttempts = 3;
         
-        const pingTime = Date.now() - pingStart;
-        console.log(`[BROWSER_AUTOMATION] ${timestamp} - API health check result: ${healthResponse?.data?.status || 'unknown'} (${pingTime}ms)`);
+        while (!pingSuccess && attemptCount < maxAttempts) {
+          attemptCount++;
+          healthUrl = BrowserAutomationConfig.getEndpointUrl('health');
+          
+          try {
+            console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Ping attempt ${attemptCount} to: ${healthUrl}`);
+            // Only wait 3 seconds for the health check
+            healthResponse = await axios.get(healthUrl, { 
+              timeout: 3000,
+              headers: {
+                'Cache-Control': 'no-cache',
+                'X-Ping-Attempt': `${attemptCount}`,
+                'X-Host-Info': process.env.HOSTNAME || 'unknown-host',
+                'X-Trace-ID': traceId
+              }
+            });
+            
+            // Check if the response is successful
+            if (healthResponse && healthResponse.data && healthResponse.data.status === 'healthy') {
+              pingSuccess = true;
+              pingTime = Date.now() - pingStart;
+              console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - API health check succeeded on attempt ${attemptCount}: ${healthResponse.data.status} (${pingTime}ms)`);
+              
+              // Reset connection failures on success
+              BrowserAutomationConfig.resetConnectionAttempts();
+              break;
+            } else {
+              console.warn(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - API responded but unhealthy on attempt ${attemptCount}: ${healthResponse?.data?.status || 'unknown'}`);
+              // Try next fallback URL
+              BrowserAutomationConfig.tryNextFallbackUrl();
+            }
+          } catch (attemptError) {
+            console.error(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - API health check attempt ${attemptCount} failed:`, attemptError.message);
+            
+            // Try next fallback URL
+            BrowserAutomationConfig.tryNextFallbackUrl();
+          }
+        }
+        
+        // Report final status
+        if (pingSuccess) {
+          console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - API health check final result: HEALTHY (${pingTime}ms)`);
+        } else {
+          console.error(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - API health check final result: UNHEALTHY after ${attemptCount} attempts`);
+          console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Will still attempt to use API but might fail`);
+        }
       } catch (pingError) {
-        console.error(`[BROWSER_AUTOMATION] ${timestamp} - Error pinging API:`, pingError.message);
+        console.error(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Error during ping sequence:`, pingError.message);
       }
       
       logBrowserOperation(
         OperationCategory.API, 
         `Connecting to Browser-Use API at ${apiUrl}`,
-        LogLevel.INFO
+        LogLevel.INFO,
+        undefined,
+        traceId
       );
       
       // Use the correct endpoint from the Browser Use API
@@ -232,7 +303,9 @@ export class BrowserAutomationService {
           human_delay_max: 3,
           max_captcha_attempts: 2,
           persist_session: persistSession,
-          reuse_session: reuseSession
+          reuse_session: reuseSession,
+          take_screenshots: takeScreenshots,
+          trace_id: traceId
         }
       };
       
@@ -240,7 +313,8 @@ export class BrowserAutomationService {
         OperationCategory.API, 
         'Sending auth request with options',
         LogLevel.INFO,
-        requestDataLog // Will be automatically sanitized
+        requestDataLog, // Will be automatically sanitized
+        traceId
       );
       
       // Start timing the request
@@ -248,65 +322,163 @@ export class BrowserAutomationService {
       const authEndpoint = BrowserAutomationConfig.getEndpointUrl('googleAuth');
       
       // Log detailed information about the request
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - 📡 SENDING AUTH REQUEST`);
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - Endpoint: ${authEndpoint}`);
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - Method: POST`);
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - Request timeout: ${BrowserAutomationConfig.timeouts.auth + 5000}ms`);
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - 📡 SENDING AUTH REQUEST`);
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Endpoint: ${authEndpoint}`);
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Method: POST`);
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Request timeout: ${BrowserAutomationConfig.timeouts.auth + 5000}ms`);
       
-      // Test browser API connectivity with a ping
+      // Enhanced browser API connectivity test with session header support
       try {
         const pingStart = Date.now();
-        console.log(`[BROWSER_AUTOMATION] ${timestamp} - Testing API connectivity to ${authEndpoint}...`);
+        console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - 🧪 Testing API connectivity for authentication...`);
         
-        // Try multiple endpoints to find a working one
-        const endpoints = [
-          BrowserAutomationConfig.getEndpointUrl('health'),       // Try health endpoint first
-          authEndpoint,                                           // Then try auth endpoint
-          `http://browser-use-api:5055/health`,                   // Try direct container name
-          `http://localhost:5055/health`                          // Try localhost
-        ];
+        // Create a custom instance of axios with automatic retry for this connection test
+        const axiosRetry = require('axios').create();
+        let retryCount = 0;
+        const maxRetries = 3;
         
-        let pingTime = -1;
+        // Add request interceptor for retry logic
+        axiosRetry.interceptors.response.use(undefined, async (err) => {
+          // Track the endpoint being retried 
+          const config = err.config;
+          
+          // If we've already tried too many times for this endpoint, fail
+          if (config.__retryCount >= maxRetries) {
+            console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - ⛔ Max retries (${maxRetries}) reached for ${config.url}`);
+            return Promise.reject(err);
+          }
+          
+          // Set up retry count
+          config.__retryCount = config.__retryCount || 0;
+          config.__retryCount++;
+          retryCount++;
+          
+          // Log the retry
+          console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - 🔄 Retry ${config.__retryCount}/${maxRetries} for ${config.url} (${err.code || err.message})`);
+          
+          // Add a delay before retrying
+          const delay = Math.min(config.__retryCount * 500, 2000); // Exponential backoff capped at 2s
+          await new Promise(resolve => setTimeout(resolve, delay));
+          
+          return axiosRetry(config); // Retry with the exact same config
+        });
+        
+        // Add diagnostic headers to all requests
+        axiosRetry.interceptors.request.use((config) => {
+          // Add custom headers for diagnostics
+          config.headers = {
+            ...config.headers,
+            'X-Connection-Test': 'true',
+            'X-Timestamp': new Date().toISOString(),
+            'X-Request-ID': `conn-test-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            'X-Business-ID': businessId,
+            'X-Browser-Client-Version': '1.0.0',
+            'Cache-Control': 'no-cache, no-store',
+            'X-Node-Process-ID': process.pid.toString(),
+            'X-Host-Info': process.env.HOSTNAME || 'unknown-host',
+            'X-Trace-ID': traceId
+          };
+          
+          return config;
+        });
+        
+        // Use our fallback URL system from the BrowserAutomationConfig
         let pingSuccess = false;
+        let pingTime = -1;
         let workingEndpoint = '';
+        let healthResponse = null;
+        const testStartTime = Date.now();
         
-        // Test each endpoint until we find one that works
-        for (const endpoint of endpoints) {
+        // Test using BrowserAutomationConfig's fallback mechanism
+        // We'll try up to 3 URLs directly
+        for (let i = 0; i < 3; i++) {
+          if (i > 0) {
+            // Try next fallback URL (first attempt uses current URL)
+            BrowserAutomationConfig.tryNextFallbackUrl();
+          }
+          
+          const currentEndpoint = BrowserAutomationConfig.getEndpointUrl('health');
+          
           try {
-            console.log(`[BROWSER_AUTOMATION] ${timestamp} - Trying endpoint: ${endpoint}`);
-            const response = await axios.get(endpoint, { timeout: 2000 });
+            console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - 🔌 Testing endpoint #${i+1}: ${currentEndpoint}`);
             
-            if (response.status >= 200 && response.status < 300) {
-              pingTime = Date.now() - pingStart;
-              pingSuccess = true;
-              workingEndpoint = endpoint;
-              console.log(`[BROWSER_AUTOMATION] ${timestamp} - ✅ Connection successful to ${endpoint} (${pingTime}ms)`);
-              
-              // If this is the health endpoint and not our configured endpoint, update the config
-              if (endpoint !== BrowserAutomationConfig.getEndpointUrl('health') && endpoint.includes('/health')) {
-                const baseUrl = endpoint.split('/health')[0];
-                console.log(`[BROWSER_AUTOMATION] ${timestamp} - 🔄 Updating API URL from ${BrowserAutomationConfig.apiUrl} to ${baseUrl}`);
-                BrowserAutomationConfig.apiUrl = baseUrl;
+            // Make a request with retries built in
+            healthResponse = await axiosRetry.get(currentEndpoint, { 
+              timeout: 5000,  // Increased timeout for better reliability
+              headers: {
+                'X-Trace-ID': traceId
               }
+            });
+            
+            if (healthResponse && healthResponse.status >= 200 && healthResponse.status < 300) {
+              pingTime = Date.now() - testStartTime;
+              pingSuccess = true;
+              workingEndpoint = currentEndpoint;
+              console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - ✅ Connection successful to ${currentEndpoint} (${pingTime}ms)`);
               
+              // Record that this URL works in the config by resetting the failure counter
+              BrowserAutomationConfig.resetConnectionAttempts();
+              
+              // No need to try more endpoints
               break;
+            } else {
+              console.warn(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - ⚠️ Endpoint ${currentEndpoint} returned non-success status: ${healthResponse?.status}`);
             }
           } catch (endpointError) {
-            console.log(`[BROWSER_AUTOMATION] ${timestamp} - ❌ Failed to connect to ${endpoint}: ${endpointError.message}`);
+            console.error(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - ❌ Failed to connect to ${currentEndpoint}: ${endpointError.message} (${endpointError.code || 'UNKNOWN_ERROR'})`);
           }
         }
         
+        // Report final connectivity status
+        const totalConnectionTime = Date.now() - pingStart;
+        
         if (pingSuccess) {
-          console.log(`[BROWSER_AUTOMATION] ${timestamp} - 🌐 API connectivity: OK (${pingTime}ms) at ${workingEndpoint}`);
+          console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - 🌐 API connectivity test complete: SUCCESS (${pingTime}ms) at ${workingEndpoint}`);
+          console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - 📊 Total connection test time: ${totalConnectionTime}ms with ${retryCount} retries`);
         } else {
-          console.error(`[BROWSER_AUTOMATION] ${timestamp} - ❌ API connectivity: FAILED - All endpoints unreachable`);
+          console.error(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - ❌ API connectivity test complete: FAILED after ${totalConnectionTime}ms`);
+          
+          // Diagnostic info to help troubleshoot
+          console.error(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - ❌ Network diagnostic information:`);
+          console.error(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - ❌ Current API URL: ${BrowserAutomationConfig.apiUrl}`);
+          console.error(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - ❌ Environment: BROWSER_USE_API_URL=${process.env.BROWSER_USE_API_URL || 'not set'}, NODE_ENV=${process.env.NODE_ENV || 'not set'}`);
+          console.error(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - ❌ Process info: PID=${process.pid}, Running in Docker=${process.env.RUNNING_IN_DOCKER === 'true' ? 'Yes' : 'No/Unknown'}`);
+          
+          // Try to do some basic network diagnosis
+          try {
+            // Check if we can reach common internet hosts as a sanity check
+            const dnsPromise = new Promise((resolve) => {
+              const dns = require('dns');
+              dns.lookup('google.com', (err, address) => {
+                if (err) {
+                  console.error(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - ❌ DNS lookup for google.com failed:`, err.message);
+                  resolve(false);
+                } else {
+                  console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - ✅ DNS lookup successful: google.com = ${address}`);
+                  resolve(true);
+                }
+              });
+            });
+            
+            // Wait up to 3 seconds for the DNS check
+            await Promise.race([
+              dnsPromise,
+              new Promise(resolve => setTimeout(() => {
+                console.error(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - ❌ DNS lookup timed out`);
+                resolve(false);
+              }, 3000))
+            ]);
+            
+          } catch (diagnosticError) {
+            console.error(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - ❌ Error during network diagnostics:`, diagnosticError.message);
+          }
         }
       } catch (error) {
-        console.error(`[BROWSER_AUTOMATION] ${timestamp} - ⚠️ API connectivity test error: ${error.message}`);
+        console.error(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - ⚠️ API connectivity test error: ${error.message}`);
       }
       
       // Use the endpoint from config
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - Sending auth request to endpoint: ${BrowserAutomationConfig.getEndpointUrl('googleAuth')}`);
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Sending auth request to endpoint: ${BrowserAutomationConfig.getEndpointUrl('googleAuth')}`);
       const requestData = {
         businessId,
         email,
@@ -314,20 +486,35 @@ export class BrowserAutomationService {
         taskType: 'login',
         timeout: BrowserAutomationConfig.timeouts.auth,
         reuseSession: reuseSession,
+        traceId: traceId, // Include trace ID in the request
         advanced_options: {
           human_delay_min: 1,
           human_delay_max: 3,
           max_captcha_attempts: 2,
           persist_session: persistSession,
-          reuse_session: reuseSession
+          reuse_session: reuseSession,
+          take_screenshots: takeScreenshots,
+          trace_id: traceId,
+          record_screenshots: true, // Always record screenshot locations
+          screenshot_points: [
+            'login-start',
+            'enter-email',
+            'enter-password',
+            'before-submit', 
+            'after-login',
+            'challenge-detection',
+            'business-profile',
+            'login-complete'
+          ]
         }
       };
       
-      console.log(`[BROWSER_AUTOMATION] ${timestamp} - Request data:`, {
+      console.log(`[BROWSER_AUTOMATION:${traceId}] ${timestamp} - Request data:`, {
         ...requestData,
         password: '***REDACTED***' // Don't log password
       });
       
+      // Send the authentication request to the browser-use API
       const response = await axios.post(
         BrowserAutomationConfig.getEndpointUrl('googleAuth'), 
         requestData,
@@ -337,7 +524,8 @@ export class BrowserAutomationService {
           headers: {
             'Content-Type': 'application/json',
             'X-Business-ID': businessId,
-            'X-Request-ID': `auth-${Date.now()}`
+            'X-Request-ID': `auth-${Date.now()}`,
+            'X-Trace-ID': traceId
           }
         }
       );
@@ -348,13 +536,17 @@ export class BrowserAutomationService {
         logBrowserOperation(
           OperationCategory.TASK, 
           `Auth task initiated successfully with task ID: ${taskId}`,
-          LogLevel.INFO
+          LogLevel.INFO,
+          { traceId },
+          traceId
         );
         
         logBrowserOperation(
           OperationCategory.API, 
           `Response received in ${Date.now() - startTime}ms`,
-          LogLevel.INFO
+          LogLevel.INFO,
+          undefined,
+          traceId
         );
         
         // Poll for task completion
@@ -365,7 +557,9 @@ export class BrowserAutomationService {
         logBrowserOperation(
           OperationCategory.TASK, 
           `Polling for task completion (max ${maxAttempts} attempts)...`,
-          LogLevel.INFO
+          LogLevel.INFO,
+          undefined,
+          traceId
         );
         
         while (attempts < maxAttempts) {
@@ -376,18 +570,25 @@ export class BrowserAutomationService {
             logBrowserOperation(
               OperationCategory.TASK, 
               `Polling attempt ${attempts}/${maxAttempts} for task ${taskId}`,
-              LogLevel.INFO
+              LogLevel.INFO,
+              undefined,
+              traceId
             );
             
             const statusUrl = BrowserAutomationConfig.getEndpointUrl('taskStatus') + `/${taskId}`;
             const statusResponse = await axios.get(statusUrl, {
-              timeout: BrowserAutomationConfig.timeouts.request
+              timeout: BrowserAutomationConfig.timeouts.request,
+              headers: {
+                'X-Trace-ID': traceId
+              }
             });
             
             logBrowserOperation(
               OperationCategory.TASK, 
               `Status response received: ${statusResponse.data.status}`,
-              LogLevel.INFO
+              LogLevel.INFO,
+              undefined,
+              traceId
             );
             
             if (statusResponse.data.status === 'completed' || statusResponse.data.status === 'failed') {
@@ -395,8 +596,21 @@ export class BrowserAutomationService {
               logBrowserOperation(
                 OperationCategory.TASK, 
                 `Task ${taskId} ${statusResponse.data.status} after ${attempts} attempts`,
-                LogLevel.INFO
+                LogLevel.INFO,
+                undefined,
+                traceId
               );
+              
+              // Check if we have screenshot data and log it
+              if (statusResponse.data.screenshots && statusResponse.data.screenshots.length > 0) {
+                logBrowserOperation(
+                  OperationCategory.TASK, 
+                  `Task has ${statusResponse.data.screenshots.length} screenshots available`,
+                  LogLevel.INFO,
+                  { screenshots: statusResponse.data.screenshots },
+                  traceId
+                );
+              }
               
               // Log additional details for failed tasks
               if (statusResponse.data.status === 'failed') {
@@ -404,7 +618,8 @@ export class BrowserAutomationService {
                   OperationCategory.TASK, 
                   `Task failed with error: ${statusResponse.data.message || 'Unknown error'}`,
                   LogLevel.ERROR,
-                  statusResponse.data.result
+                  statusResponse.data.result,
+                  traceId
                 );
               }
               
@@ -420,7 +635,9 @@ export class BrowserAutomationService {
             logBrowserOperation(
               OperationCategory.TASK, 
               `Waiting ${Math.round(nextPollInterval)}ms before next polling attempt (exponential backoff)`,
-              LogLevel.INFO
+              LogLevel.INFO,
+              undefined,
+              traceId
             );
             
             // Wait before checking again with exponential backoff
@@ -430,7 +647,8 @@ export class BrowserAutomationService {
               OperationCategory.TASK, 
               `Error polling task ${taskId} status (attempt ${attempts})`,
               LogLevel.ERROR,
-              pollError
+              pollError,
+              traceId
             );
             
             // Calculate backoff interval with jitter even for errors
@@ -442,7 +660,9 @@ export class BrowserAutomationService {
             logBrowserOperation(
               OperationCategory.TASK, 
               `Waiting ${Math.round(nextPollInterval)}ms before retry after error (exponential backoff)`,
-              LogLevel.INFO
+              LogLevel.INFO,
+              undefined,
+              traceId
             );
             
             // Continue polling despite errors with exponential backoff
@@ -457,14 +677,18 @@ export class BrowserAutomationService {
           logBrowserOperation(
             OperationCategory.TASK, 
             `Task ${response.data.task_id} final status: ${finalStatus}`,
-            LogLevel.INFO
+            LogLevel.INFO,
+            undefined,
+            traceId
           );
           
           if (finalStatus === 'success') {
             logBrowserOperation(
               OperationCategory.AUTH, 
               `Google authentication successful for business ${businessId}`,
-              LogLevel.INFO
+              LogLevel.INFO,
+              undefined,
+              traceId
             );
             
             // Check if we have screenshot data
@@ -472,7 +696,20 @@ export class BrowserAutomationService {
               logBrowserOperation(
                 OperationCategory.TASK, 
                 `Screenshot captured successfully`,
-                LogLevel.INFO
+                LogLevel.INFO,
+                undefined,
+                traceId
+              );
+            }
+            
+            // Check for multiple screenshots
+            if (taskResult.screenshots && taskResult.screenshots.length > 0) {
+              logBrowserOperation(
+                OperationCategory.TASK, 
+                `${taskResult.screenshots.length} screenshots captured during authentication`,
+                LogLevel.INFO,
+                { screenshots: taskResult.screenshots },
+                traceId
               );
             }
           } else {
@@ -483,7 +720,8 @@ export class BrowserAutomationService {
               { 
                 error: taskResult.result?.error || taskResult.message || 'Unknown error',
                 details: taskResult.result
-              }
+              },
+              traceId
             );
           }
           
@@ -493,21 +731,32 @@ export class BrowserAutomationService {
             status: finalStatus,
             result: taskResult.result || null,
             error: taskResult.result?.error || taskResult.message || null,
-            screenshot: taskResult.result?.screenshot || null
+            screenshot: taskResult.result?.screenshot || null,
+            traceId: traceId,
+            startTime: startTime,
+            endTime: Date.now(),
+            duration: Date.now() - startTime,
+            screenshots: taskResult.screenshots || [],
           };
         } else {
           // Task did not complete in the expected time
           logBrowserOperation(
             OperationCategory.TASK, 
             `Task ${response.data.task_id} timed out after ${maxAttempts} polling attempts`,
-            LogLevel.ERROR
+            LogLevel.ERROR,
+            undefined,
+            traceId
           );
           
           return {
             taskId: response.data.task_id,
             businessId,
             status: 'failed',
-            error: 'Task did not complete in the allocated time'
+            error: 'Task did not complete in the allocated time',
+            traceId: traceId,
+            startTime: startTime,
+            endTime: Date.now(),
+            duration: Date.now() - startTime,
           };
         }
       } else {
@@ -516,14 +765,19 @@ export class BrowserAutomationService {
           OperationCategory.API, 
           `Invalid API response - missing task_id`,
           LogLevel.ERROR,
-          response.data
+          response.data,
+          traceId
         );
         
         return {
           taskId: 'error',
           businessId,
           status: 'failed',
-          error: 'Invalid response from browser automation service'
+          error: 'Invalid response from browser automation service',
+          traceId: traceId,
+          startTime: startTime,
+          endTime: Date.now(),
+          duration: Date.now() - startTime,
         };
       }
     } catch (error: any) {
@@ -531,7 +785,8 @@ export class BrowserAutomationService {
         OperationCategory.AUTH, 
         `Authentication error for business ${businessId}`,
         LogLevel.ERROR,
-        error
+        error,
+        traceId
       );
       
       if (error.response) {
@@ -539,7 +794,8 @@ export class BrowserAutomationService {
           OperationCategory.API, 
           `API error status: ${error.response.status}`,
           LogLevel.ERROR,
-          error.response.data
+          error.response.data,
+          traceId
         );
       }
       
@@ -547,7 +803,11 @@ export class BrowserAutomationService {
         taskId: 'error',
         businessId,
         status: 'failed',
-        error: error instanceof Error ? error.message : 'Unknown error during authentication'
+        error: error instanceof Error ? error.message : 'Unknown error during authentication',
+        traceId: traceId,
+        startTime: Date.now() - 1000, // Approximate start time
+        endTime: Date.now(),
+        duration: 1000, // Approximate duration
       };
     }
   }
@@ -983,7 +1243,8 @@ export class BrowserAutomationService {
         LogLevel.INFO
       );
       
-      const validationUrl = `${BrowserAutomationConfig.getEndpointUrl('session')}/${businessId}/validate`;
+      // Use proper endpoint for validation from config
+      const validationUrl = `${BrowserAutomationConfig.getEndpointUrl('sessionValidate')}/${businessId}`;
       
       const response = await axios.get(validationUrl, {
         timeout: BrowserAutomationConfig.timeouts.request * 2 // Double the timeout for validation

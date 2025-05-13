@@ -10,7 +10,9 @@ This guide provides information on diagnosing and resolving browser automation h
 4. [Troubleshooting Browser Manager Issues](#troubleshooting-browser-manager-issues)
 5. [Browser Instance Management](#browser-instance-management)
 6. [Interpreting Health Check Results](#interpreting-health-check-results)
-7. [Debugging and Diagnostics](#debugging-and-diagnostics)
+7. [Screenshot Testing](#screenshot-testing)
+8. [Container Health Check Script](#container-health-check-script)
+9. [Debugging and Diagnostics](#debugging-and-diagnostics)
 
 ## Health Check System Overview
 
@@ -206,5 +208,83 @@ For deeper diagnostics:
    - `DEBUG_AUTOMATION=true`: Enables detailed browser automation logs
    - `DEBUG_SCREENSHOTS=true`: Logs screenshot capture events
    - `NODE_ENV=development`: More verbose error messages
+
+## Screenshot Testing
+
+The system includes automated screenshot testing to verify that browser automation is functioning correctly:
+
+1. **Test Script**: `capture-test-screenshot.js`
+   - Launches a browser instance
+   - Navigates to Google.com
+   - Takes a screenshot and saves it to the screenshots directory
+   - Verifies that the screenshot is a valid PNG file
+
+2. **Running the Test**
+   ```bash
+   npm run test:screenshot
+   ```
+
+3. **Interpreting Screenshot Test Results**
+   - Successful test will create a PNG file in the screenshots directory
+   - Test will verify the PNG file header to ensure it's valid
+   - Test will output the file size and location for verification
+
+4. **Common Screenshot Test Issues**
+   
+   | Issue | Likely Cause | Resolution |
+   |-------|--------------|------------|
+   | Test fails to launch browser | Missing Playwright dependencies | Run `npx playwright install chromium` |
+   | Invalid PNG file | Browser rendering issue | Check system graphics drivers |
+   | Permission denied | Directory permissions issue | Run `chmod -R 755` on screenshots directory |
+   | Screenshot capture timeout | System resource constraints | Increase memory allocation |
+
+5. **Screenshot Verification**
+   - Screenshots can be viewed directly in the filesystem
+   - Location: `/home/ubuntu/Social-Genius/src/api/browser-use/screenshots/`
+   - Organized by user ID and timestamp
+   - Each screenshot contains a description in the filename
+
+## Container Health Check Script
+
+A comprehensive container health check script is included to verify all components of the system:
+
+1. **Running the Health Check**
+   ```bash
+   npm run health:check
+   ```
+
+2. **Health Check Components**
+   - Browser API connectivity
+   - Redis connectivity
+   - Postgres connectivity
+   - Host network connectivity
+   - Screenshot capability verification
+   - Directory permissions
+   - Environment variable validation
+
+3. **Health Check Output**
+   ```
+   ============================================
+   Health Check Summary:
+   Browser API: OK
+   Redis: OK
+   Postgres: OK
+   host.docker.internal: OK
+   Working Redis URL: redis://localhost:6380
+   Screenshots Directory: OK
+   Screenshot Test: OK
+   ============================================
+   ```
+
+4. **Fixing Common Health Check Issues**
+   - Browser API failure: Restart browser-use-api container
+   - Redis failure: Update Redis URL or restart Redis container
+   - Postgres failure: Check database credentials and restart Postgres
+   - Screenshot test failure: Check Playwright installation and permissions
+
+5. **Automated Checks in CI/CD**
+   - The health check script can be incorporated into CI/CD pipelines
+   - Use `--ci` flag for machine-readable output in CI environments
+   - Exit code 0 indicates all checks passed, non-zero indicates failure
 
 For further assistance, contact the development team or open an issue in the project repository.

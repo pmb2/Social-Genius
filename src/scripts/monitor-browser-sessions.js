@@ -7,8 +7,8 @@
 
 import Redis from 'ioredis';
 
-// Configuration
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6380';
+// Configuration - Ensure consistent Redis URL with other components
+const REDIS_URL = process.env.REDIS_URL || 'redis://redis:6379';
 const REDIS_PREFIX = process.env.REDIS_PREFIX || 'social-genius:';
 const SESSION_CHANNEL = `${REDIS_PREFIX}browser:events`;
 

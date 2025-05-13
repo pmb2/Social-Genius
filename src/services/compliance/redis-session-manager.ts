@@ -9,10 +9,36 @@
 import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 
-// Environment variable configuration with defaults
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+// Environment variable configuration with defaults and fallbacks
+// Primary URL (service name in Docker network)
+const PRIMARY_REDIS_URL = process.env.REDIS_URL || 'redis://redis:6379';
+
+// Fallback URLs to try if primary fails - maintain consistent order of priority
+// Note: host.docker.internal is placed first as it's been observed to be more reliable
+const FALLBACK_REDIS_URLS = [
+  'redis://host.docker.internal:6380', // Access host from Docker container (most reliable)
+  'redis://host.docker.internal:6379', // Alternate port on host
+  'redis://redis:6379',       // Container service name (Docker network)
+  'redis://localhost:6380',   // Default local dev port mapping
+  'redis://localhost:6379',   // Default Redis port
+  'redis://127.0.0.1:6380',   // Explicit localhost IP
+  'redis://127.0.0.1:6379'    // Explicit localhost IP alternate port
+];
+
+// Start with primary URL
+let REDIS_URL = PRIMARY_REDIS_URL;
 const REDIS_PREFIX = process.env.REDIS_PREFIX || 'social-genius:';
 const SESSION_TTL = parseInt(process.env.SESSION_TTL || '86400', 10); // 24 hours in seconds
+
+// Enhanced connection logic
+const isRunningInDocker = process.env.RUNNING_IN_DOCKER === 'true';
+
+// Log Redis connection info at startup for debugging
+console.log(`[RedisSessionManager] Initializing with primary REDIS_URL: ${PRIMARY_REDIS_URL.replace(/\/\/.*@/, '//***:***@')} (credentials masked)`);
+console.log(`[RedisSessionManager] Running in Docker: ${isRunningInDocker ? 'Yes' : 'No/Unknown'}`);
+console.log(`[RedisSessionManager] Fallback URLs available: ${FALLBACK_REDIS_URLS.length}`);
+console.log(`[RedisSessionManager] Using prefix: ${REDIS_PREFIX}`);
+console.log(`[RedisSessionManager] Session TTL: ${SESSION_TTL} seconds`);
 
 // Session data types
 export interface BrowserSessionData {
@@ -66,31 +92,180 @@ export class RedisSessionManager {
    * Private constructor to enforce singleton pattern
    */
   private constructor() {
-    // Initialize Redis connection
-    this.redis = new Redis(REDIS_URL, {
-      retryStrategy: (times) => {
-        // Exponential backoff with max 30s
-        return Math.min(times * 100, 30000);
-      },
-      maxRetriesPerRequest: 3,
-      enableReadyCheck: true,
-    });
-
-    // Setup connection event handlers
-    this.redis.on('connect', () => {
-      console.log('[RedisSessionManager] Connected to Redis');
-    });
-
-    this.redis.on('error', (err) => {
-      console.error('[RedisSessionManager] Redis connection error:', err);
-    });
-
-    this.redis.on('reconnecting', () => {
-      console.log('[RedisSessionManager] Reconnecting to Redis...');
-    });
+    // Initialize Redis connection with fallback support
+    this.initializeRedisWithFallbacks();
 
     // Handle process termination
     process.on('beforeExit', async () => {
+      await this.shutdown();
+    });
+  }
+  
+  /**
+   * Initialize Redis connection with fallback logic and robust reconnection
+   */
+  private initializeRedisWithFallbacks() {
+    // Start with the primary URL
+    let currentUrlIndex = -1; // Start with primary URL (not in fallback array)
+    let connectionAttempts = 0;
+    const maxConnectionAttempts = 10; // Maximum number of total connection attempts
+    const connectionDelayMs = 1000; // Delay between connection attempts
+    
+    const tryNextUrl = () => {
+      connectionAttempts++;
+      
+      if (this.redis) {
+        // Disconnect existing client if there is one
+        try {
+          this.redis.disconnect();
+        } catch (e) {
+          // Ignore disconnect errors
+        }
+      }
+      
+      // Log detailed connection attempt information
+      console.log(`[RedisSessionManager] Connection attempt ${connectionAttempts}/${maxConnectionAttempts}`);
+      
+      // If we've reached the maximum number of attempts, slow down retry frequency
+      if (connectionAttempts >= maxConnectionAttempts) {
+        console.warn(`[RedisSessionManager] Max connection attempts (${maxConnectionAttempts}) reached, will retry less frequently`);
+        // Reset counter but increase delay between attempts
+        connectionAttempts = 0;
+        // We'll still try to connect, just with a longer delay (5 seconds)
+        setTimeout(tryNextUrl, 5000);
+        return;
+      }
+      
+      // Try the next URL
+      currentUrlIndex++;
+      let currentUrl: string;
+      
+      if (currentUrlIndex === 0) {
+        // First try the primary URL
+        currentUrl = PRIMARY_REDIS_URL;
+      } else if (currentUrlIndex <= FALLBACK_REDIS_URLS.length) {
+        // Then try fallbacks in order
+        currentUrl = FALLBACK_REDIS_URLS[currentUrlIndex - 1];
+      } else {
+        // We've tried all URLs, log error and restart from first fallback
+        console.error(`[RedisSessionManager] All Redis connection attempts failed (${currentUrlIndex} attempts)`);
+        console.error('[RedisSessionManager] Restarting from first fallback URL');
+        currentUrlIndex = 0; // Start from the beginning of fallback list
+        currentUrl = FALLBACK_REDIS_URLS[currentUrlIndex];
+      }
+      
+      // Enhanced connection logging with timing
+      const connectStartTime = Date.now();
+      console.log(`[RedisSessionManager] Attempting to connect to Redis at ${currentUrl.replace(/\/\/.*@/, '//***:***@')}`);
+      
+      // Start DNS resolution check for better diagnostics
+      try {
+        const urlObj = new URL(currentUrl);
+        console.log(`[RedisSessionManager] Resolving hostname: ${urlObj.hostname}`);
+        // We'll check connection in the Redis client events
+      } catch (urlError) {
+        console.error(`[RedisSessionManager] Invalid Redis URL: ${currentUrl.replace(/\/\/.*@/, '//***:***@')}`, urlError);
+      }
+      
+      // Create new Redis client with enhanced options for more reliable connection
+      this.redis = new Redis(currentUrl, {
+        retryStrategy: (times) => {
+          // More aggressive retry strategy with exponential backoff
+          if (times > 5) {
+            // After 5 attempts with same URL, try next URL
+            console.log(`[RedisSessionManager] Max retries (${times}) reached for ${currentUrl}, trying next URL...`);
+            setTimeout(tryNextUrl, connectionDelayMs);
+            return false; // Stop retrying this URL
+          }
+          
+          // Exponential backoff with jitter for better distribution
+          const delay = Math.min(times * 1000, 5000); // Cap at 5 seconds
+          const jitter = Math.floor(Math.random() * 200); // Add 0-200ms jitter
+          return delay + jitter;
+        },
+        maxRetriesPerRequest: 3,        // Increase retries per request
+        enableReadyCheck: true,
+        connectTimeout: 10000,          // Increase connect timeout to 10 seconds
+        reconnectOnError: (err) => {
+          // Determine if error should trigger reconnect
+          const targetErrors = ['READONLY', 'ETIMEDOUT', 'ECONNRESET', 'ENOTFOUND'];
+          if (targetErrors.includes(err.code)) {
+            console.log(`[RedisSessionManager] Reconnect-triggering error: ${err.code}`);
+            return true; // True = reconnect for these errors
+          }
+          return false;
+        }
+      });
+      
+      // Enhanced event handlers with more detailed logging
+      this.redis.on('connect', () => {
+        const connectTime = Date.now() - connectStartTime;
+        console.log(`[RedisSessionManager] Connected to Redis at ${currentUrl.replace(/\/\/.*@/, '//***:***@')} (${connectTime}ms)`);
+      });
+      
+      this.redis.on('ready', () => {
+        const readyTime = Date.now() - connectStartTime;
+        console.log(`[RedisSessionManager] Successfully established READY Redis connection at ${currentUrl.replace(/\/\/.*@/, '//***:***@')} (${readyTime}ms)`);
+        // Save the working URL as REDIS_URL for potential reconnects
+        REDIS_URL = currentUrl;
+        
+        // Reset connection attempts counter on successful connection
+        connectionAttempts = 0;
+        
+        // Verify connection with a PING command
+        this.redis.ping().then(result => {
+          console.log(`[RedisSessionManager] Redis PING result: ${result}`);
+        }).catch(err => {
+          console.error(`[RedisSessionManager] Redis PING failed:`, err);
+        });
+      });
+      
+      this.redis.on('error', (err) => {
+        console.error(`[RedisSessionManager] Redis connection error (${currentUrl.replace(/\/\/.*@/, '//***:***@')}):`, err);
+        
+        // More detailed error handling
+        if (
+          err.code === 'ECONNREFUSED' || 
+          err.code === 'ETIMEDOUT' || 
+          err.code === 'ENOTFOUND' ||
+          err.code === 'EAI_AGAIN' ||
+          err.code === 'ECONNRESET' ||
+          err.code === 'ERR_CONNECTION_TIMED_OUT'
+        ) {
+          console.log(`[RedisSessionManager] Connection error (${err.code}), trying next URL...`);
+          // Add a small delay before trying next URL to avoid rapid cycling
+          setTimeout(tryNextUrl, connectionDelayMs);
+        } else {
+          // For other errors, log but don't immediately try next URL
+          console.error(`[RedisSessionManager] Non-connection Redis error:`, err);
+        }
+      });
+      
+      this.redis.on('reconnecting', () => {
+        console.log(`[RedisSessionManager] Reconnecting to Redis (${currentUrl.replace(/\/\/.*@/, '//***:***@')})...`);
+      });
+      
+      this.redis.on('close', () => {
+        console.log(`[RedisSessionManager] Redis connection closed (${currentUrl.replace(/\/\/.*@/, '//***:***@')})`);
+      });
+      
+      this.redis.on('end', () => {
+        console.log(`[RedisSessionManager] Redis connection ended (${currentUrl.replace(/\/\/.*@/, '//***:***@')})`);
+        // Don't automatically reconnect here - let the error handler handle it
+      });
+    };
+    
+    // Start connection attempts with a small initial delay
+    setTimeout(tryNextUrl, 100);
+    
+    // Register process handlers for graceful shutdown
+    process.on('SIGTERM', async () => {
+      console.log('[RedisSessionManager] SIGTERM received, shutting down Redis connection');
+      await this.shutdown();
+    });
+    
+    process.on('SIGINT', async () => {
+      console.log('[RedisSessionManager] SIGINT received, shutting down Redis connection');
       await this.shutdown();
     });
   }

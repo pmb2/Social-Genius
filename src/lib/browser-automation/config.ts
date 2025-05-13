@@ -6,7 +6,14 @@
  */
 
 // Default values for development environment
-const DEFAULT_BROWSER_API_URL = 'http://localhost:5055';
+const DEFAULT_BROWSER_API_URL = 'http://browser-use-api:5055';
+// Fallback URLs to try if the default doesn't work
+const FALLBACK_BROWSER_API_URLS = [
+  'http://browser-use-api:5055',
+  'http://localhost:5055',
+  'http://host.docker.internal:5055',
+  'http://127.0.0.1:5055'
+];
 const DEFAULT_API_TIMEOUT = 60000; // 60 seconds
 const DEFAULT_POLLING_INTERVAL = 2000; // 2 seconds
 const DEFAULT_MAX_POLLING_ATTEMPTS = 30;
@@ -17,6 +24,11 @@ export const BrowserAutomationConfig = {
   // Making this a dynamic property that can be updated at runtime if needed
   _apiUrl: process.env.BROWSER_USE_API_URL || DEFAULT_BROWSER_API_URL,
   
+  // Track which fallback URLs we've tried
+  _fallbackUrls: FALLBACK_BROWSER_API_URLS,
+  _currentFallbackIndex: -1,
+  _connectionFailures: 0,
+  
   get apiUrl() {
     return this._apiUrl;
   },
@@ -24,6 +36,40 @@ export const BrowserAutomationConfig = {
   set apiUrl(value) {
     console.log(`[BrowserAutomationConfig] Updating API URL from ${this._apiUrl} to ${value}`);
     this._apiUrl = value;
+  },
+  
+  /**
+   * Try the next fallback API URL
+   * @returns The next URL to try
+   */
+  tryNextFallbackUrl() {
+    this._currentFallbackIndex++;
+    this._connectionFailures++;
+    
+    // If we've tried all fallbacks, start over
+    if (this._currentFallbackIndex >= this._fallbackUrls.length) {
+      console.log(`[BrowserAutomationConfig] Tried all ${this._fallbackUrls.length} fallback URLs, starting over`);
+      this._currentFallbackIndex = 0;
+    }
+    
+    const nextUrl = this._fallbackUrls[this._currentFallbackIndex];
+    console.log(`[BrowserAutomationConfig] Trying fallback URL #${this._currentFallbackIndex+1}: ${nextUrl}`);
+    this.apiUrl = nextUrl;
+    
+    return nextUrl;
+  },
+  
+  /**
+   * Reset connection failures counter and fallback index on successful connection
+   */
+  resetConnectionAttempts() {
+    const previousFailures = this._connectionFailures;
+    this._connectionFailures = 0;
+    this._currentFallbackIndex = -1;
+    
+    if (previousFailures > 0) {
+      console.log(`[BrowserAutomationConfig] Connection established after ${previousFailures} failures. Reset counter.`);
+    }
   },
   
   // API version for endpoint URLs

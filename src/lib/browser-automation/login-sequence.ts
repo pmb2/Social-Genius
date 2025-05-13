@@ -294,6 +294,10 @@ export class GoogleLoginSequence {
             name: 'Chrome PDF Viewer',
             description: '',
             filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai'
+          }, {
+            name: 'Native Client',
+            description: '',
+            filename: 'internal-nacl-plugin'
           }]
         });
         
@@ -311,9 +315,86 @@ export class GoogleLoginSequence {
         Object.defineProperty(navigator, 'platform', {
           get: () => 'MacIntel'
         });
+        
+        // Override connection
+        Object.defineProperty(navigator, 'connection', {
+          get: () => ({
+            effectiveType: '4g',
+            rtt: 50,
+            downlink: 10,
+            saveData: false
+          })
+        });
+        
+        // Override deviceMemory
+        Object.defineProperty(navigator, 'deviceMemory', {
+          get: () => 8
+        });
+        
+        // Add advanced fingerprint protection
+        const originalGetParameter = WebGLRenderingContext.prototype.getParameter;
+        WebGLRenderingContext.prototype.getParameter = function(parameter) {
+          // Spoof the RENDERER and VENDOR parameters to mimic common values
+          if (parameter === 37446) { // RENDERER
+            return 'Intel Iris OpenGL Engine';
+          }
+          if (parameter === 37445) { // VENDOR
+            return 'Intel Inc.';
+          }
+          return originalGetParameter.call(this, parameter);
+        };
+        
+        // Mock audio context to avoid fingerprinting
+        if (typeof AudioContext !== 'undefined') {
+          const originalGetChannelData = AudioBuffer.prototype.getChannelData;
+          AudioBuffer.prototype.getChannelData = function(channel) {
+            const array = originalGetChannelData.call(this, channel);
+            // Add subtle noise to make fingerprinting more difficult
+            if (array.length > 10000) {
+              for (let i = 0; i < array.length; i += 500) {
+                array[i] = array[i] + (Math.random() * 0.0001 - 0.00005);
+              }
+            }
+            return array;
+          };
+        }
+      });
+
+      // Apply additional stealth techniques using puppeteer-extra-plugin-stealth approach
+      // These are manually implemented since we're using Playwright
+      await this.page.evaluateOnNewDocument(() => {
+        // Override iframe contentWindow access to prevent iframe detection techniques
+        const originalContentWindow = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow');
+        Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
+          ...originalContentWindow,
+          get: function() {
+            const result = originalContentWindow.get.call(this);
+            if (result) {
+              Object.defineProperty(result, 'chrome', { get: () => undefined });
+            }
+            return result;
+          }
+        });
+        
+        // Add missing image property to make fingerprinting more difficult
+        if (HTMLCanvasElement.prototype.toBlob) {
+          const originalToBlob = HTMLCanvasElement.prototype.toBlob;
+          HTMLCanvasElement.prototype.toBlob = function(callback, type, quality) {
+            // Add tiny variations to canvas rendering
+            const originalData = this.getContext('2d').getImageData(0, 0, 1, 1);
+            if (originalData) {
+              const data = originalData.data;
+              data[0] = data[0] + (Math.random() * 2 - 1);
+              data[1] = data[1] + (Math.random() * 2 - 1);
+              data[2] = data[2] + (Math.random() * 2 - 1);
+              this.getContext('2d').putImageData(originalData, 0, 0);
+            }
+            return originalToBlob.call(this, callback, type, quality);
+          };
+        }
       });
       
-      this.log('Anti-detection measures applied');
+      this.log('Enhanced anti-detection measures applied');
     } catch (error) {
       this.log(`Failed to apply anti-detection measures: ${error instanceof Error ? error.message : String(error)}`, 'warn');
       // Continue anyway, this is non-critical
@@ -1242,46 +1323,195 @@ export class GoogleLoginSequence {
   }
   
   /**
-   * Type text with human-like timing
+   * Type text with human-like timing and typing patterns
    */
   private async humanTypeText(selector: string, text: string): Promise<void> {
     // Click on the element first
     await this.page.click(selector);
     
+    // Clear the field first (in case there's any text)
+    await this.page.fill(selector, '');
+    
+    // Wait a moment before starting to type
+    await this.humanDelay(100, 300);
+    
+    // Typing speed variables
+    const avgWordTypingSpeed = Math.random() < 0.7 ? 
+      this.getSpeedProfile('average') : 
+      (Math.random() < 0.5 ? this.getSpeedProfile('fast') : this.getSpeedProfile('slow'));
+    
+    // Calculate typing rhythm variability (higher = more consistent typing)
+    const rhythmConsistency = 0.6 + Math.random() * 0.3; // 0.6 to 0.9
+    
+    // Possibility of making typos
+    const typoChance = Math.random() * 0.03; // 0% to 3% chance per character
+    
     // Type the text character by character with variable delay
-    for (let i = 0; i < text.length; i++) {
-      // Determine typing speed - faster in the middle, slower at beginning and end
-      let minDelay = 50; // ms
-      let maxDelay = 150; // ms
+    let i = 0;
+    while (i < text.length) {
+      // Get base delay for this character based on character type
+      let charDelay = this.getCharacterDelay(text[i], avgWordTypingSpeed);
       
-      // Beginning of text
-      if (i < 3) {
-        minDelay = 100;
-        maxDelay = 300;
-      } 
-      // End of text
-      else if (i > text.length - 3) {
-        minDelay = 80;
-        maxDelay = 250;
+      // Add rhythm variation
+      charDelay = charDelay * (rhythmConsistency + (1 - rhythmConsistency) * (Math.random() * 2 - 1));
+      
+      // Slow down for shift key characters
+      if (this.isShiftRequired(text[i])) {
+        charDelay *= 1.5;
       }
-      // Middle of text - faster typing
-      else {
-        // Occasionally add a short pause as if thinking
-        if (Math.random() < 0.1) {
+      
+      // Occasionally add a short pause as if thinking
+      if (Math.random() < 0.05 && i > 3) {
+        if (Math.random() < 0.3) {
+          // Small pause (thinking)
           await this.humanDelay(300, 800);
+        } else if (Math.random() < 0.1) {
+          // Longer pause (distraction)
+          await this.humanDelay(1000, 2000);
         }
       }
       
-      // Type the character
-      await this.page.type(selector, text[i], { delay: Math.random() * (maxDelay - minDelay) + minDelay });
+      // Simulate occasional typo
+      if (Math.random() < typoChance && i < text.length - 2) {
+        // Type a wrong character
+        const typoChar = this.getTypoCharacter(text[i]);
+        await this.page.type(selector, typoChar, { delay: charDelay });
+        
+        // Short pause to notice the error
+        await this.humanDelay(200, 400);
+        
+        // Press backspace to correct
+        await this.page.keyboard.press('Backspace');
+        
+        // Wait before typing correct character
+        await this.humanDelay(100, 300);
+      }
+      
+      // Type the correct character
+      await this.page.type(selector, text[i], { delay: charDelay });
+      
+      i++;
     }
     
-    // Add a short pause after typing is complete
-    await this.humanDelay(200, 500);
+    // Add a short pause after typing is complete as if checking what was typed
+    await this.humanDelay(300, 700);
   }
   
   /**
-   * Click with human-like behavior
+   * Get typing speed profile (in ms per character)
+   */
+  private getSpeedProfile(profile: 'slow' | 'average' | 'fast'): { min: number, max: number } {
+    switch (profile) {
+      case 'slow':
+        return { min: 100, max: 300 };
+      case 'fast':
+        return { min: 30, max: 100 };
+      case 'average':
+      default:
+        return { min: 50, max: 150 };
+    }
+  }
+  
+  /**
+   * Get delay for a specific character based on its type
+   */
+  private getCharacterDelay(char: string, profile: { min: number, max: number }): number {
+    // Common letters are typed faster than rare ones or symbols
+    const commonLetters = 'etaoinshrdlu';
+    const numbers = '0123456789';
+    const symbols = '!@#$%^&*()_+{}|:"<>?~`-=[]\\;\',./';
+    
+    if (commonLetters.includes(char.toLowerCase())) {
+      // Common letters - faster
+      return Math.random() * (profile.max - profile.min) * 0.7 + profile.min;
+    } else if (numbers.includes(char)) {
+      // Numbers - slightly slower
+      return Math.random() * (profile.max - profile.min) * 0.9 + profile.min;
+    } else if (symbols.includes(char)) {
+      // Symbols - slowest
+      return Math.random() * (profile.max - profile.min) * 1.2 + profile.min;
+    } else {
+      // Other characters - regular speed
+      return Math.random() * (profile.max - profile.min) + profile.min;
+    }
+  }
+  
+  /**
+   * Check if a character requires the shift key
+   */
+  private isShiftRequired(char: string): boolean {
+    return '~!@#$%^&*()_+{}|:"<>?ABCDEFGHIJKLMNOPQRSTUVWXYZ'.includes(char);
+  }
+  
+  /**
+   * Get a typo character that's near the intended character on the keyboard
+   */
+  private getTypoCharacter(char: string): string {
+    // Keyboard layout adjacency
+    const adjacencyMap: Record<string, string[]> = {
+      'a': ['q', 'w', 's', 'z'],
+      'b': ['v', 'g', 'h', 'n'],
+      'c': ['x', 'd', 'f', 'v'],
+      'd': ['s', 'e', 'r', 'f', 'c', 'x'],
+      'e': ['w', 's', 'd', 'r'],
+      'f': ['d', 'r', 't', 'g', 'v', 'c'],
+      'g': ['f', 't', 'y', 'h', 'b', 'v'],
+      'h': ['g', 'y', 'u', 'j', 'n', 'b'],
+      'i': ['u', 'j', 'k', 'o'],
+      'j': ['h', 'u', 'i', 'k', 'm', 'n'],
+      'k': ['j', 'i', 'o', 'l', 'm'],
+      'l': ['k', 'o', 'p', ';'],
+      'm': ['n', 'j', 'k', ','],
+      'n': ['b', 'h', 'j', 'm'],
+      'o': ['i', 'k', 'l', 'p'],
+      'p': ['o', 'l', ';', '['],
+      'q': ['1', '2', 'w', 'a'],
+      'r': ['e', 'd', 'f', 't'],
+      's': ['a', 'w', 'e', 'd', 'x', 'z'],
+      't': ['r', 'f', 'g', 'y'],
+      'u': ['y', 'h', 'j', 'i'],
+      'v': ['c', 'f', 'g', 'b'],
+      'w': ['q', 'a', 's', 'e'],
+      'x': ['z', 's', 'd', 'c'],
+      'y': ['t', 'g', 'h', 'u'],
+      'z': ['a', 's', 'x'],
+      '0': ['9', '-', 'p'],
+      '1': ['q', '2'],
+      '2': ['1', 'q', 'w', '3'],
+      '3': ['2', 'w', 'e', '4'],
+      '4': ['3', 'e', 'r', '5'],
+      '5': ['4', 'r', 't', '6'],
+      '6': ['5', 't', 'y', '7'],
+      '7': ['6', 'y', 'u', '8'],
+      '8': ['7', 'u', 'i', '9'],
+      '9': ['8', 'i', 'o', '0'],
+      '.': [',', 'l', ';'],
+      '@': ['2', '3']
+    };
+    
+    // Convert to lowercase for map lookup
+    const lowerChar = char.toLowerCase();
+    
+    // If we have a mapping for this character
+    if (adjacencyMap[lowerChar]) {
+      const adjacentChars = adjacencyMap[lowerChar];
+      const randomIndex = Math.floor(Math.random() * adjacentChars.length);
+      
+      // For uppercase characters, keep the typo uppercase
+      if (char !== lowerChar) {
+        return adjacentChars[randomIndex].toUpperCase();
+      }
+      
+      return adjacentChars[randomIndex];
+    }
+    
+    // Fallback to a random character
+    const alphabet = 'abcdefghijklmnopqrstuvwxyz';
+    return alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  
+  /**
+   * Click with human-like behavior using advanced mouse movement patterns
    */
   private async humanClick(selector: string): Promise<void> {
     // First, we need to wait for the element to be visible
@@ -1296,18 +1526,220 @@ export class GoogleLoginSequence {
       return;
     }
     
+    // Get current mouse position
+    const currentMousePosition = await this.page.evaluate(() => {
+      return { x: window.mouseX || 0, y: window.mouseY || 0 };
+    }).catch(() => ({ x: 0, y: 0 })); // Default if we can't get it
+    
     // Calculate a random point within the element, slightly biased towards the center
-    const x = boundingBox.x + boundingBox.width * (0.3 + Math.random() * 0.4);
-    const y = boundingBox.y + boundingBox.height * (0.3 + Math.random() * 0.4);
+    const targetX = boundingBox.x + boundingBox.width * (0.3 + Math.random() * 0.4);
+    const targetY = boundingBox.y + boundingBox.height * (0.3 + Math.random() * 0.4);
     
-    // Move to the element with a realistic motion
-    await this.page.mouse.move(x, y, { steps: 5 });
+    // Calculate distance for more realistic movement timing
+    const distance = Math.sqrt(
+      Math.pow(targetX - currentMousePosition.x, 2) + 
+      Math.pow(targetY - currentMousePosition.y, 2)
+    );
     
-    // Short delay before clicking, as a human would
-    await this.humanDelay(50, 150);
+    // Generate Bezier curve control points for mouse movement
+    // More complex for longer distances
+    const numControlPoints = distance > 500 ? 3 : distance > 200 ? 2 : 1;
+    const controlPoints = [];
     
-    // Finally click
-    await this.page.mouse.click(x, y);
+    for (let i = 0; i < numControlPoints; i++) {
+      // Generate slight randomization to path
+      // Perpendicular deviation from straight line increases with distance
+      const ratio = (i + 1) / (numControlPoints + 1);
+      const linearX = currentMousePosition.x + (targetX - currentMousePosition.x) * ratio;
+      const linearY = currentMousePosition.y + (targetY - currentMousePosition.y) * ratio;
+      
+      // Add deviation perpendicular to movement direction
+      const deviation = Math.min(100, distance * 0.1) * (Math.random() * 2 - 1);
+      
+      // Calculate perpendicular vector
+      const dx = targetX - currentMousePosition.x;
+      const dy = targetY - currentMousePosition.y;
+      const length = Math.sqrt(dx * dx + dy * dy);
+      
+      // Perpendicular vector
+      const perpX = -dy / length;
+      const perpY = dx / length;
+      
+      controlPoints.push({
+        x: linearX + perpX * deviation,
+        y: linearY + perpY * deviation
+      });
+    }
+    
+    // Calculate number of steps based on distance
+    // Humans move mouse faster over longer distances
+    const baseSteps = Math.min(40, Math.max(10, Math.floor(distance / 20)));
+    const steps = Math.floor(baseSteps * (0.8 + Math.random() * 0.4)); // +/- 20% randomization
+    
+    // Perform the movement with Bezier curve
+    await this.moveMouse(
+      currentMousePosition.x, 
+      currentMousePosition.y, 
+      targetX, 
+      targetY, 
+      controlPoints, 
+      steps
+    );
+    
+    // Occasionally have a small hover delay before clicking
+    if (Math.random() < 0.7) {
+      await this.humanDelay(50, 150);
+    }
+    
+    // Occasionally move slightly within the element before clicking (like human adjusting)
+    if (Math.random() < 0.3 && boundingBox.width > 20 && boundingBox.height > 20) {
+      const adjustX = targetX + (Math.random() * 6 - 3);
+      const adjustY = targetY + (Math.random() * 6 - 3);
+      
+      // Ensure we're still inside the element
+      const finalX = Math.min(boundingBox.x + boundingBox.width - 2, 
+                            Math.max(boundingBox.x + 2, adjustX));
+      const finalY = Math.min(boundingBox.y + boundingBox.height - 2, 
+                            Math.max(boundingBox.y + 2, adjustY));
+      
+      await this.page.mouse.move(finalX, finalY, { steps: 2 });
+    }
+    
+    // Finally click with randomness in click duration
+    await this.page.mouse.down({ button: 'left' });
+    
+    // Random click duration (most are quick, some are longer)
+    const clickDuration = Math.random() < 0.9 ? 
+      Math.floor(30 + Math.random() * 70) : 
+      Math.floor(100 + Math.random() * 200);
+    
+    await this.page.waitForTimeout(clickDuration);
+    await this.page.mouse.up({ button: 'left' });
+    
+    // Store the mouse position in the page for future use
+    await this.page.evaluate(({ x, y }) => {
+      window.mouseX = x;
+      window.mouseY = y;
+    }, { x: targetX, y: targetY }).catch(() => {});
+  }
+  
+  /**
+   * Move mouse with bezier curve simulation for human-like movement
+   */
+  private async moveMouse(
+    startX: number, 
+    startY: number, 
+    endX: number, 
+    endY: number, 
+    controlPoints: Array<{x: number, y: number}>, 
+    steps: number
+  ): Promise<void> {
+    // B(t) = (1-t)^3 * P0 + 3(1-t)^2 * t * P1 + 3(1-t) * t^2 * P2 + t^3 * P3
+    // For our case, P0 is start point, P3 is end point, and P1,P2 are control points
+    
+    // For more realistic mouse movement, we want non-linear step timing
+    // Move faster in the middle, slower at start and end
+    
+    // Get all points on the curve in one array
+    const points = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      
+      // Apply easing to time
+      // Ease in/out timing function (faster in middle, slower at start/end)
+      // Easing formula: t<0.5 ? 2*t*t : -1+(4-2*t)*t
+      const easedT = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+      
+      // For cubic bezier with arbitrary number of control points
+      let point = this.getBezierPoint(
+        { x: startX, y: startY },
+        { x: endX, y: endY },
+        controlPoints,
+        easedT
+      );
+      
+      points.push(point);
+    }
+    
+    // Execute the movement
+    for (let i = 0; i < points.length; i++) {
+      await this.page.mouse.move(points[i].x, points[i].y);
+      
+      // Vary the movement speed slightly
+      if (i < points.length - 1) {
+        // Variable delay between movements to simulate realistic mouse speed
+        // Faster in the middle, slower at beginning and end
+        const progress = i / points.length;
+        const speedFactor = progress < 0.2 || progress > 0.8 ? 0.7 : 1.3;
+        
+        // Base time is 8-12ms between points, adjusted by speed factor
+        const moveDelay = Math.floor((8 + Math.random() * 4) * speedFactor);
+        
+        // Wait before moving to next point
+        if (moveDelay > 0) {
+          await this.page.waitForTimeout(moveDelay);
+        }
+      }
+    }
+  }
+  
+  /**
+   * Calculate a point on a Bezier curve with multiple control points
+   */
+  private getBezierPoint(
+    start: {x: number, y: number}, 
+    end: {x: number, y: number}, 
+    controlPoints: Array<{x: number, y: number}>, 
+    t: number
+  ): {x: number, y: number} {
+    // For simple case with one control point
+    if (controlPoints.length === 1) {
+      const cp = controlPoints[0];
+      
+      // Quadratic Bezier formula: B(t) = (1-t)^2 * P0 + 2(1-t) * t * P1 + t^2 * P2
+      const x = (1 - t) * (1 - t) * start.x + 2 * (1 - t) * t * cp.x + t * t * end.x;
+      const y = (1 - t) * (1 - t) * start.y + 2 * (1 - t) * t * cp.y + t * t * end.y;
+      
+      return { x, y };
+    }
+    
+    // For two control points
+    if (controlPoints.length === 2) {
+      const cp1 = controlPoints[0];
+      const cp2 = controlPoints[1];
+      
+      // Cubic Bezier formula
+      const x = Math.pow(1 - t, 3) * start.x +
+        3 * Math.pow(1 - t, 2) * t * cp1.x +
+        3 * (1 - t) * Math.pow(t, 2) * cp2.x +
+        Math.pow(t, 3) * end.x;
+        
+      const y = Math.pow(1 - t, 3) * start.y +
+        3 * Math.pow(1 - t, 2) * t * cp1.y +
+        3 * (1 - t) * Math.pow(t, 2) * cp2.y +
+        Math.pow(t, 3) * end.y;
+      
+      return { x, y };
+    }
+    
+    // For any number of control points, use De Casteljau's algorithm
+    // Create a copy of all points including start and end
+    let points = [start, ...controlPoints, end];
+    
+    // Apply algorithm iteratively
+    while (points.length > 1) {
+      const newPoints = [];
+      for (let i = 0; i < points.length - 1; i++) {
+        newPoints.push({
+          x: (1 - t) * points[i].x + t * points[i+1].x,
+          y: (1 - t) * points[i].y + t * points[i+1].y
+        });
+      }
+      points = newPoints;
+    }
+    
+    // Return the final point
+    return points[0];
   }
   
   /**

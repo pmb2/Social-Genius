@@ -146,7 +146,7 @@ const result = await ErrorRetry.withRetry(
 
 Configuration is done through environment variables:
 
-- `REDIS_URL`: Redis connection string (default: `redis://localhost:6379`)
+- `REDIS_URL`: Redis connection string (default: `redis://redis:6379`)
 - `REDIS_PREFIX`: Key prefix for Redis keys (default: `social-genius:`)
 - `SESSION_TTL`: Session time-to-live in seconds (default: `86400` - 24 hours)
 
@@ -158,26 +158,42 @@ Redis is configured in both production and development environments:
 ```yaml
 redis:
   image: redis:alpine
+  container_name: social-genius-redis
   ports:
-    - "6379:6379"
+    - "6380:6379"
   volumes:
     - redis_data:/data
+    - ./src/config/redis.conf:/usr/local/etc/redis/redis.conf
   restart: unless-stopped
-  command: redis-server --appendonly yes
+  command: redis-server /usr/local/etc/redis/redis.conf
   healthcheck:
     test: ["CMD", "redis-cli", "ping"]
+    interval: 5s
+    timeout: 5s
+    retries: 5
+  networks:
+    - social_genius_network
 ```
 
 **Development** (`docker-compose.dev.yml`):
 ```yaml
 redis:
   image: redis:alpine
+  container_name: social-genius-redis
   ports:
-    - "6379:6379"
+    - "6380:6379"
   volumes:
     - redis_data:/data
+    - ./src/config/redis.conf:/usr/local/etc/redis/redis.conf
   restart: unless-stopped
-  command: redis-server --appendonly yes
+  command: redis-server /usr/local/etc/redis/redis.conf
+  healthcheck:
+    test: ["CMD", "redis-cli", "ping"]
+    interval: 5s
+    timeout: 5s
+    retries: 5
+  networks:
+    - social_genius_network
 
 redis-commander:
   image: rediscommander/redis-commander:latest
@@ -186,12 +202,43 @@ redis-commander:
     - REDIS_HOSTS=local:redis:6379
   ports:
     - "8081:8081"
+  depends_on:
+    - redis
+  networks:
+    - social_genius_network
 ```
+
+## Connectivity Testing
+
+A new connectivity test script has been added to help diagnose issues between containers:
+
+```bash
+# Run the connectivity test
+npm run test:connectivity
+```
+
+This script tests connections between:
+- App container ↔ Browser-Use API service
+- App container ↔ Redis
+- App container ↔ Postgres
+
+The script provides detailed error reporting and troubleshooting suggestions.
 
 ## Next Steps
 
-1. **Browser-Use API Integration**: Update the Python FastAPI server to use Redis for session management
-2. **Comprehensive Testing**: Create automated tests for session persistence and recovery
-3. **Monitoring Dashboard**: Implement monitoring for Redis and session statistics
-4. **Advanced Retry Logic**: Enhance the error handling with more sophisticated retry mechanisms
-5. **Rate Limiting**: Add Redis-based rate limiting to prevent account lockouts
+1. ✅ **Container Connectivity**: Updated Docker configuration for reliable container communication
+2. ✅ **Redis URL Configuration**: Fixed Redis URL to use service name for consistent connectivity
+3. ✅ **Healthchecks**: Added comprehensive healthchecks to all services
+4. ✅ **Connectivity Testing**: Added test scripts to diagnose connectivity issues
+5. **Browser-Use API Redis Integration**: Extend the Python FastAPI server to use Redis for cross-service session synchronization
+6. **Automated Testing**: Create automated tests for session persistence and recovery
+7. **Monitoring Dashboard**: Implement monitoring for Redis and session statistics
+8. **Advanced Retry Logic**: Enhance the error handling with more sophisticated retry mechanisms
+9. **Rate Limiting**: Add Redis-based rate limiting to prevent account lockouts
+
+## Documentation
+
+For more information on container connectivity and troubleshooting, see:
+- [Container Connectivity Guide](CONTAINER_CONNECTIVITY.md)
+- [Browser Automation Architecture](BROWSER_AUTOMATION_ARCHITECTURE.md)
+- [Google Auth Flow](GOOGLE_AUTH_FLOW.md)

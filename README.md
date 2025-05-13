@@ -96,6 +96,7 @@ Comprehensive documentation is available in the `/docs` directory:
 - [Google Auth Flow](src/docs/GOOGLE_AUTH_FLOW.md)
 - [PostgreSQL Management](src/docs/POSTGRES_MANAGEMENT.md)
 - [PGVector Integration](src/docs/PGVECTOR_INTEGRATION.md)
+- [Authentication Debugging](src/docs/GOOGLE_AUTH_TROUBLESHOOTING.md)
 
 ## Troubleshooting
 
@@ -106,6 +107,55 @@ To reduce development console noise (especially [Fast Refresh] messages), use:
 ```bash
 # Start development with reduced console noise
 npm run dev:quiet
+```
+
+### Google Authentication Debugging
+
+The system now captures screenshots during the Google authentication process to help with debugging and verification. Screenshots are saved to:
+
+```
+src/api/browser-use/screenshots/{userId}/{timestamp-description}.png
+```
+
+#### Screenshot Utility Tools
+
+**1. List Screenshots**
+
+View all captured screenshots for debugging:
+
+```bash
+node src/scripts/list-screenshots.js
+# OR for a specific user
+node src/scripts/list-screenshots.js [userId]
+```
+
+**2. View Screenshots**
+
+Open a screenshot in your browser:
+
+```bash
+node src/scripts/view-screenshot.js [userId] [filename]
+```
+
+**3. Test Authentication**
+
+Test Google authentication with screenshot capture:
+
+```bash
+# Set environment variables for credentials
+export TEST_EMAIL="your-test-email@gmail.com"
+export TEST_PASSWORD="your-password"
+
+# Run the test script
+node src/scripts/test-google-auth.js
+```
+
+**4. API Access**
+
+Screenshots can also be accessed via the API endpoint:
+
+```
+/api/compliance/auth-screenshots?userId={userId}&listAll=true
 ```
 
 ### Database Issues

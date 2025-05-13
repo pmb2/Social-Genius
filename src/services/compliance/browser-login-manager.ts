@@ -264,6 +264,12 @@ export class BrowserLoginManager {
       options?: AuthRequest['options'];
     }
   ): Promise<LoginResult> {
+    // Import the utilities for screenshot handling
+    const { ensureUserScreenshotDirectory } = await import('@/lib/utilities/browser-logging');
+    
+    // Ensure screenshot directory exists for this business
+    const screenshotDir = ensureUserScreenshotDirectory(params.businessId);
+    
     // Create login configuration
     const loginConfig: LoginConfig = {
       email: params.email,
@@ -274,20 +280,67 @@ export class BrowserLoginManager {
       timeout: params.options?.timeout || 60000,
       maxRetries: params.options?.maxRetries || 3,
       screenshotOnError: true,
-      screenshotPath: params.options?.screenshotPath || '/tmp/screenshots',
+      // Use our prepared screenshot directory in the proper location
+      screenshotPath: screenshotDir,
       headless: true,
       detectDevtools: true
     };
     
+    console.log(`[BrowserLoginManager:${params.traceId}] Using screenshot directory: ${screenshotDir}`);
+    
+    // Take an initial screenshot of the page before login
+    try {
+      const initialScreenshotPath = `${screenshotDir}/pre-login-${Date.now()}.png`;
+      await page.screenshot({ path: initialScreenshotPath, fullPage: true });
+      console.log(`[BrowserLoginManager:${params.traceId}] Captured initial screenshot at ${initialScreenshotPath}`);
+    } catch (screenshotError) {
+      console.error(`[BrowserLoginManager:${params.traceId}] Error capturing initial screenshot:`, screenshotError);
+    }
+    
     // Execute login with retry
     return await ErrorRetry.withRetry(
-      async () => executeGoogleLogin(page, context, loginConfig),
+      async () => {
+        // Take a screenshot at each major step of the login process
+        page.on('load', async () => {
+          try {
+            const pageLoadScreenshotPath = `${screenshotDir}/page-load-${Date.now()}.png`;
+            await page.screenshot({ path: pageLoadScreenshotPath, fullPage: true });
+            console.log(`[BrowserLoginManager:${params.traceId}] Captured page load screenshot at ${pageLoadScreenshotPath}`);
+          } catch (error) {
+            console.error(`[BrowserLoginManager:${params.traceId}] Error capturing page load screenshot:`, error);
+          }
+        });
+        
+        // Execute the login
+        const result = await executeGoogleLogin(page, context, loginConfig);
+        
+        // Capture a final screenshot after login completion
+        try {
+          const finalScreenshotPath = `${screenshotDir}/post-login-${Date.now()}.png`;
+          await page.screenshot({ path: finalScreenshotPath, fullPage: true });
+          console.log(`[BrowserLoginManager:${params.traceId}] Captured final screenshot at ${finalScreenshotPath}`);
+        } catch (screenshotError) {
+          console.error(`[BrowserLoginManager:${params.traceId}] Error capturing final screenshot:`, screenshotError);
+        }
+        
+        return result;
+      },
       {
         maxAttempts: loginConfig.maxRetries || 3,
         baseDelay: 1000,
         maxDelay: 10000,
         onRetry: (error, attempt, delay) => {
           console.log(`[BrowserLoginManager:${params.traceId}] Retrying login (attempt ${attempt}) after ${delay}ms: ${error.message}`);
+          
+          // Take a screenshot on each retry
+          try {
+            const retryScreenshotPath = `${screenshotDir}/retry-${attempt}-${Date.now()}.png`;
+            page.screenshot({ path: retryScreenshotPath, fullPage: true })
+              .then(() => console.log(`[BrowserLoginManager:${params.traceId}] Captured retry screenshot at ${retryScreenshotPath}`))
+              .catch(screenshotError => console.error(`[BrowserLoginManager:${params.traceId}] Error capturing retry screenshot:`, screenshotError));
+          } catch (screenshotError) {
+            console.error(`[BrowserLoginManager:${params.traceId}] Error setting up retry screenshot:`, screenshotError);
+          }
         }
       }
     );

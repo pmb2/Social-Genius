@@ -8,7 +8,7 @@
 import Redis from 'ioredis';
 
 // Configuration
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6380';
+const REDIS_URL = process.env.REDIS_URL || 'redis://host.docker.internal:6380';
 const REDIS_PREFIX = process.env.REDIS_PREFIX || 'social-genius:test:';
 const TEST_KEY = `${REDIS_PREFIX}test-key`;
 const TEST_SET = `${REDIS_PREFIX}test-set`;

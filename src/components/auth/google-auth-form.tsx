@@ -57,23 +57,41 @@ export function GoogleAuthForm({ businessId, onSuccess, onCancel }: GoogleAuthFo
     setIsAuthenticating(true);
     
     try {
+      // Generate a unique request ID for this authentication attempt
+      const requestId = `auth-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      
       // Call the API to authenticate with Google
       const response = await fetch('/api/google-auth', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-Request-ID': requestId
         },
         body: JSON.stringify({
           businessId,
           email,
-          password
+          password,
+          options: {
+            takeScreenshots: true, // Always take screenshots
+            debug: true, // Enable debug mode for more detailed logs
+          }
         })
       });
       
       const data = await response.json();
       
       if (!response.ok || !data.success) {
+        // Check if there are screenshots even though authentication failed
+        if (data.screenshots && data.screenshots.length > 0) {
+          console.log(`Authentication failed but ${data.screenshots.length} screenshots were captured:`, data.screenshots);
+        }
+        
         throw new Error(data.error || 'Authentication failed');
+      }
+      
+      // Log screenshot information if available
+      if (data.screenshots && data.screenshots.length > 0) {
+        console.log(`Authentication successful with ${data.screenshots.length} screenshots captured:`, data.screenshots);
       }
       
       // Clear the form and notify parent component of success

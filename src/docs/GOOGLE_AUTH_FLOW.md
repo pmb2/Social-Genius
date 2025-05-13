@@ -18,7 +18,7 @@ for compliance checks and management features. The process involves:
 7. Upon successful authentication, we store the session, cookie and all other data that helps us maintain persistent
    access to their account
 8. Once login is successful and we have saved the persistence data, the browser-use automation task to scrape all of the
-   users google business details, posts, reviews and all other data and we stroe it all in the database.
+   users google business details, posts, reviews and all other data and we store it all in the database.
 
 ## Detailed Flow with Logging
 

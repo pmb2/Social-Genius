@@ -5,6 +5,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "3000:3000"
       - "3001:3000"
@@ -14,7 +16,7 @@ services:
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: dev-secret-key-change-me
       BROWSER_USE_API_URL: http://browser-use-api:5055
-      REDIS_URL: redis://redis:6380
+      REDIS_URL: redis://host.docker.internal:6380
       REDIS_PREFIX: "social-genius:dev:"
       SESSION_TTL: 86400
     volumes:
@@ -29,6 +31,7 @@ services:
   # PostgreSQL with development settings
   postgres:
     image: pgvector/pgvector:pg14
+    container_name: social-genius-postgres
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
@@ -38,6 +41,12 @@ services:
       - ./docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
     ports:
       - "5435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     
   # pgAdmin for database management
   pgadmin:
@@ -58,6 +67,8 @@ services:
     build:
       context: ./src/api/browser-use
       dockerfile: Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     container_name: social-genius-browser-api
     volumes:
       - ./src/api/browser-use/screenshots:/app/screenshots
@@ -66,18 +77,26 @@ services:
       - HOST=0.0.0.0
       - MAX_CONCURRENT_BROWSERS=10
       - SCREENSHOT_PATH=/app/screenshots
-      - REDIS_URL=redis://redis:6380
+      - REDIS_URL=redis://host.docker.internal:6380
     ports:
       - "5055:5055"
     restart: unless-stopped
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5055/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     networks:
       - social_genius_network
       
   # Redis for session sharing and caching
   redis:
     image: redis:alpine
+    container_name: social-genius-redis
     ports:
       - "6380:6379"
     volumes:
@@ -98,7 +117,7 @@ services:
     image: rediscommander/redis-commander:latest
     restart: always
     environment:
-      - REDIS_HOSTS=local:redis:6380
+      - REDIS_HOSTS=local:host.docker.internal:6380
     ports:
       - "8081:8081"
     depends_on:
