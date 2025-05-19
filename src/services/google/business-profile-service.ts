@@ -121,6 +121,66 @@ interface ApiErrorResponse {
   };
 }
 
+// Interfaces for Posts and Reviews
+interface GooglePost {
+  name: string;
+  languageCode: string;
+  summary: string;
+  state: string;
+  createTime: string;
+  updateTime: string;
+  callToAction?: {
+    actionType: string;
+    url: string;
+  };
+  media?: Array<{
+    mediaFormat: string;
+    name: string;
+  }>;
+  event?: {
+    title: string;
+    schedule: {
+      startTime: string;
+      endTime: string;
+    };
+  };
+}
+
+interface GooglePostsResponse {
+  localPosts: GooglePost[];
+  nextPageToken?: string;
+}
+
+interface GoogleReview {
+  name: string;
+  reviewId: string;
+  reviewer: {
+    displayName: string;
+    profilePhotoUrl?: string;
+  };
+  starRating: number;
+  comment: string;
+  createTime: string;
+  updateTime: string;
+  reviewReply?: {
+    comment: string;
+    updateTime: string;
+  };
+}
+
+interface GoogleReviewsResponse {
+  reviews: GoogleReview[];
+  averageRating: number;
+  totalReviewCount: number;
+  nextPageToken?: string;
+}
+
+interface GoogleReviewReply {
+  name: string;
+  comment: string;
+  updateTime: string;
+}
+
 export class GoogleBusinessProfileService {
   private oauthService: GoogleOAuthService;
   private accessToken?: string;
@@ -381,5 +441,174 @@ export class GoogleBusinessProfileService {
       console.error('Error getting all business locations:', error);
       throw new Error(`Failed to get business locations: ${error.message}`);
     }
+  }
+
+  /**
+   * Gets posts for a specific location
+   * @param locationName Location name (in format "accounts/{accountId}/locations/{locationId}")
+   * @param userId User ID
+   * @param businessId Business ID
+   * @param pageSize Number of posts to fetch (default: 20)
+   * @param pageToken Token for pagination
+   * @returns Google posts data
+   */
+  async getPosts(
+    locationName: string,
+    userId?: string,
+    businessId?: string,
+    pageSize: number = 20,
+    pageToken?: string
+  ): Promise<GooglePostsResponse> {
+    // The GBP API endpoint for posts is in the mybusinessplaceactions API
+    const url = `${API_URLS.mybusiness}/${locationName}/localPosts`;
+    const params: Record<string, string> = {
+      pageSize: pageSize.toString(),
+    };
+    
+    if (pageToken) {
+      params.pageToken = pageToken;
+    }
+    
+    return this.request<GooglePostsResponse>('GET', url, userId, businessId, undefined, params);
+  }
+
+  /**
+   * Creates a new post for a specific location
+   * @param locationName Location name (in format "accounts/{accountId}/locations/{locationId}")
+   * @param postData Post data to create
+   * @param userId User ID
+   * @param businessId Business ID
+   * @returns Created post data
+   */
+  async createPost(
+    locationName: string,
+    postData: {
+      languageCode: string;
+      summary: string;
+      callToAction?: {
+        actionType: string;
+        url: string;
+      };
+      media?: Array<{
+        mediaFormat: string;
+        sourceUrl: string;
+      }>;
+      event?: {
+        title: string;
+        schedule: {
+          startTime: string;
+          endTime: string;
+        };
+      };
+    },
+    userId?: string,
+    businessId?: string
+  ): Promise<GooglePost> {
+    const url = `${API_URLS.mybusiness}/${locationName}/localPosts`;
+    
+    return this.request<GooglePost>('POST', url, userId, businessId, postData);
+  }
+
+  /**
+   * Updates an existing post
+   * @param postName Post name (in format "accounts/{accountId}/locations/{locationId}/localPosts/{postId}")
+   * @param postData Post data to update
+   * @param updateMask Fields to update (comma-separated)
+   * @param userId User ID
+   * @param businessId Business ID
+   * @returns Updated post data
+   */
+  async updatePost(
+    postName: string,
+    postData: Partial<GooglePost>,
+    updateMask: string[],
+    userId?: string,
+    businessId?: string
+  ): Promise<GooglePost> {
+    const url = `${API_URLS.mybusiness}/${postName}`;
+    const params = {
+      updateMask: updateMask.join(','),
+    };
+    
+    return this.request<GooglePost>('PATCH', url, userId, businessId, postData, params);
+  }
+
+  /**
+   * Deletes a post
+   * @param postName Post name (in format "accounts/{accountId}/locations/{locationId}/localPosts/{postId}")
+   * @param userId User ID
+   * @param businessId Business ID
+   */
+  async deletePost(
+    postName: string,
+    userId?: string,
+    businessId?: string
+  ): Promise<void> {
+    const url = `${API_URLS.mybusiness}/${postName}`;
+    
+    return this.request<void>('DELETE', url, userId, businessId);
+  }
+
+  /**
+   * Gets reviews for a specific location
+   * @param locationName Location name (in format "accounts/{accountId}/locations/{locationId}")
+   * @param userId User ID
+   * @param businessId Business ID
+   * @param pageSize Number of reviews to fetch (default: 20)
+   * @param pageToken Token for pagination
+   * @returns Google reviews data
+   */
+  async getReviews(
+    locationName: string,
+    userId?: string,
+    businessId?: string,
+    pageSize: number = 20,
+    pageToken?: string
+  ): Promise<GoogleReviewsResponse> {
+    const url = `${API_URLS.mybusiness}/${locationName}/reviews`;
+    const params: Record<string, string> = {
+      pageSize: pageSize.toString(),
+    };
+    
+    if (pageToken) {
+      params.pageToken = pageToken;
+    }
+    
+    return this.request<GoogleReviewsResponse>('GET', url, userId, businessId, undefined, params);
+  }
+
+  /**
+   * Responds to a review
+   * @param reviewName Review name (in format "accounts/{accountId}/locations/{locationId}/reviews/{reviewId}")
+   * @param comment Reply text
+   * @param userId User ID
+   * @param businessId Business ID
+   * @returns Review reply data
+   */
+  async replyToReview(
+    reviewName: string,
+    comment: string,
+    userId?: string,
+    businessId?: string
+  ): Promise<GoogleReviewReply> {
+    const url = `${API_URLS.mybusiness}/${reviewName}/reply`;
+    
+    return this.request<GoogleReviewReply>('PUT', url, userId, businessId, { comment });
+  }
+
+  /**
+   * Deletes a review reply
+   * @param reviewName Review name (in format "accounts/{accountId}/locations/{locationId}/reviews/{reviewId}")
+   * @param userId User ID
+   * @param businessId Business ID
+   */
+  async deleteReviewReply(
+    reviewName: string,
+    userId?: string,
+    businessId?: string
+  ): Promise<void> {
+    const url = `${API_URLS.mybusiness}/${reviewName}/reply`;
+    
+    return this.request<void>('DELETE', url, userId, businessId);
   }
 }

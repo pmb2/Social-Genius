@@ -39,8 +39,8 @@ COPY package.json package-lock.json ./
 # Install dependencies (with legacy peer deps to avoid version conflicts)
 RUN npm ci --legacy-peer-deps
 
-# Make sure the Radix UI dropdown menu is installed
-RUN npm install @radix-ui/react-dropdown-menu
+# Make sure the required packages are installed
+RUN npm install @radix-ui/react-dropdown-menu google-auth-library express
 
 # Install Playwright browsers
 RUN npx playwright install chromium

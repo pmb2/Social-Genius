@@ -94,6 +94,7 @@ Comprehensive documentation is available in the `/docs` directory:
 - [API Documentation](src/docs/API_DOCUMENTATION.md)
 - [Browser Automation Architecture](src/docs/BROWSER_AUTOMATION_ARCHITECTURE.md)
 - [Google Auth Flow](src/docs/GOOGLE_AUTH_FLOW.md)
+- [Google OAuth Setup](src/docs/GOOGLE_OAUTH_SETUP.md) - **NEW: Guide for setting up Google OAuth**
 - [PostgreSQL Management](src/docs/POSTGRES_MANAGEMENT.md)
 - [PGVector Integration](src/docs/PGVECTOR_INTEGRATION.md)
 - [Authentication Debugging](src/docs/GOOGLE_AUTH_TROUBLESHOOTING.md)

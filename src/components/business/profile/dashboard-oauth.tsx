@@ -11,6 +11,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog" // Added Dialog components
 import { ProgressCircle } from "@/components/ui/progress-circle"
 import { StatusIndicator } from "@/components/ui/status-indicator"
 import { useAuth } from "@/lib/auth"
@@ -594,7 +595,7 @@ export function BusinessProfileDashboardOAuth({ onBusinessCountChange }: Busines
                     }
                 }
             }}>
-                <Dialog.Content className="p-0 max-w-[1200px] w-[95vw] h-[95vh] max-h-[92vh] overflow-hidden">
+                <DialogContent className="p-0 max-w-[1200px] w-[95vw] h-[95vh] max-h-[92vh] overflow-hidden">
                     <BusinessProfileModal 
                         business={selectedBusiness ? {
                             ...selectedBusiness,
@@ -602,7 +603,7 @@ export function BusinessProfileDashboardOAuth({ onBusinessCountChange }: Busines
                         } : null} 
                         onClose={handleClose}
                     />
-                </Dialog.Content>
+                </DialogContent>
             </Dialog>
 
             {/* Add Business Modal - Use OAuth or legacy based on feature flag */}

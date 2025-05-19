@@ -8,6 +8,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleOAuthService } from '@/services/google/oauth-service';
 import { GoogleBusinessProfileService } from '@/services/google/business-profile-service';
 import { DatabaseService } from '@/services/database';
+import fs from 'fs';
+import path from 'path';
 
 // Specify that this route runs on the Node.js runtime, not Edge
 export const runtime = 'nodejs';
@@ -16,6 +18,8 @@ export const runtime = 'nodejs';
  * Handles the OAuth callback from Google
  */
 export async function GET(req: NextRequest) {
+  console.log('Google OAuth callback received');
+  
   const searchParams = req.nextUrl.searchParams;
   const code = searchParams.get('code');
   const state = searchParams.get('state');
@@ -24,7 +28,19 @@ export async function GET(req: NextRequest) {
   // Handle authorization errors from Google
   if (error) {
     console.error(`Google OAuth error: ${error}`);
-    return NextResponse.redirect('/dashboard?error=google_auth_error');
+    
+    // Log detailed error information
+    const errorReason = searchParams.get('error_reason') || '';
+    const errorDescription = searchParams.get('error_description') || '';
+    
+    console.error('Google OAuth error details:', {
+      error,
+      error_reason: errorReason,
+      error_description: errorDescription
+    });
+    
+    // Redirect with specific error details for troubleshooting
+    return NextResponse.redirect(`/dashboard?error=google_auth_error&reason=${encodeURIComponent(error)}&description=${encodeURIComponent(errorDescription)}`);
   }
   
   // Ensure we have the required parameters
@@ -34,17 +50,138 @@ export async function GET(req: NextRequest) {
   }
   
   try {
+    // First, ensure Google OAuth tables exist
+    // Directly check and initialize tables without external functions
+    try {
+      console.log('Checking for required database tables...');
+      const db = DatabaseService.getInstance();
+      const pool = db.getPool();
+      
+      // Check if the OAuth tokens table exists
+      const tableResult = await pool.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'google_oauth_tokens'
+        );
+      `);
+      
+      const oauthTablesExist = tableResult.rows[0].exists;
+      
+      if (!oauthTablesExist) {
+        console.log('Google OAuth tables do not exist, initializing...');
+        
+        const migrationsPath = path.join(process.cwd(), 'src', 'services', 'database', 'migrations');
+        
+        // Initialize OAuth tables
+        const oauthSchemaPath = path.join(migrationsPath, 'google_oauth_schema.sql');
+        
+        if (fs.existsSync(oauthSchemaPath)) {
+          const oauthSchemaSql = fs.readFileSync(oauthSchemaPath, 'utf8');
+          
+          // Execute schema in a transaction
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
+            
+            // Split on semicolons to execute each statement
+            const statements = oauthSchemaSql
+              .split(';')
+              .map(stmt => stmt.trim())
+              .filter(stmt => stmt.length > 0);
+            
+            for (const statement of statements) {
+              await client.query(statement);
+            }
+            
+            await client.query('COMMIT');
+            console.log('Successfully initialized Google OAuth tables');
+          } catch (error) {
+            await client.query('ROLLBACK');
+            console.error('Error initializing Google OAuth tables:', error);
+            return NextResponse.redirect('/dashboard?error=database_setup_failed');
+          } finally {
+            client.release();
+          }
+        } else {
+          console.error('OAuth schema file not found:', oauthSchemaPath);
+          return NextResponse.redirect('/dashboard?error=database_setup_failed');
+        }
+      }
+      
+      // Check if the business tables exist
+      const businessTableResult = await pool.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'businesses'
+        );
+      `);
+      
+      const businessTablesExist = businessTableResult.rows[0].exists;
+      
+      if (!businessTablesExist) {
+        console.log('Business tables do not exist, initializing...');
+        
+        const migrationsPath = path.join(process.cwd(), 'src', 'services', 'database', 'migrations');
+        const businessSchemaPath = path.join(migrationsPath, 'business_schema.sql');
+        
+        if (fs.existsSync(businessSchemaPath)) {
+          const businessSchemaSql = fs.readFileSync(businessSchemaPath, 'utf8');
+          
+          // Execute schema in a transaction
+          const client = await pool.connect();
+          try {
+            await client.query('BEGIN');
+            
+            // Split on semicolons to execute each statement
+            const statements = businessSchemaSql
+              .split(';')
+              .map(stmt => stmt.trim())
+              .filter(stmt => stmt.length > 0);
+            
+            for (const statement of statements) {
+              await client.query(statement);
+            }
+            
+            await client.query('COMMIT');
+            console.log('Successfully initialized business tables');
+          } catch (error) {
+            await client.query('ROLLBACK');
+            console.error('Error initializing business tables:', error);
+            return NextResponse.redirect('/dashboard?error=database_setup_failed');
+          } finally {
+            client.release();
+          }
+        } else {
+          console.error('Business schema file not found:', businessSchemaPath);
+          return NextResponse.redirect('/dashboard?error=database_setup_failed');
+        }
+      }
+      
+      console.log('All required database tables exist or have been initialized');
+    } catch (error) {
+      console.error('Error checking or initializing database tables:', error);
+      return NextResponse.redirect('/dashboard?error=database_setup_failed');
+    }
+    
     // Decode the state parameter to extract user ID and business name
-    let stateData: { userId: string; businessName: string; timestamp: number };
+    let stateData: { 
+      userId: string; 
+      businessName: string; 
+      businessType?: string;
+      timestamp: number 
+    };
     
     try {
       stateData = JSON.parse(Buffer.from(state, 'base64').toString('utf-8'));
+      console.log('Decoded state data:', stateData);
     } catch (parseError) {
       console.error('Failed to parse state parameter:', parseError);
       return NextResponse.redirect('/dashboard?error=invalid_state');
     }
     
-    const { userId, businessName, timestamp } = stateData;
+    const { userId, businessName, timestamp, businessType = 'local' } = stateData;
     
     // Validate state to prevent CSRF attacks
     // Check timestamp is not too old (10 minute expiry)
@@ -55,20 +192,27 @@ export async function GET(req: NextRequest) {
     }
     
     // Exchange the code for tokens
+    console.log('Creating OAuth service instance...');
     const oauthService = new GoogleOAuthService();
+    
+    console.log('Exchanging code for tokens...');
     const tokens = await oauthService.getTokensFromCode(code);
+    console.log('Tokens received successfully');
     
     // Create a temporary business ID for token storage
     // We'll update this to the real business ID after creation
     const tempBusinessId = `temp_${Date.now()}`;
     
     // Store the tokens temporarily
+    console.log('Storing tokens temporarily with ID:', tempBusinessId);
     await oauthService.storeTokens(userId, tempBusinessId, tokens);
     
     // Get Google Business Profile accounts and locations
+    console.log('Creating BusinessProfileService...');
     const profileService = new GoogleBusinessProfileService(tokens.access_token);
     
     // Get accounts
+    console.log('Fetching Google Business accounts...');
     const accountsData = await profileService.getAccounts();
     
     if (!accountsData || !accountsData.accounts || accountsData.accounts.length === 0) {
@@ -76,10 +220,14 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect('/dashboard?error=no_business_accounts');
     }
     
+    console.log(`Found ${accountsData.accounts.length} Google Business accounts`);
+    
     // Use the first account
     const account = accountsData.accounts[0];
+    console.log('Using account:', account.name);
     
     // Get locations for this account
+    console.log('Fetching locations for account...');
     const locationsData = await profileService.getLocations(account.name);
     
     if (!locationsData || !locationsData.locations || locationsData.locations.length === 0) {
@@ -87,15 +235,22 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect('/dashboard?error=no_locations');
     }
     
+    console.log(`Found ${locationsData.locations.length} locations for account`);
+    
     // Get the database service
+    console.log('Getting database service...');
     const db = DatabaseService.getInstance();
     
+    // Create a unique business ID
+    const businessIdValue = `biz_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    
     // Create the business record in the database
+    console.log('Creating business record in database...');
     const businessResult = await db.query(
-      `INSERT INTO businesses (user_id, name, status, created_at, updated_at) 
-       VALUES ($1, $2, $3, NOW(), NOW()) 
+      `INSERT INTO businesses (business_id, user_id, name, status, created_at, updated_at) 
+       VALUES ($1, $2, $3, $4, NOW(), NOW()) 
        RETURNING id, business_id as "businessId"`,
-      [userId, businessName, 'active']
+      [businessIdValue, userId, businessName, 'active']
     );
     
     if (!businessResult || !businessResult.rows || businessResult.rows.length === 0) {
@@ -105,7 +260,10 @@ export async function GET(req: NextRequest) {
     const businessRecord = businessResult.rows[0];
     const businessId = businessRecord.id;
     
+    console.log('Business created with ID:', businessId);
+    
     // Associate the Google account with the business
+    console.log('Associating Google account with business...');
     await db.query(
       `INSERT INTO google_business_accounts 
        (business_id, google_account_id, google_account_name) 
@@ -114,6 +272,7 @@ export async function GET(req: NextRequest) {
     );
     
     // Insert locations
+    console.log('Inserting business locations...');
     for (const location of locationsData.locations) {
       // Determine if this is the primary location (first one)
       const isPrimary = location === locationsData.locations[0];
@@ -127,7 +286,10 @@ export async function GET(req: NextRequest) {
     }
     
     // Migrate tokens from temporary ID to actual business ID
+    console.log('Migrating tokens to permanent business ID...');
     await oauthService.migrateTokens(userId, tempBusinessId, businessId);
+    
+    console.log('Google OAuth flow completed successfully');
     
     // Redirect to dashboard with success message
     return NextResponse.redirect('/dashboard?success=business_connected');
@@ -136,9 +298,10 @@ export async function GET(req: NextRequest) {
     
     // Handle specific error cases
     if (error.message && error.message.includes('refresh token')) {
-      return NextResponse.redirect('/dashboard?error=missing_refresh_token');
+      return NextResponse.redirect('/dashboard?error=missing_refresh_token&details=' + encodeURIComponent(error.message));
     }
     
-    return NextResponse.redirect('/dashboard?error=auth_error');
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.redirect(`/dashboard?error=auth_error&details=${encodeURIComponent(errorMessage)}`);
   }
 }
