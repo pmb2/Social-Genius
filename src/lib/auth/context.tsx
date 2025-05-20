@@ -385,55 +385,22 @@ export function AuthProvider({children}: { children: ReactNode }) {
                 console.error('Error testing cookies before login:', cookieError);
             }
 
-            // Call the API to login the user
+            // Import the secure credential handler
+            const { secureTransmit } = await import('@/lib/utilities/secure-credential-handler');
+
+            // Call the API to login the user using secure transmission
             try {
                 const timestamp = new Date().toISOString();
                 console.log(`[AUTH ${timestamp}] Logging in user:`, email);
 
-                // Hash the password client-side before sending to server
-                // This is not a full security solution but adds a layer of protection
-                // against plain-text password transmission
-                let hashHex = '';
-
-                try {
-                    // Check if we're in a secure context with Web Crypto API available
-                    if (window.crypto && window.crypto.subtle) {
-                        const passwordHash = await window.crypto.subtle.digest(
-                            'SHA-256',
-                            new TextEncoder().encode(password)
-                        );
-
-                        // Convert hash to hex string
-                        const hashArray = Array.from(new Uint8Array(passwordHash));
-                        hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-                    } else {
-                        // Fallback for non-secure contexts (development)
-                        console.warn('Web Crypto API not available - using fallback hashing for development only');
-                        // Simple development fallback - NOT secure for production!
-                        // In production, force HTTPS to ensure crypto.subtle is available
-                        hashHex = password; // This sends password as-is in development
-                    }
-                } catch (cryptoError) {
-                    console.error('Crypto error:', cryptoError);
-                    // Fallback for error cases
-                    hashHex = password; // This sends password as-is in development
-                }
-
-                const response = await fetch('/api/auth/login', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({email, passwordHash: hashHex}),
-                    cache: 'no-store',
-                    credentials: 'include', // Important for cookies
+                // Use secureTransmit to handle hashing and secure transmission
+                const data = await secureTransmit('/api/auth/login', {
+                    email,
+                    password
                 });
 
-                // Parse the response
-                const data = await response.json();
-
-                if (!response.ok) {
-                    console.error('Login failed:', data.error || response.statusText);
+                if (!data.success) {
+                    console.error('Login failed:', data.error);
                     return {
                         success: false,
                         error: data.error || 'Authentication failed. Please check your credentials.'
@@ -558,87 +525,24 @@ export function AuthProvider({children}: { children: ReactNode }) {
         try {
             setLoading(true);
 
-            // Call the API to register the user
+            // Import the secure credential handler
+            const { secureTransmit } = await import('@/lib/utilities/secure-credential-handler');
+
+            // Call the API to register the user using secure transmission
             try {
                 console.log('Registering new user:', email);
 
-                // Hash the password client-side before sending to server
-                // This is not a full security solution but adds a layer of protection
-                // against plain-text password transmission
-                let hashHex = '';
-
-                try {
-                    // Check if we're in a secure context with Web Crypto API available
-                    if (window.crypto && window.crypto.subtle) {
-                        const passwordHash = await window.crypto.subtle.digest(
-                            'SHA-256',
-                            new TextEncoder().encode(password)
-                        );
-
-                        // Convert hash to hex string
-                        const hashArray = Array.from(new Uint8Array(passwordHash));
-                        hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-                    } else {
-                        // Fallback for non-secure contexts (development)
-                        console.warn('Web Crypto API not available - using fallback hashing for development only');
-                        // Simple development fallback - NOT secure for production!
-                        // In production, force HTTPS to ensure crypto.subtle is available
-                        hashHex = password; // This sends password as-is in development
-                    }
-                } catch (cryptoError) {
-                    console.error('Crypto error:', cryptoError);
-                    // Fallback for error cases
-                    hashHex = password; // This sends password as-is in development
-                }
-
-                // Use the real registration endpoint now that we've fixed the runtime issue
-                const response = await fetch('/api/auth/register', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({email, passwordHash: hashHex, name}),
-                    cache: 'no-store',
+                // Use secureTransmit to handle hashing and secure transmission
+                const data = await secureTransmit('/api/auth/register', {
+                    email,
+                    password,
+                    name
                 });
 
-                console.log('Register API response status:', response.status);
+                console.log('Register API response:', data);
 
-                // Get the raw text first, then try to parse it
-                const responseText = await response.text();
-                console.log('Register API raw response (first 100 chars):', responseText.substring(0, 100));
-
-                // Check if response starts with <!DOCTYPE html - that indicates an error page
-                if (responseText.trimStart().startsWith('<!DOCTYPE html')) {
-                    console.error('Received HTML error page instead of JSON response');
-
-                    // Show a more specific error for the database connection issue
-                    if (responseText.includes('Error checking user records') || responseText.includes('Database connection failed')) {
-                        return {
-                            success: false,
-                            error: 'Database connection error. Please contact the administrator to ensure the database is properly configured.'
-                        };
-                    }
-
-                    return {
-                        success: false,
-                        error: 'Server error during registration. Please try again later.'
-                    };
-                }
-
-                // Try to parse the response
-                let data;
-                try {
-                    data = JSON.parse(responseText);
-                } catch (parseError) {
-                    console.error('Failed to parse register response:', parseError);
-                    return {
-                        success: false,
-                        error: 'Invalid response from server. Please try again later.'
-                    };
-                }
-
-                if (!response.ok) {
-                    console.error('Registration failed:', data.error || response.statusText);
+                if (!data.success) {
+                    console.error('Registration failed:', data.error);
                     return {
                         success: false,
                         error: data.error || 'Registration failed. Please try again.'

@@ -52,20 +52,33 @@ export async function initializeGoogleOAuth(): Promise<boolean> {
     
     const migrationSql = fs.readFileSync(migrationPath, 'utf8');
     
-    // Split the migration into individual statements
-    const statements = migrationSql
-      .split(';')
-      .map(statement => statement.trim())
-      .filter(statement => statement.length > 0);
-    
-    // Execute each statement with proper transaction management
+    // Execute the SQL script in a transaction
     const client = await pool.connect();
     
     try {
       await client.query('BEGIN');
       
-      for (const statement of statements) {
+      // First create the base tables - these statements can be safely split on semicolons
+      const baseTableStatements = migrationSql
+        .split('DO ')[0] // Split before DO block to handle base tables separately
+        .split(';')
+        .map(statement => statement.trim())
+        .filter(statement => statement.length > 0);
+      
+      // Execute each base table statement
+      for (const statement of baseTableStatements) {
         await client.query(statement);
+      }
+      
+      // Handle the DO block separately since it contains internal semicolons
+      // Extract the DO block and execute it as a single statement
+      if (migrationSql.includes('DO $$')) {
+        const doBlockMatch = migrationSql.match(/DO \$\$([\s\S]*?)\$\$/);
+        if (doBlockMatch && doBlockMatch[0]) {
+          // Add the trailing semicolon if needed
+          const doBlock = doBlockMatch[0].endsWith(';') ? doBlockMatch[0] : doBlockMatch[0] + ';';
+          await client.query(doBlock);
+        }
       }
       
       await client.query('COMMIT');

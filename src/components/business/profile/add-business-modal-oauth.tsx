@@ -7,7 +7,7 @@
  * Design follows the app's gradient color scheme and styling patterns.
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -33,6 +33,35 @@ export function AddBusinessModalOAuth({ isOpen, onClose, onSuccess, userId }: Ad
   const featureFlags = FeatureFlagService.getInstance();
   const useOAuth = featureFlags.isEnabled(FeatureFlag.GoogleAuthWithOAuth, userId);
   
+  // Verify OAuth configuration on component mount
+  useEffect(() => {
+    const verifyOAuthSetup = async () => {
+      if (!useOAuth) return; // Skip if not using OAuth
+      
+      try {
+        const response = await fetch('/api/google-auth/check-credentials', {
+          method: 'GET',
+          credentials: 'include'
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok || !data.success) {
+          console.warn('OAuth configuration issue detected:', data.error);
+          if (data.missingVars) {
+            console.warn('Missing OAuth variables:', data.missingVars);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to verify OAuth setup:', err);
+      }
+    };
+    
+    if (isOpen) {
+      verifyOAuthSetup();
+    }
+  }, [isOpen, useOAuth]);
+  
   const handleGoogleSignIn = async () => {
     if (!businessName.trim()) {
       setError('Please enter a business name');
@@ -43,8 +72,19 @@ export function AddBusinessModalOAuth({ isOpen, onClose, onSuccess, userId }: Ad
       setIsLoading(true);
       setError('');
       
-      // Get auth URL from backend without checking database first
-      // This fixes client-side issues with database connections
+      // First, we'll initialize OAuth tables if needed
+      try {
+        await fetch('/api/init-oauth-db', {
+          method: 'POST',
+          credentials: 'include'
+        });
+        console.log('OAuth database tables initialized');
+      } catch (dbErr) {
+        console.error('Failed to initialize OAuth tables:', dbErr);
+        // Continue anyway, the URL endpoint should handle this too
+      }
+      
+      // Get auth URL from backend including error handling
       const response = await fetch('/api/google-auth/url', {
         method: 'POST',
         headers: {
@@ -61,6 +101,12 @@ export function AddBusinessModalOAuth({ isOpen, onClose, onSuccess, userId }: Ad
       
       if (!response.ok || !data.success) {
         console.error('Error response from auth URL endpoint:', data);
+        
+        // Handle specific error cases
+        if (data.details && data.details.includes('environment variables')) {
+          throw new Error('Google OAuth is not properly configured. Please contact support.');
+        }
+        
         throw new Error(data.error || 'Failed to generate authentication URL');
       }
       

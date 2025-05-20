@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleOAuthService } from '@/services/google/oauth-service';
 import { GoogleBusinessProfileService } from '@/services/google/business-profile-service';
 import { DatabaseService } from '@/services/database';
+import { initializeGoogleOAuth, verifyGoogleOAuthTables } from '@/services/database/init-google-oauth';
 import fs from 'fs';
 import path from 'path';
 
@@ -51,65 +52,27 @@ export async function GET(req: NextRequest) {
   
   try {
     // First, ensure Google OAuth tables exist
-    // Directly check and initialize tables without external functions
     try {
       console.log('Checking for required database tables...');
-      const db = DatabaseService.getInstance();
-      const pool = db.getPool();
       
-      // Check if the OAuth tokens table exists
-      const tableResult = await pool.query(`
-        SELECT EXISTS (
-          SELECT FROM information_schema.tables 
-          WHERE table_schema = 'public' 
-          AND table_name = 'google_oauth_tokens'
-        );
-      `);
+      // Verify if tables exist
+      const tablesExist = await verifyGoogleOAuthTables();
       
-      const oauthTablesExist = tableResult.rows[0].exists;
-      
-      if (!oauthTablesExist) {
+      if (!tablesExist) {
         console.log('Google OAuth tables do not exist, initializing...');
+        const initialized = await initializeGoogleOAuth();
         
-        const migrationsPath = path.join(process.cwd(), 'src', 'services', 'database', 'migrations');
-        
-        // Initialize OAuth tables
-        const oauthSchemaPath = path.join(migrationsPath, 'google_oauth_schema.sql');
-        
-        if (fs.existsSync(oauthSchemaPath)) {
-          const oauthSchemaSql = fs.readFileSync(oauthSchemaPath, 'utf8');
-          
-          // Execute schema in a transaction
-          const client = await pool.connect();
-          try {
-            await client.query('BEGIN');
-            
-            // Split on semicolons to execute each statement
-            const statements = oauthSchemaSql
-              .split(';')
-              .map(stmt => stmt.trim())
-              .filter(stmt => stmt.length > 0);
-            
-            for (const statement of statements) {
-              await client.query(statement);
-            }
-            
-            await client.query('COMMIT');
-            console.log('Successfully initialized Google OAuth tables');
-          } catch (error) {
-            await client.query('ROLLBACK');
-            console.error('Error initializing Google OAuth tables:', error);
-            return NextResponse.redirect('/dashboard?error=database_setup_failed');
-          } finally {
-            client.release();
-          }
-        } else {
-          console.error('OAuth schema file not found:', oauthSchemaPath);
+        if (!initialized) {
+          console.error('Failed to initialize Google OAuth tables');
           return NextResponse.redirect('/dashboard?error=database_setup_failed');
         }
+        
+        console.log('Google OAuth tables initialized successfully');
       }
       
       // Check if the business tables exist
+      const db = DatabaseService.getInstance();
+      const pool = db.getPool();
       const businessTableResult = await pool.query(`
         SELECT EXISTS (
           SELECT FROM information_schema.tables 

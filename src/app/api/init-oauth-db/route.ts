@@ -9,39 +9,117 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { DatabaseService } from '@/services/database';
+import { AuthService } from '@/services/auth';
 
-export async function GET(req: NextRequest) {
+// Specify that this route runs on the Node.js runtime, not Edge
+export const runtime = 'nodejs';
+
+/**
+ * Initializes Google OAuth database tables
+ */
+export async function POST(req: NextRequest) {
   try {
-    // Get database service
-    const db = DatabaseService.getInstance();
+  try {
+    console.log('POST /api/init-oauth-db - Initializing Google OAuth database tables');
+    
+    // Verify authentication if required in production
+    if (process.env.NODE_ENV === 'production') {
+      // Get session cookie
+      const cookieHeader = req.headers.get('cookie');
+      const authService = AuthService.getInstance();
+      const cookies = authService.parseCookies(cookieHeader || '');
+      const sessionId = cookies.session || cookies.sessionId;
+      
+      if (!sessionId) {
+        console.error('No session cookie found');
+        return NextResponse.json({ 
+          success: false, 
+          error: 'Authentication required' 
+        }, { status: 401 });
+      }
+      
+      // Verify that the session is valid
+      const session = await authService.verifySession(sessionId);
+      if (!session) {
+        console.error('Invalid or expired session');
+        return NextResponse.json({ 
+          success: false, 
+          error: 'Invalid or expired session' 
+        }, { status: 401 });
+      }
+    }
+    
+    // First check if tables already exist
+    console.log('Checking if OAuth tables already exist...');
     
     // Check if the Google OAuth tables exist
     const tablesExist = await verifyGoogleOAuthTables();
     
     if (tablesExist) {
-      return NextResponse.json({
-        success: true,
-        message: 'Google OAuth tables already exist',
-        initialized: false
+      console.log('OAuth tables already exist, no initialization needed');
+      return NextResponse.json({ 
+        success: true, 
+        message: 'OAuth tables already exist',
+        status: 'no_action_needed'
       });
     }
     
-    // Tables don't exist, initialize them
+    // Initialize the OAuth tables
+    console.log('Initializing OAuth tables...');
     const initialized = await initializeGoogleOAuth();
     
-    return NextResponse.json({
-      success: true,
-      message: initialized 
-        ? 'Google OAuth tables initialized successfully' 
-        : 'Failed to initialize Google OAuth tables',
-      initialized
+    if (!initialized) {
+      console.error('Failed to initialize OAuth tables');
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Failed to initialize OAuth tables' 
+      }, { status: 500 });
+    }
+    
+    console.log('OAuth tables initialized successfully');
+    return NextResponse.json({ 
+      success: true, 
+      message: 'OAuth tables initialized successfully',
+      status: 'initialized'
     });
+  } catch (error) {
+    console.error('Error initializing OAuth tables:', error);
+    
+    return NextResponse.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error initializing OAuth tables'
+    }, { status: 500 });
+  }
   } catch (error) {
     console.error('Error initializing OAuth database:', error);
     
     return NextResponse.json({
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 });
+  }
+}
+
+/**
+ * Checks if Google OAuth tables exist
+ */
+export async function GET(req: NextRequest) {
+  try {
+    console.log('GET /api/init-oauth-db - Checking Google OAuth database tables');
+    
+    // Check if tables exist
+    const tablesExist = await verifyGoogleOAuthTables();
+    
+    return NextResponse.json({ 
+      success: true, 
+      exists: tablesExist
+    });
+  } catch (error) {
+    console.error('Error checking OAuth tables:', error);
+    
+    return NextResponse.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error checking OAuth tables'
     }, { status: 500 });
   }
 }

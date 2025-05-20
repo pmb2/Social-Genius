@@ -7,9 +7,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleOAuthService } from '@/services/google/oauth-service';
 import { AuthService } from '@/services/auth';
-import fs from 'fs';
-import path from 'path';
 import { DatabaseService } from '@/services/database';
+import { initializeGoogleOAuth, verifyGoogleOAuthTables } from '@/services/database/init-google-oauth';
 
 // Specify that this route runs on the Node.js runtime, not Edge
 export const runtime = 'nodejs';
@@ -26,69 +25,28 @@ export async function POST(req: NextRequest) {
     
     try {
       // Verify if tables exist
-      const db = DatabaseService.getInstance();
-      const pool = db.getPool();
-      
-      // Check if the tokens table exists
-      const result = await pool.query(`
-        SELECT EXISTS (
-          SELECT FROM information_schema.tables 
-          WHERE table_schema = 'public' 
-          AND table_name = 'google_oauth_tokens'
-        );
-      `);
-      
-      tablesExist = result.rows[0].exists;
+      tablesExist = await verifyGoogleOAuthTables();
       
       if (!tablesExist) {
         console.log('Google OAuth tables do not exist, initializing...');
+        const initialized = await initializeGoogleOAuth();
         
-        // Read the migration SQL file
-        const migrationPath = path.join(process.cwd(), 'src', 'services', 'database', 'migrations', 'google_oauth_schema.sql');
-        
-        if (!fs.existsSync(migrationPath)) {
-          console.error(`Migration file not found: ${migrationPath}`);
-          return NextResponse.json({ 
-            success: false, 
-            error: 'Migration file not found' 
-          }, { status: 500 });
-        }
-        
-        const migrationSql = fs.readFileSync(migrationPath, 'utf8');
-        
-        // Split the migration into individual statements
-        const statements = migrationSql
-          .split(';')
-          .map(statement => statement.trim())
-          .filter(statement => statement.length > 0);
-        
-        // Execute each statement with proper transaction management
-        const client = await pool.connect();
-        
-        try {
-          await client.query('BEGIN');
-          
-          for (const statement of statements) {
-            await client.query(statement);
-          }
-          
-          await client.query('COMMIT');
-          
-          console.log('Google OAuth tables initialized successfully');
-        } catch (error) {
-          await client.query('ROLLBACK');
-          console.error('Error initializing Google OAuth tables:', error);
+        if (!initialized) {
+          console.error('Failed to initialize Google OAuth tables');
           return NextResponse.json({ 
             success: false, 
             error: 'Failed to initialize OAuth database tables' 
           }, { status: 500 });
-        } finally {
-          client.release();
         }
+        
+        console.log('Google OAuth tables initialized successfully');
       }
     } catch (error) {
       console.error('Error checking or initializing Google OAuth tables:', error);
-      // Continue anyway - we'll let the application try to proceed
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Database error: ' + (error.message || 'Failed to initialize OAuth tables') 
+      }, { status: 500 });
     }
     
     // Verify user is authenticated
@@ -149,12 +107,6 @@ export async function POST(req: NextRequest) {
     console.log('- GOOGLE_CLIENT_SECRET:', clientSecret ? 'Present' : 'Missing');
     console.log('- GOOGLE_REDIRECT_URI:', redirectUri || 'Missing');
     console.log('- GOOGLE_TOKEN_ENCRYPTION_KEY:', encryptionKey ? 'Present' : 'Missing');
-    
-    // Log all environment variables (without values) to help with debugging
-    console.log('All environment variables:');
-    Object.keys(process.env).forEach(key => {
-      console.log(`- ${key}: ${key.includes('SECRET') || key.includes('KEY') ? '[MASKED]' : 'Present'}`);
-    });
     
     if (!clientId || !clientSecret || !redirectUri || !encryptionKey) {
       console.error('Missing required OAuth environment variables');

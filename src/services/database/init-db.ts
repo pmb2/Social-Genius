@@ -138,13 +138,18 @@ export async function initializeDatabase() {
       throw error;
     }
     
-    // Initialize the Google OAuth tables if they don't exist
-    const oauthTablesExist = await verifyGoogleOAuthTables();
-    if (!oauthTablesExist) {
-      console.log('Google OAuth tables not found, initializing...');
-      await initializeGoogleOAuth();
-    } else {
-      console.log('Google OAuth tables already exist, skipping initialization');
+    // Initialize the Google OAuth tables if they don't exist - but skip during auth flow
+    // We'll only initialize these tables when explicitly requested
+    try {
+      const oauthTablesExist = await verifyGoogleOAuthTables();
+      if (!oauthTablesExist) {
+        console.log('Google OAuth tables not found, but skipping during main initialization');
+        console.log('These will be initialized when needed via the init-oauth-db endpoint');
+      } else {
+        console.log('Google OAuth tables already exist, skipping initialization');
+      }
+    } catch (error) {
+      console.log('Error checking Google OAuth tables, will skip initialization:', error.message);
     }
     
     // Initialize feature flags

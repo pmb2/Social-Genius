@@ -756,8 +756,7 @@ class AuthService {
         return { success: false, error: 'Error checking if user exists' };
       }
       
-      // Create the secured password with new salt
-      // Format stored in DB will be salt:hashedPassword
+      // Create the secured password
       console.log('[AUTH-SERVICE] Creating salted hash from client-side hash...');
       try {
         // Check if we're using a plain text fallback in development
@@ -768,18 +767,11 @@ class AuthService {
           // In development, if client couldn't hash the password, hash it on the server side
           finalPasswordHash = this.hashPassword(passwordHash);
         } else {
-          // Store the hash directly for consistent login comparison
-          // This enables direct comparison during login
-          console.log('[AUTH-SERVICE] Using direct hash storage for consistent login');
-          finalPasswordHash = passwordHash;
-          
-          // Alternatively, if you want to maintain the salt:hash format,
-          // you can still use the following lines instead:
-          /*
+          // Add a salt to the hash to make it more secure and consistent with login
           const salt = randomBytes(16).toString('hex');
           console.log('[AUTH-SERVICE] Generated salt:', salt.substring(0, 10) + '... (length: ' + salt.length + ')');
           finalPasswordHash = `${salt}:${passwordHash}`;
-          */
+          console.log('[AUTH-SERVICE] Using salted hash format for consistent login');
         }
         
         console.log('[AUTH-SERVICE] Final password format:', finalPasswordHash.substring(0, 10) + '... (length: ' + finalPasswordHash.length + ')');
@@ -925,17 +917,22 @@ class AuthService {
       console.log('[AUTH-SERVICE] - password_hash preview:', user.password_hash?.substring(0, 10) + '...');
       console.log('[AUTH-SERVICE] - contains colon:', user.password_hash?.includes(':'));
       
-      // The stored password should be in the format: salt:hash
-      // Extract the salt and stored hash
-      if (!user.password_hash || !user.password_hash.includes(':')) {
-        console.error('[AUTH-SERVICE] ❌ Invalid password hash format in database');
-        console.error('[AUTH-SERVICE] Full stored hash for debugging:', user.password_hash);
-        return { success: false, error: 'Invalid credential format in database' };
+      // The stored password might be in the format: salt:hash or directly stored hash
+      // Handle both formats
+      let salt = '';
+      let storedHash = user.password_hash;
+      
+      if (user.password_hash && user.password_hash.includes(':')) {
+        // Format is salt:hash
+        [salt, storedHash] = user.password_hash.split(':');
+        console.log('[AUTH-SERVICE] Extracted salt:', salt?.substring(0, 5) + '... (length: ' + salt?.length + ')');
+        console.log('[AUTH-SERVICE] Extracted stored hash:', storedHash?.substring(0, 10) + '... (length: ' + storedHash?.length + ')');
+      } else {
+        // Directly stored hash
+        console.log('[AUTH-SERVICE] No salt found, using direct hash comparison');
+        console.log('[AUTH-SERVICE] Stored hash:', storedHash?.substring(0, 10) + '... (length: ' + storedHash?.length + ')');
       }
       
-      const [salt, storedHash] = user.password_hash.split(':');
-      console.log('[AUTH-SERVICE] Extracted salt:', salt?.substring(0, 5) + '... (length: ' + salt?.length + ')');
-      console.log('[AUTH-SERVICE] Extracted stored hash:', storedHash?.substring(0, 10) + '... (length: ' + storedHash?.length + ')');
       console.log('[AUTH-SERVICE] Client provided hash:', passwordHash.substring(0, 10) + '... (length: ' + passwordHash.length + ')');
       
       // Compare the hashes character by character to see where they differ
