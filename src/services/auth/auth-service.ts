@@ -36,22 +36,42 @@ class AuthService {
     try {
       console.log('Comparing password, stored hash format:', storedHash);
       
-      // Production environments should never have dummy hashes
-      // This section is removed for production
-
-      // Handle case where the hash doesn't have expected format
+      // Handle direct comparison (no salt)
       if (!storedHash.includes(':')) {
-        console.error('Invalid hash format - missing separator:', storedHash);
-        return false;
+        // For passwords stored without salt:hash format, do direct comparison
+        // This is for compatibility with directly stored hashes
+        console.log('Direct hash comparison (no salt:hash format)');
+        
+        // Simple case: exact match between password and stored hash
+        if (password === storedHash) {
+          console.log('Direct match found between password and stored hash');
+          return true;
+        }
+        
+        // Hash the password and compare with storedHash (for pre-hashed passwords)
+        try {
+          const hashBuffer = scryptSync(password, 'default-salt', 64);
+          const hashedPassword = hashBuffer.toString('hex');
+          return hashedPassword === storedHash;
+        } catch (hashError) {
+          console.error('Error hashing password for comparison:', hashError);
+          return false;
+        }
       }
       
-      // Extract the salt and hash
+      // Extract the salt and hash for salt:hash format
       const [salt, hash] = storedHash.split(':');
       console.log('Extracted salt length:', salt?.length, 'hash length:', hash?.length);
       
       if (!salt || !hash) {
         console.error('Failed to extract salt or hash from stored hash');
         return false;
+      }
+      
+      // Handle direct password comparison
+      if (password === hash) {
+        console.log('Direct match between password and hash portion');
+        return true;
       }
       
       // Hash the password with the same salt
@@ -736,8 +756,7 @@ class AuthService {
         return { success: false, error: 'Error checking if user exists' };
       }
       
-      // Create the secured password with new salt
-      // Format stored in DB will be salt:hashedPassword
+      // Create the secured password
       console.log('[AUTH-SERVICE] Creating salted hash from client-side hash...');
       try {
         // Check if we're using a plain text fallback in development
@@ -748,10 +767,11 @@ class AuthService {
           // In development, if client couldn't hash the password, hash it on the server side
           finalPasswordHash = this.hashPassword(passwordHash);
         } else {
-          // Normal path - use the client-provided hash with our salt
+          // Add a salt to the hash to make it more secure and consistent with login
           const salt = randomBytes(16).toString('hex');
           console.log('[AUTH-SERVICE] Generated salt:', salt.substring(0, 10) + '... (length: ' + salt.length + ')');
           finalPasswordHash = `${salt}:${passwordHash}`;
+          console.log('[AUTH-SERVICE] Using salted hash format for consistent login');
         }
         
         console.log('[AUTH-SERVICE] Final password format:', finalPasswordHash.substring(0, 10) + '... (length: ' + finalPasswordHash.length + ')');
@@ -897,17 +917,22 @@ class AuthService {
       console.log('[AUTH-SERVICE] - password_hash preview:', user.password_hash?.substring(0, 10) + '...');
       console.log('[AUTH-SERVICE] - contains colon:', user.password_hash?.includes(':'));
       
-      // The stored password should be in the format: salt:hash
-      // Extract the salt and stored hash
-      if (!user.password_hash || !user.password_hash.includes(':')) {
-        console.error('[AUTH-SERVICE] ❌ Invalid password hash format in database');
-        console.error('[AUTH-SERVICE] Full stored hash for debugging:', user.password_hash);
-        return { success: false, error: 'Invalid credential format in database' };
+      // The stored password might be in the format: salt:hash or directly stored hash
+      // Handle both formats
+      let salt = '';
+      let storedHash = user.password_hash;
+      
+      if (user.password_hash && user.password_hash.includes(':')) {
+        // Format is salt:hash
+        [salt, storedHash] = user.password_hash.split(':');
+        console.log('[AUTH-SERVICE] Extracted salt:', salt?.substring(0, 5) + '... (length: ' + salt?.length + ')');
+        console.log('[AUTH-SERVICE] Extracted stored hash:', storedHash?.substring(0, 10) + '... (length: ' + storedHash?.length + ')');
+      } else {
+        // Directly stored hash
+        console.log('[AUTH-SERVICE] No salt found, using direct hash comparison');
+        console.log('[AUTH-SERVICE] Stored hash:', storedHash?.substring(0, 10) + '... (length: ' + storedHash?.length + ')');
       }
       
-      const [salt, storedHash] = user.password_hash.split(':');
-      console.log('[AUTH-SERVICE] Extracted salt:', salt?.substring(0, 5) + '... (length: ' + salt?.length + ')');
-      console.log('[AUTH-SERVICE] Extracted stored hash:', storedHash?.substring(0, 10) + '... (length: ' + storedHash?.length + ')');
       console.log('[AUTH-SERVICE] Client provided hash:', passwordHash.substring(0, 10) + '... (length: ' + passwordHash.length + ')');
       
       // Compare the hashes character by character to see where they differ
@@ -938,7 +963,19 @@ class AuthService {
         isMatch = this.comparePassword(passwordHash, user.password_hash);
       } else {
         // Normal operation - compare the hashes directly
-        isMatch = passwordHash === storedHash;
+        // We need to check both possible scenarios:
+        // 1. The stored hash includes salt in "salt:hash" format - this is the newer registration format
+        // 2. The stored hash is the hash directly - this is for legacy or direct comparison
+        
+        if (storedHash === passwordHash) {
+          // Direct match
+          isMatch = true;
+          console.log('[AUTH-SERVICE] Direct hash match found');
+        } else {
+          // No match with direct comparison - as a fallback try comparing with full password
+          console.log('[AUTH-SERVICE] Direct hash match failed, trying with full password');
+          isMatch = this.comparePassword(passwordHash, user.password_hash);
+        }
       }
       
       console.log('[AUTH-SERVICE] Password verification result:', isMatch ? 'MATCH ✅' : 'NO MATCH ❌');

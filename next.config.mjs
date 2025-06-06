@@ -1,10 +1,17 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Define app directory and use default dist directory '.next'
-  experimental: {
-    appDir: true,
+  // Configure handling of proxy headers from ALB
+  poweredByHeader: false,
+  
+  // Trust proxy headers from AWS ALB
+  serverRuntimeConfig: {
+    trustProxy: true,
   },
+  
+  // React strict mode
   reactStrictMode: true,
+  
+  // Webpack config for handling node libraries in client side
   webpack: (config, { isServer }) => {
     // If client-side, use empty modules for Node-specific packages
     if (!isServer) {
@@ -54,6 +61,8 @@ const nextConfig = {
     }
     return config;
   },
+  
+  // Next.js experimental features
   experimental: {
     // These packages will only be used server-side
     serverComponentsExternalPackages: [
@@ -62,74 +71,37 @@ const nextConfig = {
       'playwright-core',
       'bcryptjs',
     ],
-    // Ensure all necessary modules are included for API routes
     outputFileTracingIncludes: {
       '/api/**/*': ['node_modules/**/*'],
     },
-    // Keep this enabled for middleware support
     esmExternals: 'loose',
-    // Default runtime for pages
     serverActions: {
       bodySizeLimit: '2mb',
     },
   },
-  // Improved handling for server modules
-  transpilePackages: [],
-  // Add support for serving fonts with proper MIME types
-  async headers() {
-    return [
-      {
-        source: '/fonts/:path*',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=31536000, immutable',
-          },
-        ],
-      },
-    ];
-  },
+  
+  // Transpile packages
+  transpilePackages: ["lucide-react"],
+  
   // Configure output for improved build process
   output: 'standalone',
+  
   // Disable type checking during build for now to get past the error
   typescript: {
     ignoreBuildErrors: true,
   },
+  
   eslint: {
     ignoreDuringBuilds: true,
   },
-  // Ensure proper transpilation of ES modules
-  transpilePackages: ["lucide-react"],
   
-  // Use production-ready configurations
+  // Better source maps for production
   productionBrowserSourceMaps: true,
   
-  // Increase timeouts and memory limits for build process
+  // Increase timeouts for build process
   staticPageGenerationTimeout: 180,
   
-  // Set the source directory path
-  experimental: {
-    appDir: true,
-    serverComponentsExternalPackages: [
-      'pg', 
-      'playwright', 
-      'playwright-core',
-      'bcryptjs',
-    ],
-    outputFileTracingRoot: "/home/ubuntu/Social-Genius",
-    outputFileTracingExcludes: {
-      '*': [
-        '.git/**',
-        '.next/**',
-        '.vscode/**',
-        'node_modules/better-sqlite3/**',
-        'node_modules/@swc/**',
-        'node_modules/webpack/**',
-      ],
-    },
-  },
-  
-  // Mark all API routes as fully dynamic (not static-generated)
+  // Dynamic routing for API
   async rewrites() {
     return [
       {
@@ -145,7 +117,7 @@ const nextConfig = {
     ];
   },
   
-  // Configure headers for proper caching and dynamic routing
+  // Configure headers for caching and security
   async headers() {
     return [
       {
@@ -158,6 +130,47 @@ const nextConfig = {
           {
             key: 'x-use-dynamic-data',
             value: 'true',
+          },
+          {
+            key: 'Access-Control-Allow-Origin',
+            value: 'https://app.social-genius.com',
+          },
+          {
+            key: 'Access-Control-Allow-Methods',
+            value: 'GET, POST, PUT, DELETE, OPTIONS',
+          },
+          {
+            key: 'Access-Control-Allow-Headers',
+            value: 'Content-Type, Authorization, X-Requested-With, X-Secure-Auth',
+          },
+          {
+            key: 'Access-Control-Allow-Credentials',
+            value: 'true',
+          },
+          // Security headers
+          {
+            key: 'Strict-Transport-Security',
+            value: 'max-age=63072000; includeSubDomains; preload',
+          },
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY',
+          },
+          {
+            key: 'X-XSS-Protection',
+            value: '1; mode=block',
+          },
+          {
+            key: 'Referrer-Policy',
+            value: 'strict-origin-when-cross-origin',
+          },
+          {
+            key: 'Permissions-Policy',
+            value: 'geolocation=(), camera=(), microphone=()', 
           },
         ],
       },
@@ -172,8 +185,8 @@ const nextConfig = {
       },
     ];
   },
-  // Skip some of the build-time checks for API routes
-  // Use default Next.js build directory
+  
+  // Image configuration
   images: {
     dangerouslyAllowSVG: true,
     contentDispositionType: 'attachment',

@@ -8,6 +8,8 @@
 import { OAuth2Client } from 'google-auth-library';
 import { encryptData, decryptData } from '@/lib/utilities/crypto';
 import { DatabaseService } from '@/services/database';
+import fs from 'fs';
+import path from 'path';
 
 // Define types for token data
 interface TokenInfo {
@@ -41,26 +43,56 @@ export class GoogleOAuthService {
   
   /**
    * Generates a Google OAuth authorization URL
-   * @param userId User ID to associate with the auth flow
-   * @param businessName Business name to associate with the auth flow
+   * @param stateData Data to store in the state parameter (userId, businessName, etc.)
    * @returns The authorization URL to redirect the user to
    */
-  generateAuthUrl(userId: string, businessName: string): string {
+  generateAuthUrl(stateData: { 
+    userId: string; 
+    businessName: string; 
+    businessType?: string;
+    timestamp: number;
+  }): string {
+    console.log('Generating OAuth URL with state data:', stateData);
+    
     // Create a state parameter to prevent CSRF and store user/business info
-    const state = Buffer.from(JSON.stringify({
-      userId,
-      businessName,
-      timestamp: Date.now()
-    })).toString('base64');
+    const state = Buffer.from(JSON.stringify(stateData)).toString('base64');
+    
+    // Verify credentials exist
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET || !process.env.GOOGLE_REDIRECT_URI) {
+      console.error('Missing Google OAuth credentials in environment variables');
+      console.error('GOOGLE_CLIENT_ID:', process.env.GOOGLE_CLIENT_ID ? 'Set' : 'Not set');
+      console.error('GOOGLE_CLIENT_SECRET:', process.env.GOOGLE_CLIENT_SECRET ? 'Set' : 'Not set');
+      console.error('GOOGLE_REDIRECT_URI:', process.env.GOOGLE_REDIRECT_URI ? 'Set' : 'Not set');
+      throw new Error('Missing Google OAuth credentials in environment variables');
+    }
+    
+    // Reinitialize oauth client to ensure credentials are set
+    this.oauth2Client = new OAuth2Client(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_REDIRECT_URI
+    );
+    
+    // Log the OAuth client details (without sensitive info)
+    console.log('OAuth client:', {
+      redirectUri: process.env.GOOGLE_REDIRECT_URI,
+      hasClientId: !!process.env.GOOGLE_CLIENT_ID,
+      hasClientSecret: !!process.env.GOOGLE_CLIENT_SECRET
+    });
     
     // Generate the authorization URL
-    return this.oauth2Client.generateAuthUrl({
+    const authUrl = this.oauth2Client.generateAuthUrl({
       access_type: 'offline', // This will provide a refresh token
       scope: ['https://www.googleapis.com/auth/business.manage'],
       prompt: 'consent', // Force consent to ensure we get a refresh token
       state, // Include our state parameter for security and to maintain context
-      include_granted_scopes: true // Include previously granted scopes
+      include_granted_scopes: false, // Don't include previously granted scopes
+      hd: '*' // Allow any hosted domain
     });
+    
+    console.log('Generated auth URL:', `${authUrl.substring(0, 50)}...`);
+    
+    return authUrl;
   }
   
   /**
@@ -70,7 +102,37 @@ export class GoogleOAuthService {
    */
   async getTokensFromCode(code: string): Promise<OAuthTokens> {
     try {
+      console.log('Exchanging authorization code for tokens...');
+      
+      // Verify credentials exist before attempting token exchange
+      if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET || !process.env.GOOGLE_REDIRECT_URI) {
+        console.error('Missing Google OAuth credentials in environment variables');
+        console.error('GOOGLE_CLIENT_ID:', process.env.GOOGLE_CLIENT_ID ? 'Set' : 'Not set');
+        console.error('GOOGLE_CLIENT_SECRET:', process.env.GOOGLE_CLIENT_SECRET ? 'Set' : 'Not set');
+        console.error('GOOGLE_REDIRECT_URI:', process.env.GOOGLE_REDIRECT_URI ? 'Set' : 'Not set');
+        throw new Error('Missing Google OAuth credentials in environment variables');
+      }
+      
+      // Reinitialize oauth client to ensure credentials are set
+      this.oauth2Client = new OAuth2Client(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET,
+        process.env.GOOGLE_REDIRECT_URI
+      );
+      
+      // Log code details (truncated)
+      console.log('Exchanging code:', code ? `${code.substring(0, 10)}...` : 'No code provided');
+      console.log('Using redirect URI:', process.env.GOOGLE_REDIRECT_URI);
+      
+      // Exchange code for tokens
       const { tokens } = await this.oauth2Client.getToken(code);
+      
+      console.log('Token exchange response received', {
+        has_access_token: !!tokens.access_token,
+        has_refresh_token: !!tokens.refresh_token,
+        has_expiry: !!tokens.expiry_date,
+        has_id_token: !!tokens.id_token
+      });
       
       // Validate that we received the necessary tokens
       if (!tokens.access_token) {
@@ -84,6 +146,16 @@ export class GoogleOAuthService {
       return tokens as OAuthTokens;
     } catch (error) {
       console.error('Error exchanging code for tokens:', error);
+      
+      // Enhanced error logging
+      if (error.response) {
+        console.error('Google API error response:', {
+          status: error.response.status,
+          statusText: error.response.statusText,
+          data: error.response.data
+        });
+      }
+      
       throw new Error(`Failed to exchange authorization code for tokens: ${error.message}`);
     }
   }
@@ -106,9 +178,14 @@ export class GoogleOAuthService {
         throw new Error('No refresh token found for this user and business');
       }
       
+      const encryptKey = process.env.GOOGLE_TOKEN_ENCRYPTION_KEY;
+      if (!encryptKey) {
+        throw new Error('Missing GOOGLE_TOKEN_ENCRYPTION_KEY environment variable');
+      }
+      
       const refreshToken = decryptData(
         encryptedToken.rows[0].refresh_token,
-        process.env.GOOGLE_TOKEN_ENCRYPTION_KEY || ''
+        encryptKey
       );
       
       // Set up the OAuth client with the refresh token
@@ -125,10 +202,10 @@ export class GoogleOAuthService {
       
       // Update the access token in the database
       await this.db.query(
-        'UPDATE google_oauth_tokens SET access_token = $1, token_expiry = $2, updated_at = NOW() WHERE user_id = $3 AND business_id = $4',
+        'UPDATE google_oauth_tokens SET access_token = $1, expiry_date = $2, updated_at = NOW() WHERE user_id = $3 AND business_id = $4',
         [
           credentials.access_token,
-          new Date(credentials.expiry_date || Date.now() + 3600000), // Default to 1 hour if no expiry provided
+          credentials.expiry_date || Date.now() + 3600000, // Default to 1 hour if no expiry provided
           userId,
           businessId
         ]
@@ -149,14 +226,22 @@ export class GoogleOAuthService {
    */
   async storeTokens(userId: string, businessId: string, tokens: OAuthTokens): Promise<void> {
     try {
+      // First, ensure Google OAuth tables exist
+      await this.ensureOAuthTablesExist();
+      
       // Encrypt the refresh token before storage
+      const encryptKey = process.env.GOOGLE_TOKEN_ENCRYPTION_KEY;
+      if (!encryptKey) {
+        throw new Error('Missing GOOGLE_TOKEN_ENCRYPTION_KEY environment variable');
+      }
+      
       const encryptedRefreshToken = encryptData(
         tokens.refresh_token,
-        process.env.GOOGLE_TOKEN_ENCRYPTION_KEY || ''
+        encryptKey
       );
       
       // Calculate expiry date
-      const expiryDate = new Date(tokens.expiry_date || Date.now() + 3600000); // Default to 1 hour if not provided
+      const expiryDate = tokens.expiry_date || Date.now() + 3600000; // Default to 1 hour if not provided
       
       // Check if token already exists for this user/business
       const existingToken = await this.db.query(
@@ -167,19 +252,81 @@ export class GoogleOAuthService {
       if (existingToken && existingToken.rows && existingToken.rows.length > 0) {
         // Update existing token
         await this.db.query(
-          'UPDATE google_oauth_tokens SET access_token = $1, refresh_token = $2, token_expiry = $3, updated_at = NOW() WHERE user_id = $4 AND business_id = $5',
+          'UPDATE google_oauth_tokens SET access_token = $1, refresh_token = $2, expiry_date = $3, updated_at = NOW() WHERE user_id = $4 AND business_id = $5',
           [tokens.access_token, encryptedRefreshToken, expiryDate, userId, businessId]
         );
       } else {
         // Insert new token
         await this.db.query(
-          'INSERT INTO google_oauth_tokens (user_id, business_id, access_token, refresh_token, token_expiry) VALUES ($1, $2, $3, $4, $5)',
+          'INSERT INTO google_oauth_tokens (user_id, business_id, access_token, refresh_token, expiry_date) VALUES ($1, $2, $3, $4, $5)',
           [userId, businessId, tokens.access_token, encryptedRefreshToken, expiryDate]
         );
       }
     } catch (error) {
       console.error('Error storing tokens:', error);
       throw new Error(`Failed to store OAuth tokens: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Ensures that the OAuth tables exist
+   * Creates them if they don't
+   */
+  private async ensureOAuthTablesExist(): Promise<void> {
+    try {
+      const pool = this.db.getPool();
+      
+      // Check if the tokens table exists
+      const tableResult = await pool.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'google_oauth_tokens'
+        );
+      `);
+      
+      const tablesExist = tableResult.rows[0].exists;
+      
+      if (!tablesExist) {
+        console.log('Google OAuth tables do not exist, initializing...');
+        
+        const migrationsPath = path.join(process.cwd(), 'src', 'services', 'database', 'migrations');
+        const schemaPath = path.join(migrationsPath, 'google_oauth_schema.sql');
+        
+        if (!fs.existsSync(schemaPath)) {
+          throw new Error(`OAuth schema file not found: ${schemaPath}`);
+        }
+        
+        const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+        
+        // Execute schema in a transaction
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN');
+          
+          // Split on semicolons to execute each statement
+          const statements = schemaSql
+            .split(';')
+            .map(stmt => stmt.trim())
+            .filter(stmt => stmt.length > 0);
+          
+          for (const statement of statements) {
+            await client.query(statement);
+          }
+          
+          await client.query('COMMIT');
+          console.log('Successfully initialized Google OAuth tables');
+        } catch (error) {
+          await client.query('ROLLBACK');
+          console.error('Error initializing Google OAuth tables:', error);
+          throw error;
+        } finally {
+          client.release();
+        }
+      }
+    } catch (error) {
+      console.error('Error checking or initializing OAuth tables:', error);
+      throw error;
     }
   }
   
@@ -192,35 +339,42 @@ export class GoogleOAuthService {
    */
   async migrateTokens(userId: string, tempBusinessId: string, permanentBusinessId: string | number): Promise<void> {
     try {
+      console.log(`Migrating tokens from tempBusinessId=${tempBusinessId} to permanentBusinessId=${permanentBusinessId}`);
+      
       // Get tokens for temporary business ID
       const tokenResult = await this.db.query(
-        'SELECT access_token, refresh_token, token_expiry FROM google_oauth_tokens WHERE user_id = $1 AND business_id = $2',
+        'SELECT access_token, refresh_token, expiry_date FROM google_oauth_tokens WHERE user_id = $1 AND business_id = $2',
         [userId, tempBusinessId]
       );
       
       if (!tokenResult || !tokenResult.rows || tokenResult.rows.length === 0) {
-        throw new Error('No tokens found for temporary business ID');
+        throw new Error(`No tokens found for temporary business ID: ${tempBusinessId}`);
       }
       
       const tokenData = tokenResult.rows[0];
+      console.log('Found token data for temporary business ID');
       
       // Insert tokens for permanent business ID
       await this.db.query(
-        'INSERT INTO google_oauth_tokens (user_id, business_id, access_token, refresh_token, token_expiry) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (user_id, business_id) DO UPDATE SET access_token = $3, refresh_token = $4, token_expiry = $5, updated_at = NOW()',
+        'INSERT INTO google_oauth_tokens (user_id, business_id, access_token, refresh_token, expiry_date) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (user_id, business_id) DO UPDATE SET access_token = $3, refresh_token = $4, expiry_date = $5, updated_at = NOW()',
         [
           userId,
           permanentBusinessId,
           tokenData.access_token,
           tokenData.refresh_token,
-          tokenData.token_expiry
+          tokenData.expiry_date
         ]
       );
+      
+      console.log('Inserted token data for permanent business ID');
       
       // Delete temporary token
       await this.db.query(
         'DELETE FROM google_oauth_tokens WHERE user_id = $1 AND business_id = $2',
         [userId, tempBusinessId]
       );
+      
+      console.log('Deleted temporary token data');
     } catch (error) {
       console.error('Error migrating tokens:', error);
       throw new Error(`Failed to migrate tokens: ${error.message}`);
@@ -238,7 +392,7 @@ export class GoogleOAuthService {
     try {
       // Get token info from database
       const tokenResult = await this.db.query(
-        'SELECT access_token, token_expiry FROM google_oauth_tokens WHERE user_id = $1 AND business_id = $2',
+        'SELECT access_token, expiry_date FROM google_oauth_tokens WHERE user_id = $1 AND business_id = $2',
         [userId, businessId]
       );
       
@@ -249,12 +403,13 @@ export class GoogleOAuthService {
       const tokenInfo = tokenResult.rows[0];
       
       // Check if the token is expired or will expire in the next 5 minutes
-      const now = new Date();
-      const expiryDate = new Date(tokenInfo.token_expiry);
+      const now = Date.now();
+      const expiryDate = Number(tokenInfo.expiry_date);
       const expiryBuffer = 5 * 60 * 1000; // 5 minutes in milliseconds
       
-      if (expiryDate <= new Date(now.getTime() + expiryBuffer)) {
+      if (expiryDate <= (now + expiryBuffer)) {
         // Token is expired or will expire soon, refresh it
+        console.log('Access token expired or expiring soon, refreshing...');
         return await this.refreshAccessToken(userId, businessId);
       }
       

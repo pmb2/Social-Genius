@@ -1,12 +1,14 @@
-import axios from 'axios';
-import { BrowserAutomationConfig } from './config';
+// DEPRECATED: This module is no longer in use as we've migrated to direct API integration.
+// Keeping it as a placeholder for backwards compatibility.
 
-// Import logging utility
 import { 
   logBrowserOperation, 
   LogLevel, 
   OperationCategory 
 } from '@/lib/utilities/browser-logging';
+
+// Log deprecation warning
+console.warn('[DEPRECATED] Browser automation module is no longer in use. The application has been migrated to direct API integration.');
 
 // Types for Browser-Use API
 export interface BrowserTask {
@@ -33,11 +35,13 @@ export interface BrowserTaskResult {
   screenshots?: string[]; // Array of screenshot paths
 }
 
-// Browser Automation Service
+// DEPRECATED: Browser Automation Service - stub implementation
 export class BrowserAutomationService {
   private static instance: BrowserAutomationService;
 
-  private constructor() {}
+  private constructor() {
+    console.warn('[DEPRECATED] BrowserAutomationService is no longer functional. Application has migrated to direct API integration.');
+  }
 
   public static getInstance(): BrowserAutomationService {
     if (!BrowserAutomationService.instance) {
@@ -47,7 +51,9 @@ export class BrowserAutomationService {
   }
 
   /**
-   * Authenticate with Google using browser automation
+   * DEPRECATED: Authenticate with Google using browser automation
+   * This method is no longer functional as we've migrated to direct API integration.
+   * 
    * @param businessId The business ID to associate with this authentication session
    * @param email Google account email
    * @param password Google account password or encrypted credentials
@@ -64,11 +70,17 @@ export class BrowserAutomationService {
       takeScreenshots?: boolean;
     }
   ): Promise<BrowserTaskResult> {
-    // Generate a unique trace ID for this authentication request
-    const traceId = `auth-${businessId}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const reuseSession = options?.reuseSession !== false; // Default to true
-    const persistSession = options?.persistSession !== false; // Default to true
-    const takeScreenshots = options?.takeScreenshots !== false; // Default to true
+    console.warn('[DEPRECATED] authenticateGoogle method is no longer functional. Application has migrated to direct API integration.');
+    
+    return {
+      taskId: `deprecated-${Date.now()}`,
+      businessId,
+      status: 'failed',
+      error: 'Browser automation has been deprecated. Application now uses direct API integration.',
+      traceId: `deprecated-${businessId}-${Date.now()}`
+    };
+    
+    /* Original implementation removed - no longer needed */
     
     try {
       // Import screenshot utilities 
@@ -813,55 +825,27 @@ export class BrowserAutomationService {
   }
 
   /**
-   * Check the status of a running task
+   * DEPRECATED: Check the status of a running task
+   * This method is no longer functional as we've migrated to direct API integration.
+   * 
    * @param taskId The ID of the task to check
    */
   public async checkTaskStatus(taskId: string): Promise<BrowserTaskResult> {
-    try {
-      logBrowserOperation(
-        OperationCategory.TASK, 
-        `Checking status of task: ${taskId}`,
-        LogLevel.INFO
-      );
-      
-      const statusUrl = BrowserAutomationConfig.getEndpointUrl('taskStatus') + `/${taskId}`;
-      const response = await axios.get(statusUrl, {
-        timeout: BrowserAutomationConfig.timeouts.request
-      });
-      
-      logBrowserOperation(
-        OperationCategory.TASK, 
-        `Task status retrieved: ${response.data.status}`,
-        LogLevel.INFO
-      );
-      
-      return {
-        taskId,
-        businessId: response.data.businessId,
-        status: response.data.status,
-        result: response.data.result,
-        error: response.data.error,
-        screenshot: response.data.screenshot
-      };
-    } catch (error) {
-      logBrowserOperation(
-        OperationCategory.TASK, 
-        `Task status check error for task ${taskId}`,
-        LogLevel.ERROR,
-        error
-      );
-      
-      return {
-        taskId,
-        businessId: 'unknown',
-        status: 'failed',
-        error: error instanceof Error ? error.message : 'Unknown error checking task status'
-      };
-    }
+    console.warn('[DEPRECATED] checkTaskStatus method is no longer functional. Application has migrated to direct API integration.');
+    
+    return {
+      taskId,
+      businessId: 'unknown',
+      status: 'failed',
+      error: 'Browser automation has been deprecated. Application now uses direct API integration.',
+      traceId: `deprecated-${taskId}-${Date.now()}`
+    };
   }
 
   /**
-   * Get screenshot from a task
+   * DEPRECATED: Get screenshot from a task
+   * This method is no longer functional as we've migrated to direct API integration.
+   * 
    * @param taskId The ID of the task
    * @param businessId The business ID
    * @param screenshotType The type of screenshot to retrieve (default: 'final_state')
@@ -871,123 +855,26 @@ export class BrowserAutomationService {
     businessId: string, 
     screenshotType: string = 'final_state'
   ): Promise<string | null> {
-    try {
-      logBrowserOperation(
-        OperationCategory.TASK, 
-        `Retrieving ${screenshotType} screenshot for task ${taskId}, business ${businessId}`,
-        LogLevel.INFO
-      );
-      
-      const screenshotUrl = `${BrowserAutomationConfig.getEndpointUrl('screenshot')}/${businessId}/${taskId}/${screenshotType}`;
-      const response = await axios.get(screenshotUrl, {
-        responseType: 'arraybuffer',
-        timeout: BrowserAutomationConfig.timeouts.request
-      });
-      
-      // Convert array buffer to base64
-      const base64 = Buffer.from(response.data, 'binary').toString('base64');
-      
-      logBrowserOperation(
-        OperationCategory.TASK, 
-        `Screenshot (${screenshotType}) retrieved successfully (${(response.data.length/1024).toFixed(1)}KB)`,
-        LogLevel.INFO
-      );
-      
-      return `data:image/png;base64,${base64}`;
-    } catch (error) {
-      logBrowserOperation(
-        OperationCategory.TASK, 
-        `Screenshot (${screenshotType}) retrieval error for task ${taskId}`,
-        LogLevel.ERROR,
-        error
-      );
-      
-      return null;
-    }
+    console.warn('[DEPRECATED] getScreenshot method is no longer functional. Application has migrated to direct API integration.');
+    return null;
   }
   
   /**
-   * Get all available screenshots for a task
+   * DEPRECATED: Get all available screenshots for a task
+   * This method is no longer functional as we've migrated to direct API integration.
+   * 
    * @param taskId The ID of the task
    * @param businessId The business ID
    */
   public async getAllScreenshots(taskId: string, businessId: string): Promise<Record<string, string> | null> {
-    try {
-      logBrowserOperation(
-        OperationCategory.TASK, 
-        `Retrieving all screenshots for task ${taskId}, business ${businessId}`,
-        LogLevel.INFO
-      );
-      
-      // Get the list of available screenshots first
-      const listUrl = `${BrowserAutomationConfig.getEndpointUrl('screenshotList')}/${businessId}/${taskId}`;
-      const listResponse = await axios.get(listUrl, {
-        timeout: BrowserAutomationConfig.timeouts.request
-      });
-      
-      if (!listResponse.data || !Array.isArray(listResponse.data.screenshots)) {
-        logBrowserOperation(
-          OperationCategory.TASK, 
-          `No screenshots found for task ${taskId}`,
-          LogLevel.WARN
-        );
-        return null;
-      }
-      
-      const availableScreenshots = listResponse.data.screenshots as string[];
-      logBrowserOperation(
-        OperationCategory.TASK, 
-        `Found ${availableScreenshots.length} screenshots for task ${taskId}`,
-        LogLevel.INFO
-      );
-      
-      // Download each screenshot
-      const screenshots: Record<string, string> = {};
-      const downloadPromises = availableScreenshots.map(async (screenshotName) => {
-        try {
-          const screenshotUrl = `${BrowserAutomationConfig.getEndpointUrl('screenshot')}/${businessId}/${taskId}/${screenshotName}`;
-          const response = await axios.get(screenshotUrl, {
-            responseType: 'arraybuffer',
-            timeout: BrowserAutomationConfig.timeouts.request
-          });
-          
-          // Convert to base64
-          const base64 = Buffer.from(response.data, 'binary').toString('base64');
-          screenshots[screenshotName] = `data:image/png;base64,${base64}`;
-          
-          logBrowserOperation(
-            OperationCategory.TASK, 
-            `Retrieved screenshot ${screenshotName} (${(response.data.length/1024).toFixed(1)}KB)`,
-            LogLevel.INFO
-          );
-        } catch (error) {
-          logBrowserOperation(
-            OperationCategory.TASK, 
-            `Failed to retrieve screenshot ${screenshotName}`,
-            LogLevel.ERROR,
-            error
-          );
-        }
-      });
-      
-      // Wait for all downloads to complete
-      await Promise.all(downloadPromises);
-      
-      return screenshots;
-    } catch (error) {
-      logBrowserOperation(
-        OperationCategory.TASK, 
-        `Error retrieving screenshots for task ${taskId}`,
-        LogLevel.ERROR,
-        error
-      );
-      
-      return null;
-    }
+    console.warn('[DEPRECATED] getAllScreenshots method is no longer functional. Application has migrated to direct API integration.');
+    return null;
   }
 
   /**
-   * Perform a Google Business Profile update
+   * DEPRECATED: Perform a Google Business Profile update
+   * This method is no longer functional as we've migrated to direct API integration.
+   * 
    * @param businessId The business ID
    * @param email Google account email
    * @param password Google account password
@@ -999,62 +886,21 @@ export class BrowserAutomationService {
     password: string,
     updateData: Record<string, any>
   ): Promise<BrowserTaskResult> {
-    try {
-      logBrowserOperation(
-        OperationCategory.API,
-        `Updating business profile for business ${businessId}`,
-        LogLevel.INFO,
-        { businessId, email, updateDataFields: Object.keys(updateData) }
-      );
-      
-      const response = await axios.post(
-        BrowserAutomationConfig.getEndpointUrl('profileUpdate'),
-        {
-          businessId,
-          email,
-          password,
-          taskType: 'info',
-          additionalData: updateData,
-          timeout: BrowserAutomationConfig.timeouts.profileUpdate
-        },
-        {
-          timeout: BrowserAutomationConfig.timeouts.profileUpdate + 5000 // Add 5s buffer
-        }
-      );
-      
-      logBrowserOperation(
-        OperationCategory.API,
-        `Profile update request successful, task ID: ${response.data.taskId || 'unknown'}`,
-        LogLevel.INFO
-      );
-      
-      return {
-        taskId: response.data.taskId,
-        businessId,
-        status: response.data.success ? 'success' : 'failed',
-        result: response.data.result,
-        error: response.data.error,
-        screenshot: response.data.screenshot
-      };
-    } catch (error) {
-      logBrowserOperation(
-        OperationCategory.API,
-        `Business profile update error for business ${businessId}`,
-        LogLevel.ERROR,
-        error
-      );
-      
-      return {
-        taskId: 'error',
-        businessId,
-        status: 'failed',
-        error: error instanceof Error ? error.message : 'Unknown error during profile update'
-      };
-    }
+    console.warn('[DEPRECATED] updateBusinessProfile method is no longer functional. Application has migrated to direct API integration.');
+    
+    return {
+      taskId: `deprecated-${Date.now()}`,
+      businessId,
+      status: 'failed',
+      error: 'Browser automation has been deprecated. Application now uses direct API integration.',
+      traceId: `deprecated-${businessId}-${Date.now()}`
+    };
   }
 
   /**
-   * Create a new post on Google Business Profile
+   * DEPRECATED: Create a new post on Google Business Profile
+   * This method is no longer functional as we've migrated to direct API integration.
+   * 
    * @param businessId The business ID
    * @param email Google account email
    * @param password Google account password
@@ -1071,108 +917,27 @@ export class BrowserAutomationService {
       buttonUrl?: string;
     }
   ): Promise<BrowserTaskResult> {
-    try {
-      logBrowserOperation(
-        OperationCategory.API,
-        `Creating business post for business ${businessId}`,
-        LogLevel.INFO,
-        { 
-          businessId, 
-          email, 
-          postLength: postData.text?.length || 0,
-          hasImage: !!postData.imageUrl,
-          hasButton: !!(postData.buttonText && postData.buttonUrl)
-        }
-      );
-      
-      const response = await axios.post(
-        BrowserAutomationConfig.getEndpointUrl('postCreation'),
-        {
-          businessId,
-          email,
-          password,
-          taskType: 'post',
-          additionalData: postData,
-          timeout: BrowserAutomationConfig.timeouts.postCreation
-        },
-        {
-          timeout: BrowserAutomationConfig.timeouts.postCreation + 5000 // Add 5s buffer
-        }
-      );
-      
-      logBrowserOperation(
-        OperationCategory.API,
-        `Post creation request successful, task ID: ${response.data.taskId || 'unknown'}`,
-        LogLevel.INFO
-      );
-      
-      return {
-        taskId: response.data.taskId,
-        businessId,
-        status: response.data.success ? 'success' : 'failed',
-        result: response.data.result,
-        error: response.data.error,
-        screenshot: response.data.screenshot
-      };
-    } catch (error) {
-      logBrowserOperation(
-        OperationCategory.API,
-        `Business post creation error for business ${businessId}`,
-        LogLevel.ERROR,
-        error
-      );
-      
-      return {
-        taskId: 'error',
-        businessId,
-        status: 'failed',
-        error: error instanceof Error ? error.message : 'Unknown error during post creation'
-      };
-    }
+    console.warn('[DEPRECATED] createBusinessPost method is no longer functional. Application has migrated to direct API integration.');
+    
+    return {
+      taskId: `deprecated-${Date.now()}`,
+      businessId,
+      status: 'failed',
+      error: 'Browser automation has been deprecated. Application now uses direct API integration.',
+      traceId: `deprecated-${businessId}-${Date.now()}`
+    };
   }
 
   /**
-   * Check health status of the browser-use API
+   * DEPRECATED: Check health status of the browser-use API
    */
   public async checkHealth(): Promise<boolean> {
-    try {
-      logBrowserOperation(
-        OperationCategory.API,
-        `Checking API health status at ${BrowserAutomationConfig.apiUrl}`,
-        LogLevel.INFO
-      );
-      
-      const response = await axios.get(
-        BrowserAutomationConfig.getEndpointUrl('health'),
-        {
-          timeout: 5000 // Short timeout for health check
-        }
-      );
-      
-      const isHealthy = response.data.status === 'healthy';
-      
-      logBrowserOperation(
-        OperationCategory.API,
-        `API health check result: ${isHealthy ? 'HEALTHY' : 'UNHEALTHY'}`,
-        isHealthy ? LogLevel.INFO : LogLevel.ERROR,
-        response.data
-      );
-      
-      return isHealthy;
-    } catch (error) {
-      logBrowserOperation(
-        OperationCategory.API,
-        `API health check failed`,
-        LogLevel.ERROR,
-        error
-      );
-      
-      return false;
-    }
+    console.warn('[DEPRECATED] checkHealth method is no longer functional. Application has migrated to direct API integration.');
+    return false;
   }
   
   /**
-   * Check if an authenticated session exists for a business
+   * DEPRECATED: Check if an authenticated session exists for a business
    * @param businessId The business ID to check
    */
   public async checkSession(businessId: string): Promise<{
@@ -1181,54 +946,12 @@ export class BrowserAutomationService {
     lastUpdated?: string;
     cookiesCount?: number;
   }> {
-    try {
-      logBrowserOperation(
-        OperationCategory.SESSION,
-        `Checking for existing session for business ${businessId}`,
-        LogLevel.INFO
-      );
-      
-      const sessionCheckUrl = `${BrowserAutomationConfig.getEndpointUrl('session')}/${businessId}`;
-      
-      const response = await axios.get(sessionCheckUrl, {
-        timeout: BrowserAutomationConfig.timeouts.request
-      });
-      
-      const hasSession = response.data.has_session === true;
-      
-      logBrowserOperation(
-        OperationCategory.SESSION,
-        `Session check for business ${businessId}: ${hasSession ? 'EXISTS' : 'NOT FOUND'}`,
-        LogLevel.INFO,
-        hasSession ? {
-          cookiesCount: response.data.cookies_count,
-          lastUpdated: response.data.last_updated,
-          isExpired: response.data.is_expired
-        } : null
-      );
-      
-      return {
-        hasSession,
-        isExpired: response.data.is_expired,
-        lastUpdated: response.data.last_updated,
-        cookiesCount: response.data.cookies_count
-      };
-    } catch (error) {
-      logBrowserOperation(
-        OperationCategory.SESSION,
-        `Error checking session for business ${businessId}`,
-        LogLevel.ERROR,
-        error
-      );
-      
-      return { 
-        hasSession: false
-      };
-    }
+    console.warn('[DEPRECATED] checkSession method is no longer functional. Application has migrated to direct API integration.');
+    return { hasSession: false };
   }
   
   /**
-   * Validate if a session is still active and can be used
+   * DEPRECATED: Validate if a session is still active and can be used
    * @param businessId The business ID to validate
    */
   public async validateSession(businessId: string): Promise<{
@@ -1236,84 +959,16 @@ export class BrowserAutomationService {
     screenshot?: string;
     message?: string;
   }> {
-    try {
-      logBrowserOperation(
-        OperationCategory.SESSION,
-        `Validating session for business ${businessId}`,
-        LogLevel.INFO
-      );
-      
-      // Use proper endpoint for validation from config
-      const validationUrl = `${BrowserAutomationConfig.getEndpointUrl('sessionValidate')}/${businessId}`;
-      
-      const response = await axios.get(validationUrl, {
-        timeout: BrowserAutomationConfig.timeouts.request * 2 // Double the timeout for validation
-      });
-      
-      const isValid = response.data.valid === true;
-      
-      logBrowserOperation(
-        OperationCategory.SESSION,
-        `Session validation for business ${businessId}: ${isValid ? 'VALID' : 'INVALID'}`,
-        isValid ? LogLevel.INFO : LogLevel.WARN,
-        {
-          message: response.data.message,
-          screenshot: response.data.screenshot
-        }
-      );
-      
-      // If session is valid, schedule a background refresh to keep it fresh
-      if (isValid) {
-        setTimeout(() => {
-          this.refreshSession(businessId).catch(error => {
-            logBrowserOperation(
-              OperationCategory.SESSION,
-              `Error in background session refresh for ${businessId}`,
-              LogLevel.ERROR,
-              error
-            );
-          });
-        }, 5 * 60 * 1000); // Refresh after 5 minutes
-      }
-      
-      return {
-        valid: isValid,
-        message: response.data.message,
-        screenshot: response.data.screenshot
-      };
-    } catch (error) {
-      logBrowserOperation(
-        OperationCategory.SESSION,
-        `Error validating session for business ${businessId}`,
-        LogLevel.ERROR,
-        error
-      );
-      
-      return { 
-        valid: false,
-        message: error instanceof Error ? error.message : 'Unknown error during session validation'
-      };
-    }
+    console.warn('[DEPRECATED] validateSession method is no longer functional. Application has migrated to direct API integration.');
+    return { valid: false, message: 'Browser automation has been deprecated' };
   }
   
   /**
-   * Refresh a session to keep it active
+   * DEPRECATED: Refresh a session to keep it active
    * @param businessId The business ID to refresh
    */
   private async refreshSession(businessId: string): Promise<boolean> {
-    try {
-      // Just use the validate session endpoint, which will refresh the session if valid
-      const validation = await this.validateSession(businessId);
-      return validation.valid;
-    } catch (error) {
-      logBrowserOperation(
-        OperationCategory.SESSION,
-        `Error refreshing session for business ${businessId}`,
-        LogLevel.ERROR,
-        error
-      );
-      
-      return false;
-    }
+    console.warn('[DEPRECATED] refreshSession method is no longer functional. Application has migrated to direct API integration.');
+    return false;
   }
 }

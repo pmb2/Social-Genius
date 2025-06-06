@@ -1,75 +1,53 @@
 /**
- * Browser Automation Configuration
+ * Browser Automation Configuration - DEPRECATED
  * 
- * Centralized configuration for browser automation services with 
- * environment variable handling and fallbacks.
+ * This module is no longer in use as we've migrated to direct API integration.
+ * Keeping it as a placeholder for backwards compatibility.
  */
 
-// Default values for development environment
-const DEFAULT_BROWSER_API_URL = 'http://browser-use-api:5055';
-// Fallback URLs to try if the default doesn't work
-const FALLBACK_BROWSER_API_URLS = [
-  'http://browser-use-api:5055',
-  'http://localhost:5055',
-  'http://host.docker.internal:5055',
-  'http://127.0.0.1:5055'
-];
+// Default values with API endpoints that no longer exist (commented out)
+// This file is kept for backwards compatibility but the browser-use functionality is disabled
+const DEFAULT_BROWSER_API_URL = 'http://api-placeholder:5055'; // This doesn't exist anymore
+// Placeholder fallback URLs (these don't exist anymore)
+const FALLBACK_BROWSER_API_URLS: string[] = [];
 const DEFAULT_API_TIMEOUT = 60000; // 60 seconds
 const DEFAULT_POLLING_INTERVAL = 2000; // 2 seconds
 const DEFAULT_MAX_POLLING_ATTEMPTS = 30;
 
-// Environment configuration with fallbacks
+// Environment configuration - DEPRECATED AND NON-FUNCTIONAL
 export const BrowserAutomationConfig = {
-  // Base URL for the external Browser-Use API
-  // Making this a dynamic property that can be updated at runtime if needed
-  _apiUrl: process.env.BROWSER_USE_API_URL || DEFAULT_BROWSER_API_URL,
+  // Base URL for the external Browser-Use API - NO LONGER USED
+  _apiUrl: 'deprecated-api-url',
   
-  // Track which fallback URLs we've tried
+  // Track which fallback URLs we've tried (none exist now)
   _fallbackUrls: FALLBACK_BROWSER_API_URLS,
   _currentFallbackIndex: -1,
   _connectionFailures: 0,
   
   get apiUrl() {
+    console.warn('[DEPRECATED] BrowserAutomationConfig.apiUrl is no longer functional. Using API integration instead.');
     return this._apiUrl;
   },
   
   set apiUrl(value) {
-    console.log(`[BrowserAutomationConfig] Updating API URL from ${this._apiUrl} to ${value}`);
+    console.warn('[DEPRECATED] BrowserAutomationConfig.apiUrl is no longer functional. Using API integration instead.');
     this._apiUrl = value;
   },
   
   /**
-   * Try the next fallback API URL
+   * Try the next fallback API URL - DEPRECATED
    * @returns The next URL to try
    */
   tryNextFallbackUrl() {
-    this._currentFallbackIndex++;
-    this._connectionFailures++;
-    
-    // If we've tried all fallbacks, start over
-    if (this._currentFallbackIndex >= this._fallbackUrls.length) {
-      console.log(`[BrowserAutomationConfig] Tried all ${this._fallbackUrls.length} fallback URLs, starting over`);
-      this._currentFallbackIndex = 0;
-    }
-    
-    const nextUrl = this._fallbackUrls[this._currentFallbackIndex];
-    console.log(`[BrowserAutomationConfig] Trying fallback URL #${this._currentFallbackIndex+1}: ${nextUrl}`);
-    this.apiUrl = nextUrl;
-    
-    return nextUrl;
+    console.warn('[DEPRECATED] BrowserAutomationConfig.tryNextFallbackUrl is no longer functional. Using API integration instead.');
+    return '';
   },
   
   /**
-   * Reset connection failures counter and fallback index on successful connection
+   * Reset connection attempts - DEPRECATED
    */
   resetConnectionAttempts() {
-    const previousFailures = this._connectionFailures;
-    this._connectionFailures = 0;
-    this._currentFallbackIndex = -1;
-    
-    if (previousFailures > 0) {
-      console.log(`[BrowserAutomationConfig] Connection established after ${previousFailures} failures. Reset counter.`);
-    }
+    console.warn('[DEPRECATED] BrowserAutomationConfig.resetConnectionAttempts is no longer functional. Using API integration instead.');
   },
   
   // API version for endpoint URLs
@@ -137,23 +115,10 @@ export const BrowserAutomationConfig = {
     terminateTask: '/v1/terminate',
   },
   
-  // Get the complete URL for an endpoint
+  // Get the complete URL for an endpoint - DEPRECATED
   getEndpointUrl(endpoint: keyof typeof BrowserAutomationConfig.endpoints): string {
-    const base = this.apiUrl.endsWith('/') ? this.apiUrl.slice(0, -1) : this.apiUrl;
-    const apiPath = this.endpoints[endpoint].startsWith('/') 
-      ? this.endpoints[endpoint] 
-      : '/' + this.endpoints[endpoint];
-    
-    // Avoid duplicate version prefixes
-    // Check if apiPath already includes the version prefix (like '/v1/something')
-    const versionPrefix = `/${this.apiVersion}`;
-    if (apiPath.startsWith(versionPrefix)) {
-      // API path already includes version (e.g., '/v1/google-auth'), don't add version again
-      return `${base}${apiPath}`;
-    } else {
-      // API path doesn't include version (e.g., '/google-auth'), add version prefix
-      return `${base}${versionPrefix}${apiPath}`;
-    }
+    console.warn(`[DEPRECATED] BrowserAutomationConfig.getEndpointUrl(${endpoint}) is no longer functional. Using API integration instead.`);
+    return '/api/deprecated-endpoint';
   },
   
   // Helper method to check if the development environment is active
@@ -162,15 +127,5 @@ export const BrowserAutomationConfig = {
   }
 };
 
-// Log configuration at startup if in development mode
-if (process.env.NODE_ENV !== 'production') {
-  console.log('[BrowserAutomationConfig] Using configuration:', {
-    apiUrl: BrowserAutomationConfig.apiUrl,
-    apiVersion: BrowserAutomationConfig.apiVersion,
-    timeouts: BrowserAutomationConfig.timeouts,
-    polling: BrowserAutomationConfig.polling,
-    logging: BrowserAutomationConfig.logging,
-    endpoints: BrowserAutomationConfig.endpoints,
-    isDevelopment: BrowserAutomationConfig.isDevelopment(),
-  });
-}
+// Log deprecation warning at startup
+console.warn('[DEPRECATED] BrowserAutomationConfig is no longer in use. The application has been migrated to direct API integration.');

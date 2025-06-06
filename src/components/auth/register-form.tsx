@@ -23,8 +23,20 @@ export function RegisterForm({onSuccess}: RegisterFormProps) {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        // Security check - warn about insecure connections
-        if (typeof window !== 'undefined' && window.location.protocol === 'http:' && window.location.hostname !== 'localhost') {
+        // Import the secure credential handler
+        const { enforceSecureConnection } = await import('@/lib/utilities/secure-credential-handler');
+        
+        // Make sure we're using HTTPS in production
+        if (typeof window !== 'undefined' && !enforceSecureConnection()) {
+            setError('Redirecting to secure connection...');
+            return; // Redirect happens in enforceSecureConnection
+        }
+
+        // Security check - warn about insecure connections in development
+        if (process.env.NODE_ENV !== 'production' && 
+            typeof window !== 'undefined' && 
+            window.location.protocol === 'http:' && 
+            window.location.hostname !== 'localhost') {
             const confirmSubmit = window.confirm(
                 'Warning: You are submitting sensitive information over an insecure connection. Continue anyway?'
             );
@@ -47,6 +59,17 @@ export function RegisterForm({onSuccess}: RegisterFormProps) {
 
         if (password.length < 6) { // Changed to 6 to match backend validation
             setError('Password must be at least 6 characters long');
+            return;
+        }
+
+        // Check password strength
+        const hasLowercase = /[a-z]/.test(password);
+        const hasUppercase = /[A-Z]/.test(password);
+        const hasNumber = /[0-9]/.test(password);
+        const hasSpecialChar = /[^a-zA-Z0-9]/.test(password);
+        
+        if (!(hasLowercase && (hasUppercase || hasNumber || hasSpecialChar))) {
+            setError('Password must contain lowercase letters and at least one uppercase letter, number, or special character');
             return;
         }
 

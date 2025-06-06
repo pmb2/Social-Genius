@@ -1,14 +1,14 @@
 /**
- * Browser Automation Service Bridge
+ * Browser Automation Service Bridge - DEPRECATED
  * 
- * Provides integration between the BrowserAutomationService and browser-manager.ts
- * for seamless browser automation operations across the application.
+ * This module is no longer in use as we've migrated to direct API integration.
+ * Keeping it as a placeholder for backwards compatibility.
  * 
- * Features:
- * - Unified authentication interface
- * - Fallback mechanisms for improved reliability
- * - Detailed logging and tracing for debugging
- * - Performance monitoring
+ * DEPRECATED FEATURES (NO LONGER ACTIVE):
+ * - Browser automation integration
+ * - Authentication via browser
+ * - Profile updates via browser
+ * - Post creation via browser
  */
 
 import { BrowserAutomationService, BrowserTaskResult } from '@/lib/browser-automation';
@@ -104,16 +104,22 @@ function createTaskResultFromBrowserManager(
 }
 
 /**
- * Browser operation service that provides a unified interface to browser
- * automation capabilities by bridging BrowserAutomationService and browser-manager.
+ * DEPRECATED: Browser operation service - NO LONGER FUNCTIONAL
+ * 
+ * This service has been replaced by direct API integration.
+ * This class is kept for backwards compatibility, but all methods 
+ * now return deprecation notifications.
  */
 export class BrowserOperationService {
   private static instance: BrowserOperationService;
-  private automationService: BrowserAutomationService;
+  // No longer using actual automation service
+  private automationService: any;
   
   // Private constructor enforces singleton pattern
   private constructor() {
-    this.automationService = BrowserAutomationService.getInstance();
+    // Create a placeholder
+    this.automationService = {};
+    console.warn('[DEPRECATED] BrowserOperationService is no longer functional. The application has been migrated to direct API integration.');
   }
   
   /**

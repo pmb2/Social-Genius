@@ -15,18 +15,25 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: dev-secret-key-change-me
-      BROWSER_USE_API_URL: http://browser-use-api:5055
+      # BROWSER_USE_API_URL: http://browser-use-api:5055 - No longer needed with API integration
       REDIS_URL: redis://host.docker.internal:6380
       REDIS_PREFIX: "social-genius:dev:"
       SESSION_TTL: 86400
+      # Google OAuth Environment Variables
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-placeholder-client-id}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-placeholder-client-secret}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:3000/api/google-auth/callback}
+      GOOGLE_TOKEN_ENCRYPTION_KEY: ${GOOGLE_TOKEN_ENCRYPTION_KEY:-placeholder-encryption-key}
+      # Feature flags
+      FEATURE_FLAG_GOOGLE_AUTH_WITH_OAUTH: "true"
+      FEATURE_FLAG_ENABLE_GOOGLE_OAUTH_MIGRATION: "true"
     volumes:
       - .:/app
       - /app/node_modules
     depends_on:
       - postgres
-      - browser-use-api
       - redis
-    command: sh -c "echo 'Waiting for database to be ready...' && sleep 5 && echo 'Starting application...' && cd /app && npm run dev -- -H 0.0.0.0"
+    command: sh -c "echo 'Waiting for database to be ready...' && sleep 5 && echo 'Starting application...' && cd /app && NODE_ENV=development node server.cjs"
 
   # PostgreSQL with development settings
   postgres:
@@ -62,36 +69,36 @@ services:
     networks:
       - social_genius_network
       
-  # Browser-Use API Service for automation
-  browser-use-api:
-    build:
-      context: ./src/api/browser-use
-      dockerfile: Dockerfile
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    container_name: social-genius-browser-api
-    volumes:
-      - ./src/api/browser-use/screenshots:/app/screenshots
-    environment:
-      - PORT=5055
-      - HOST=0.0.0.0
-      - MAX_CONCURRENT_BROWSERS=10
-      - SCREENSHOT_PATH=/app/screenshots
-      - REDIS_URL=redis://host.docker.internal:6380
-    ports:
-      - "5055:5055"
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5055/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    networks:
-      - social_genius_network
+  # Browser-Use API Service for automation - Commented out as we now use API integration
+  # browser-use-api:
+  #   build:
+  #     context: ./src/api/browser-use
+  #     dockerfile: Dockerfile
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+  #   container_name: social-genius-browser-api
+  #   volumes:
+  #     - ./src/api/browser-use/screenshots:/app/screenshots
+  #   environment:
+  #     - PORT=5055
+  #     - HOST=0.0.0.0
+  #     - MAX_CONCURRENT_BROWSERS=10
+  #     - SCREENSHOT_PATH=/app/screenshots
+  #     - REDIS_URL=redis://host.docker.internal:6380
+  #   ports:
+  #     - "5055:5055"
+  #   restart: unless-stopped
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:5055/health"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
+  #     start_period: 10s
+  #   networks:
+  #     - social_genius_network
       
   # Redis for session sharing and caching
   redis:

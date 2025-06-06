@@ -374,9 +374,17 @@ export async function authMiddleware(
       
       // Add CORS headers for AJAX requests
       if (isAjaxRequest) {
-        response.headers.set('Access-Control-Allow-Origin', '*');
+        const origin = req.headers.get('origin');
+        const allowedOrigins = ['https://app.social-genius.com', 'http://localhost:3000', 'http://localhost:3001', 'https://localhost'];
+        
+        if (origin && allowedOrigins.includes(origin)) {
+          response.headers.set('Access-Control-Allow-Origin', origin);
+        } else {
+          response.headers.set('Access-Control-Allow-Origin', '*');
+        }
+        
         response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-        response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie');
+        response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie, X-Requested-With');
         response.headers.set('Access-Control-Allow-Credentials', 'true');
       }
       

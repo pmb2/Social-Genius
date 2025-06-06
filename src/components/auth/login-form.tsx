@@ -17,8 +17,20 @@ export function LoginForm() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        // Security check - warn about insecure connections
-        if (typeof window !== 'undefined' && window.location.protocol === 'http:' && window.location.hostname !== 'localhost') {
+        // Import the secure credential handler
+        const { enforceSecureConnection } = await import('@/lib/utilities/secure-credential-handler');
+        
+        // Make sure we're using HTTPS in production
+        if (typeof window !== 'undefined' && !enforceSecureConnection()) {
+            setError('Redirecting to secure connection...');
+            return; // Redirect happens in enforceSecureConnection
+        }
+
+        // Security check - warn about insecure connections in development
+        if (process.env.NODE_ENV !== 'production' && 
+            typeof window !== 'undefined' && 
+            window.location.protocol === 'http:' && 
+            window.location.hostname !== 'localhost') {
             const confirmSubmit = window.confirm(
                 'Warning: You are submitting sensitive information over an insecure connection. Continue anyway?'
             );

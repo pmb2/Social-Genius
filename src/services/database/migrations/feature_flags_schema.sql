@@ -1,19 +1,25 @@
--- Feature flags table to store configuration
+-- Feature Flags Schema
+-- Creates tables needed for storing feature flag configuration
+
+-- Table for feature flags
 CREATE TABLE IF NOT EXISTS feature_flags (
-  flag_key VARCHAR(255) PRIMARY KEY,
-  config JSONB NOT NULL DEFAULT '{}',
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  id SERIAL PRIMARY KEY,
+  flag_key VARCHAR(100) NOT NULL,
+  config JSONB NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  UNIQUE(flag_key)
 );
 
--- Create index for faster lookups
-CREATE INDEX IF NOT EXISTS idx_feature_flags_key ON feature_flags(flag_key);
-
--- Initial feature flag data
+-- Insert default feature flags if they don't exist
 INSERT INTO feature_flags (flag_key, config)
-VALUES 
-  ('use_google_business_api', '{"defaultValue": false, "environmentOverrides": {"production": false, "development": true}}'),
-  ('google_auth_with_oauth', '{"defaultValue": false, "environmentOverrides": {"production": false, "development": true}}'),
-  ('google_posts_with_api', '{"defaultValue": false, "environmentOverrides": {"production": false, "development": true}}'),
-  ('google_reviews_with_api', '{"defaultValue": false, "environmentOverrides": {"production": false, "development": true}}')
+VALUES ('google_auth_with_oauth', '{"defaultValue":true,"environmentOverrides":{"production":true,"development":true,"staging":true}}')
+ON CONFLICT (flag_key) DO NOTHING;
+
+INSERT INTO feature_flags (flag_key, config)
+VALUES ('use_google_business_api', '{"defaultValue":true,"environmentOverrides":{"production":true,"development":true,"staging":true}}')
+ON CONFLICT (flag_key) DO NOTHING;
+
+INSERT INTO feature_flags (flag_key, config)
+VALUES ('enable_new_dashboard', '{"defaultValue":false,"environmentOverrides":{"production":false,"development":true,"staging":true}}')
 ON CONFLICT (flag_key) DO NOTHING;

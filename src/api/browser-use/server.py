@@ -69,7 +69,7 @@ app = FastAPI(title="Browser-Use API", description="API for browser automation u
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Specify your allowed origins
+    allow_origins=["https://app.social-genius.com", "http://localhost:3000", "http://localhost:3001", "http://localhost:80", "https://localhost"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

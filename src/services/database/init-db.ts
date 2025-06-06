@@ -1,6 +1,9 @@
 import PostgresService from '@/services/database/postgres-service';
 import AuthService from '@/services/auth/auth-service';
 import { Pool } from 'pg';
+import fs from 'fs';
+import path from 'path';
+import { initializeGoogleOAuth, verifyGoogleOAuthTables } from './init-google-oauth';
 
 // Set this to know if we've initialized
 let dbInitialized = false;
@@ -28,6 +31,54 @@ function detectDockerEnvironment() {
     console.error('Error detecting Docker environment:', error);
     // Default to non-Docker
     process.env.RUNNING_IN_DOCKER = 'false';
+    return false;
+  }
+}
+
+// Apply schema from SQL file
+async function applySchema(db: PostgresService, schemaName: string): Promise<boolean> {
+  try {
+    const schemaPath = path.join(process.cwd(), 'src', 'services', 'database', 'migrations', `${schemaName}.sql`);
+    
+    if (!fs.existsSync(schemaPath)) {
+      console.error(`Schema file not found: ${schemaPath}`);
+      return false;
+    }
+    
+    const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+    
+    // Split the schema into individual statements
+    const statements = schemaSql
+      .split(';')
+      .map(statement => statement.trim())
+      .filter(statement => statement.length > 0);
+    
+    // Execute each statement
+    const client = await db.getPool().connect();
+    
+    try {
+      // Begin transaction
+      await client.query('BEGIN');
+      
+      for (const statement of statements) {
+        await client.query(statement);
+      }
+      
+      // Commit transaction
+      await client.query('COMMIT');
+      
+      console.log(`Schema ${schemaName} applied successfully`);
+      return true;
+    } catch (error) {
+      // Rollback transaction on error
+      await client.query('ROLLBACK');
+      console.error(`Error applying schema ${schemaName}:`, error);
+      return false;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error(`Failed to apply schema ${schemaName}:`, error);
     return false;
   }
 }
@@ -85,6 +136,27 @@ export async function initializeDatabase() {
     } catch (error) {
       console.error('Error during database initialization:', error);
       throw error;
+    }
+    
+    // Initialize the Google OAuth tables if they don't exist - but skip during auth flow
+    // We'll only initialize these tables when explicitly requested
+    try {
+      const oauthTablesExist = await verifyGoogleOAuthTables();
+      if (!oauthTablesExist) {
+        console.log('Google OAuth tables not found, but skipping during main initialization');
+        console.log('These will be initialized when needed via the init-oauth-db endpoint');
+      } else {
+        console.log('Google OAuth tables already exist, skipping initialization');
+      }
+    } catch (error) {
+      console.log('Error checking Google OAuth tables, will skip initialization:', error.message);
+    }
+    
+    // Initialize feature flags
+    const featureFlagsPath = path.join(process.cwd(), 'src', 'services', 'database', 'migrations', 'feature_flags_schema.sql');
+    if (fs.existsSync(featureFlagsPath)) {
+      console.log('Applying feature flags schema...');
+      await applySchema(dbService, 'feature_flags_schema');
     }
     
     // Initialize the Auth service
