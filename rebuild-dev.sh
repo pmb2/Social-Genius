@@ -51,43 +51,99 @@ docker network prune -f
 echo -e "${YELLOW}Removing any leftover containers...${NC}"
 docker ps -a | grep -E "social.*genius|pgadmin|postgres" | awk '{print $1}' | xargs -r docker rm -f
 
-# Check for port conflicts and kill processes using our ports
+# Check for port conflicts and handle them intelligently
 echo -e "${YELLOW}Checking for port conflicts...${NC}"
-for PORT in 3001 5050 5432; do
-  # Try different methods to find processes using the ports
+ORIGINAL_PORTS=(3001 5050 5432)
+FINAL_PORTS=()
+
+for i in "${!ORIGINAL_PORTS[@]}"; do
+  PORT=${ORIGINAL_PORTS[$i]}
   echo -e "${YELLOW}Checking port $PORT...${NC}"
   
-  # Method 1: Using lsof
-  CONFLICTING_PIDS=$(lsof -i:$PORT -t 2>/dev/null)
-  if [ -n "$CONFLICTING_PIDS" ]; then
-    echo -e "${YELLOW}Found processes using port $PORT. Killing processes...${NC}"
-    for PID in $CONFLICTING_PIDS; do
-      echo -e "${YELLOW}Killing process $PID...${NC}"
-      kill -9 $PID 2>/dev/null
-    done
-  fi
-  
-  # Method 2: Using netstat for Linux
-  if command -v netstat &> /dev/null; then
-    NETSTAT_PIDS=$(netstat -tlnp 2>/dev/null | grep ":$PORT " | awk '{print $7}' | cut -d'/' -f1)
-    if [ -n "$NETSTAT_PIDS" ]; then
-      echo -e "${YELLOW}Found additional processes using port $PORT via netstat. Killing processes...${NC}"
-      for PID in $NETSTAT_PIDS; do
-        if [ -n "$PID" ] && [ "$PID" != "-" ]; then
-          echo -e "${YELLOW}Killing process $PID...${NC}"
-          kill -9 $PID 2>/dev/null
+  # Check if port is in use
+  if lsof -i:"$PORT" -t &>/dev/null || (command -v netstat &>/dev/null && netstat -tuln 2>/dev/null | grep -q ":$PORT "); then
+    # Check if it's our own docker container using the port
+    OUR_CONTAINER=$(docker ps --filter "name=${PROJECT_NAME}" --filter "publish=$PORT" -q)
+    
+    if [ -n "$OUR_CONTAINER" ]; then
+      echo -e "${YELLOW}Port $PORT is used by our own container. Stopping it...${NC}"
+      docker stop "$OUR_CONTAINER"
+      FINAL_PORTS+=($PORT)
+    else
+      # If it's not our container, find an alternative port
+      echo -e "${YELLOW}Port $PORT is used by another application. Finding alternative port...${NC}"
+      
+      # Start with base port number and increment until we find a free port
+      ALT_PORT=$((PORT + 1))
+      while lsof -i:"$ALT_PORT" -t &>/dev/null || (command -v netstat &>/dev/null && netstat -tuln 2>/dev/null | grep -q ":$ALT_PORT "); do
+        ALT_PORT=$((ALT_PORT + 1))
+        if [ $ALT_PORT -gt $((PORT + 100)) ]; then
+          # Give up after trying 100 ports to avoid infinite loop
+          echo -e "${RED}Could not find a free port in range $(PORT)-$((PORT + 100)). Please free up some ports.${NC}"
+          exit 1
         fi
       done
+      
+      echo -e "${GREEN}Found alternative port: $ALT_PORT${NC}"
+      FINAL_PORTS+=($ALT_PORT)
+      
+      # We'll update the docker-compose file with this port later
+      if [ $PORT -eq 3001 ]; then
+        APP_PORT=$ALT_PORT
+      elif [ $PORT -eq 5050 ]; then
+        PGADMIN_PORT=$ALT_PORT
+      elif [ $PORT -eq 5432 ]; then
+        DB_PORT=$ALT_PORT
+      fi
     fi
+  else
+    # Port is free, use as is
+    echo -e "${GREEN}Port $PORT is free.${NC}"
+    FINAL_PORTS+=($PORT)
+  fi
+done
+
+# Inform user of the ports we're using
+echo -e "${GREEN}Using ports: app=${FINAL_PORTS[0]}, pgadmin=${FINAL_PORTS[1]}, postgres=${FINAL_PORTS[2]}${NC}"
+
+# Create a temporary docker-compose override file if needed
+if [ -n "$APP_PORT" ] || [ -n "$PGADMIN_PORT" ] || [ -n "$DB_PORT" ]; then
+  echo -e "${YELLOW}Creating temporary docker-compose override for custom ports...${NC}"
+  
+  cat > docker-compose.override.yml << EOF
+version: '3.8'
+services:
+EOF
+
+  if [ -n "$APP_PORT" ]; then
+    cat >> docker-compose.override.yml << EOF
+  app:
+    ports:
+      - "${APP_PORT}:3000"
+EOF
   fi
   
-  # Method 3: Try to release the port by stopping Docker containers that might use it
-  echo -e "${YELLOW}Attempting to stop any Docker containers using port $PORT...${NC}"
-  docker ps -q --filter "publish=$PORT" | xargs -r docker stop
+  if [ -n "$PGADMIN_PORT" ]; then
+    cat >> docker-compose.override.yml << EOF
+  pgadmin:
+    ports:
+      - "${PGADMIN_PORT}:5050"
+EOF
+  fi
   
-  # Wait a moment for the port to be fully released
-  sleep 2
-done
+  if [ -n "$DB_PORT" ]; then
+    cat >> docker-compose.override.yml << EOF
+  postgres:
+    ports:
+      - "${DB_PORT}:5432"
+EOF
+  fi
+  
+  echo -e "${GREEN}Created docker-compose override file with custom ports.${NC}"
+else
+  # If no custom ports, ensure override file doesn't exist to avoid conflicts
+  rm -f docker-compose.override.yml
+fi
 
 # Apply database connection fixes
 echo -e "${YELLOW}Applying database connection fixes...${NC}"
@@ -188,39 +244,73 @@ fi
 
 # Rebuild the images
 echo -e "${YELLOW}Rebuilding all containers with no cache...${NC}"
-docker-compose -f docker-compose.dev.yml build --no-cache
+if [ -f docker-compose.override.yml ]; then
+  echo -e "${YELLOW}Using custom port configuration for build...${NC}"
+  docker-compose -f docker-compose.dev.yml -f docker-compose.override.yml build --no-cache
+else
+  docker-compose -f docker-compose.dev.yml build --no-cache
+fi
 
 # Start the containers with proper error handling
 echo -e "${YELLOW}Starting rebuilt containers...${NC}"
-if ! docker-compose -f docker-compose.dev.yml up -d --force-recreate; then
+
+# Define the start command based on whether we have an override file
+if [ -f docker-compose.override.yml ]; then
+  echo -e "${YELLOW}Using custom port configuration...${NC}"
+  START_CMD="docker-compose -f docker-compose.dev.yml -f docker-compose.override.yml up -d --force-recreate"
+else
+  START_CMD="docker-compose -f docker-compose.dev.yml up -d --force-recreate"
+fi
+
+if ! eval $START_CMD; then
   echo -e "${RED}Failed to start containers even with forced recreation.${NC}"
   echo -e "${YELLOW}Attempting emergency cleanup and restart...${NC}"
   
   # Emergency cleanup but preserve database volumes for persistence
-  docker-compose -f docker-compose.dev.yml down --remove-orphans # Removed -v flag to preserve volumes
+  if [ -f docker-compose.override.yml ]; then
+    docker-compose -f docker-compose.dev.yml -f docker-compose.override.yml down --remove-orphans
+  else
+    docker-compose -f docker-compose.dev.yml down --remove-orphans
+  fi
+  
   # Only prune containers and networks, not volumes
   docker container prune -f
   docker network prune -f
   
-  # Final attempt
-  if ! docker-compose -f docker-compose.dev.yml up -d; then
+  # Final attempt with original ports
+  if ! eval $START_CMD; then
     echo -e "${RED}All attempts to start containers failed. Trying with fixed configuration...${NC}"
     # Try with fixed configuration
-    if ! docker-compose -f docker-compose-fixed.yml up -d; then
-      echo -e "${RED}All attempts to start containers failed. See errors above.${NC}"
+    if [ -f docker-compose-fixed.yml ]; then
+      if ! docker-compose -f docker-compose-fixed.yml up -d; then
+        echo -e "${RED}All attempts to start containers failed. See errors above.${NC}"
+        exit 1
+      fi
+    else
+      echo -e "${RED}No fixed configuration available. All attempts to start containers failed.${NC}"
       exit 1
     fi
   fi
 fi
 
 # Check if containers are running
-RUNNING_CONTAINERS=$(docker-compose -f docker-compose.dev.yml ps --services --filter "status=running" | wc -l)
+if [ -f docker-compose.override.yml ]; then
+  RUNNING_CONTAINERS=$(docker-compose -f docker-compose.dev.yml -f docker-compose.override.yml ps --services --filter "status=running" | wc -l)
+else
+  RUNNING_CONTAINERS=$(docker-compose -f docker-compose.dev.yml ps --services --filter "status=running" | wc -l)
+fi
+
 if [ "$RUNNING_CONTAINERS" -gt 0 ]; then
   echo -e "${GREEN}Development containers rebuilt and started successfully!${NC}"
   
   # Print the actual ports being used
-  APP_PORT=$(docker-compose -f docker-compose.dev.yml port app 3000 | cut -d':' -f2 || echo "3001")
-  PGADMIN_PORT=$(docker-compose -f docker-compose.dev.yml port pgadmin 80 | cut -d':' -f2 || echo "5050")
+  if [ -f docker-compose.override.yml ]; then
+    APP_PORT=$(docker-compose -f docker-compose.dev.yml -f docker-compose.override.yml port app 3000 | cut -d':' -f2 || echo "${FINAL_PORTS[0]}")
+    PGADMIN_PORT=$(docker-compose -f docker-compose.dev.yml -f docker-compose.override.yml port pgadmin 80 | cut -d':' -f2 || echo "${FINAL_PORTS[1]}")
+  else
+    APP_PORT=$(docker-compose -f docker-compose.dev.yml port app 3000 | cut -d':' -f2 || echo "3001")
+    PGADMIN_PORT=$(docker-compose -f docker-compose.dev.yml port pgadmin 80 | cut -d':' -f2 || echo "5050")
+  fi
   
   echo -e "${GREEN}Web app: http://localhost:${APP_PORT}${NC}"
   echo -e "${GREEN}pgAdmin: http://localhost:${PGADMIN_PORT} (login with admin@socialgenius.com / admin)${NC}"
@@ -261,7 +351,11 @@ if [ "$RUNNING_CONTAINERS" -gt 0 ]; then
   
   # Always show logs
   echo -e "${YELLOW}Showing logs...${NC}"
-  docker-compose -f docker-compose.dev.yml logs -f app
+  if [ -f docker-compose.override.yml ]; then
+    docker-compose -f docker-compose.dev.yml -f docker-compose.override.yml logs -f app
+  else
+    docker-compose -f docker-compose.dev.yml logs -f app
+  fi
 else
   echo -e "${RED}Containers may have started but aren't running. Check docker ps for status.${NC}"
   docker ps -a
