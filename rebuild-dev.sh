@@ -66,55 +66,133 @@ declare -A SERVICE_PORTS=(
 
 declare -A FINAL_PORTS=()
 
-# Function to check if a port is available
+# Function to check if a port is available (enhanced with multiple methods)
 check_port_available() {
   local port=$1
-  if lsof -i:"$port" -t &>/dev/null || (command -v netstat &>/dev/null && netstat -tuln 2>/dev/null | grep -q ":$port "); then
-    return 1  # Port is in use
-  else
-    return 0  # Port is available
+  
+  # Method 1: Check with lsof
+  if command -v lsof &>/dev/null && lsof -i:"$port" -t &>/dev/null; then
+    echo "Port $port is in use (detected by lsof)"
+    return 1
   fi
+  
+  # Method 2: Check with netstat
+  if command -v netstat &>/dev/null && netstat -tuln 2>/dev/null | grep -q ":$port "; then
+    echo "Port $port is in use (detected by netstat)"
+    return 1
+  fi
+  
+  # Method 3: Check with ss (more modern alternative to netstat)
+  if command -v ss &>/dev/null && ss -tuln 2>/dev/null | grep -q ":$port "; then
+    echo "Port $port is in use (detected by ss)"
+    return 1
+  fi
+  
+  # Method 4: Try to bind to the port temporarily
+  if command -v nc &>/dev/null; then
+    if ! nc -z localhost "$port" 2>/dev/null; then
+      # Port appears to be free, but let's double-check by trying to listen
+      if timeout 1 nc -l "$port" 2>/dev/null &
+      then
+        local nc_pid=$!
+        sleep 0.1
+        kill $nc_pid 2>/dev/null
+        wait $nc_pid 2>/dev/null
+        return 0  # Port is available
+      else
+        echo "Port $port failed bind test"
+        return 1  # Port is in use
+      fi
+    else
+      echo "Port $port is in use (detected by nc)"
+      return 1
+    fi
+  fi
+  
+  # Method 5: Check Docker containers specifically
+  if docker ps --format "table {{.Names}}\t{{.Ports}}" 2>/dev/null | grep -q ":$port->"; then
+    echo "Port $port is in use by Docker container"
+    return 1
+  fi
+  
+  return 0  # Port appears to be available
 }
 
-# Function to find next available port
+# Function to find next available port (enhanced)
 find_available_port() {
   local base_port=$1
   local current_port=$base_port
+  local max_attempts=200
+  local attempt=0
   
-  while ! check_port_available $current_port; do
+  while [ $attempt -lt $max_attempts ]; do
+    if check_port_available $current_port >/dev/null 2>&1; then
+      # Double-check by trying to bind briefly
+      if command -v nc &>/dev/null; then
+        if timeout 1 nc -l "$current_port" 2>/dev/null &
+        then
+          local nc_pid=$!
+          sleep 0.1
+          kill $nc_pid 2>/dev/null
+          wait $nc_pid 2>/dev/null
+          echo $current_port
+          return 0
+        fi
+      else
+        echo $current_port
+        return 0
+      fi
+    fi
+    
     current_port=$((current_port + 1))
-    if [ $current_port -gt $((base_port + 100)) ]; then
-      echo -e "${RED}Could not find a free port in range $base_port-$((base_port + 100)). Please free up some ports.${NC}"
-      exit 1
+    attempt=$((attempt + 1))
+    
+    # Skip common system ports
+    if [ $current_port -eq 22 ] || [ $current_port -eq 80 ] || [ $current_port -eq 443 ] || [ $current_port -eq 3306 ] || [ $current_port -eq 5432 ]; then
+      current_port=$((current_port + 1))
     fi
   done
   
-  echo $current_port
+  echo -e "${RED}Could not find a free port after $max_attempts attempts starting from $base_port.${NC}" >&2
+  exit 1
 }
 
-# Check each service port
+# Check each service port with enhanced detection
 for service in "${!SERVICE_PORTS[@]}"; do
   original_port=${SERVICE_PORTS[$service]}
   echo -e "${YELLOW}Checking port $original_port for $service...${NC}"
   
+  # Kill any processes using the port first
+  echo -e "${YELLOW}Ensuring port $original_port is completely free...${NC}"
+  
+  # Find and kill processes using the port
+  if command -v lsof &>/dev/null; then
+    PIDS=$(lsof -ti:"$original_port" 2>/dev/null || true)
+    if [ -n "$PIDS" ]; then
+      echo -e "${YELLOW}Found processes using port $original_port: $PIDS${NC}"
+      echo "$PIDS" | xargs -r kill -9 2>/dev/null || true
+      sleep 1
+    fi
+  fi
+  
+  # Stop any Docker containers using this port
+  DOCKER_CONTAINERS=$(docker ps --filter "publish=$original_port" -q 2>/dev/null || true)
+  if [ -n "$DOCKER_CONTAINERS" ]; then
+    echo -e "${YELLOW}Stopping Docker containers using port $original_port...${NC}"
+    echo "$DOCKER_CONTAINERS" | xargs -r docker stop 2>/dev/null || true
+    sleep 2
+  fi
+  
+  # Double-check the port is now available
   if check_port_available $original_port; then
     echo -e "${GREEN}Port $original_port is free for $service.${NC}"
     FINAL_PORTS[$service]=$original_port
   else
-    # Check if it's our own docker container using the port
-    OUR_CONTAINER=$(docker ps --filter "name=${PROJECT_NAME}" --filter "publish=$original_port" -q)
-    
-    if [ -n "$OUR_CONTAINER" ]; then
-      echo -e "${YELLOW}Port $original_port is used by our own container. Stopping it...${NC}"
-      docker stop "$OUR_CONTAINER"
-      FINAL_PORTS[$service]=$original_port
-    else
-      # Find an alternative port
-      echo -e "${YELLOW}Port $original_port is used by another application. Finding alternative port for $service...${NC}"
-      alt_port=$(find_available_port $original_port)
-      echo -e "${GREEN}Found alternative port: $alt_port for $service${NC}"
-      FINAL_PORTS[$service]=$alt_port
-    fi
+    # Find an alternative port
+    echo -e "${YELLOW}Port $original_port is still in use. Finding alternative port for $service...${NC}"
+    alt_port=$(find_available_port $((original_port + 1)))
+    echo -e "${GREEN}Found alternative port: $alt_port for $service${NC}"
+    FINAL_PORTS[$service]=$alt_port
   fi
 done
 
@@ -304,45 +382,156 @@ else
   docker-compose -f docker-compose.dev.yml build --no-cache
 fi
 
-# Start the containers with proper error handling
+# Start the containers with enhanced error handling and retry logic
 echo -e "${YELLOW}Starting rebuilt containers...${NC}"
 
-# Define the start command based on whether we have an override file
-if [ -f docker-compose.override.yml ]; then
-  echo -e "${YELLOW}Using custom port configuration...${NC}"
-  START_CMD="docker-compose -f docker-compose.dev.yml -f docker-compose.override.yml up -d --force-recreate"
-else
-  START_CMD="docker-compose -f docker-compose.dev.yml up -d --force-recreate"
-fi
-
-if ! eval $START_CMD; then
-  echo -e "${RED}Failed to start containers even with forced recreation.${NC}"
-  echo -e "${YELLOW}Attempting emergency cleanup and restart...${NC}"
+# Function to attempt container startup with retries
+start_containers_with_retry() {
+  local max_retries=3
+  local retry=0
   
-  # Emergency cleanup but preserve database volumes for persistence
-  if [ -f docker-compose.override.yml ]; then
-    docker-compose -f docker-compose.dev.yml -f docker-compose.override.yml down --remove-orphans
-  else
-    docker-compose -f docker-compose.dev.yml down --remove-orphans
-  fi
-  
-  # Only prune containers and networks, not volumes
-  docker container prune -f
-  docker network prune -f
-  
-  # Final attempt with original ports
-  if ! eval $START_CMD; then
-    echo -e "${RED}All attempts to start containers failed. Trying with fixed configuration...${NC}"
-    # Try with fixed configuration
-    if [ -f docker-compose-fixed.yml ]; then
-      if ! docker-compose -f docker-compose-fixed.yml up -d; then
-        echo -e "${RED}All attempts to start containers failed. See errors above.${NC}"
-        exit 1
-      fi
+  while [ $retry -lt $max_retries ]; do
+    echo -e "${YELLOW}Attempt $((retry + 1)) of $max_retries to start containers...${NC}"
+    
+    # Define the start command based on whether we have an override file
+    if [ -f docker-compose.override.yml ]; then
+      echo -e "${YELLOW}Using custom port configuration...${NC}"
+      START_CMD="docker-compose -f docker-compose.dev.yml -f docker-compose.override.yml up -d --force-recreate"
     else
-      echo -e "${RED}No fixed configuration available. All attempts to start containers failed.${NC}"
+      START_CMD="docker-compose -f docker-compose.dev.yml up -d --force-recreate"
+    fi
+    
+    if eval $START_CMD; then
+      echo -e "${GREEN}Containers started successfully!${NC}"
+      return 0
+    else
+      echo -e "${RED}Failed to start containers on attempt $((retry + 1)).${NC}"
+      
+      # If this failed due to port conflicts, try to resolve them
+      if docker-compose logs 2>&1 | grep -q "port is already allocated"; then
+        echo -e "${YELLOW}Detected port allocation conflict. Attempting to resolve...${NC}"
+        
+        # Find which ports are actually conflicting and reassign them
+        for service in "${!FINAL_PORTS[@]}"; do
+          port=${FINAL_PORTS[$service]}
+          if ! check_port_available $port >/dev/null 2>&1; then
+            echo -e "${YELLOW}Port $port for $service is now in use, finding new port...${NC}"
+            new_port=$(find_available_port $((port + 1)))
+            FINAL_PORTS[$service]=$new_port
+            echo -e "${GREEN}Reassigned $service to port $new_port${NC}"
+          fi
+        done
+        
+        # Recreate override file with new ports
+        if [ "$NEEDS_OVERRIDE" = true ] || [ -f docker-compose.override.yml ]; then
+          echo -e "${YELLOW}Updating docker-compose override with new ports...${NC}"
+          
+          cat > docker-compose.override.yml << EOF
+services:
+EOF
+
+          # Add port overrides for all services
+          for service in "${!FINAL_PORTS[@]}"; do
+            original_port=${SERVICE_PORTS[$service]}
+            final_port=${FINAL_PORTS[$service]}
+            
+            case $service in
+              "app")
+                if [ "$original_port" != "$final_port" ]; then
+                  cat >> docker-compose.override.yml << EOF
+  app:
+    ports:
+      - "${final_port}:3000"
+EOF
+                fi
+                ;;
+              "pgadmin")
+                if [ "$original_port" != "$final_port" ]; then
+                  cat >> docker-compose.override.yml << EOF
+  pgadmin:
+    ports:
+      - "${final_port}:5050"
+EOF
+                fi
+                ;;
+              "postgres")
+                if [ "$original_port" != "$final_port" ]; then
+                  cat >> docker-compose.override.yml << EOF
+  postgres:
+    ports:
+      - "${final_port}:5432"
+EOF
+                fi
+                ;;
+              "redis")
+                if [ "$original_port" != "$final_port" ]; then
+                  cat >> docker-compose.override.yml << EOF
+  redis:
+    ports:
+      - "${final_port}:6379"
+EOF
+                fi
+                ;;
+              "browser-use-api")
+                if [ "$original_port" != "$final_port" ]; then
+                  cat >> docker-compose.override.yml << EOF
+  browser-use-api:
+    ports:
+      - "${final_port}:5055"
+EOF
+                fi
+                ;;
+              "redis-commander")
+                if [ "$original_port" != "$final_port" ]; then
+                  cat >> docker-compose.override.yml << EOF
+  redis-commander:
+    ports:
+      - "${final_port}:8081"
+EOF
+                fi
+                ;;
+            esac
+          done
+        fi
+      fi
+      
+      # Clean up before retry
+      echo -e "${YELLOW}Cleaning up before retry...${NC}"
+      if [ -f docker-compose.override.yml ]; then
+        docker-compose -f docker-compose.dev.yml -f docker-compose.override.yml down --remove-orphans 2>/dev/null || true
+      else
+        docker-compose -f docker-compose.dev.yml down --remove-orphans 2>/dev/null || true
+      fi
+      
+      # Wait a bit before retry
+      sleep 3
+      retry=$((retry + 1))
+    fi
+  done
+  
+  return 1
+}
+
+# Try to start containers with retry logic
+if ! start_containers_with_retry; then
+  echo -e "${RED}All attempts to start containers failed after retries.${NC}"
+  echo -e "${YELLOW}Attempting final emergency cleanup and fallback...${NC}"
+  
+  # Emergency cleanup
+  docker-compose -f docker-compose.dev.yml down --remove-orphans 2>/dev/null || true
+  docker container prune -f 2>/dev/null || true
+  docker network prune -f 2>/dev/null || true
+  
+  # Try with fixed configuration as last resort
+  if [ -f docker-compose-fixed.yml ]; then
+    echo -e "${YELLOW}Trying with fixed configuration as last resort...${NC}"
+    if ! docker-compose -f docker-compose-fixed.yml up -d; then
+      echo -e "${RED}All attempts to start containers failed. Please check the logs above for specific errors.${NC}"
       exit 1
     fi
+  else
+    echo -e "${RED}No fixed configuration available. All attempts failed.${NC}"
+    exit 1
   fi
 fi
 
