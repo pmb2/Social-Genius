@@ -7,8 +7,9 @@ const cwd = process.cwd();
 
 console.log("Applying PG patches...");
 
-// Force disable native modules
+// Force disable native modules BEFORE any pg imports
 process.env.NODE_PG_FORCE_NATIVE = "0";
+process.env.PGSSLMODE = "prefer";
 
 // Try to get the actual Client if available
 let Client;

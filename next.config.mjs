@@ -1,3 +1,5 @@
+import path from 'path';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Define app directory and use default dist directory '.next'
@@ -6,6 +8,12 @@ const nextConfig = {
   },
   reactStrictMode: true,
   webpack: (config, { isServer }) => {
+    // Configure aliases for both client and server
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@': path.resolve('./'),
+    };
+
     // If client-side, use empty modules for Node-specific packages
     if (!isServer) {
       config.resolve.fallback = {
@@ -51,7 +59,14 @@ const nextConfig = {
       // Add aliases for problematic modules
       config.resolve.alias['cloudflare:sockets'] = false;
       config.resolve.alias['pg-cloudflare'] = false;
+      config.resolve.alias['pg-native'] = false;
+    } else {
+      // Server-side: exclude pg-native and force pg to use JS implementation
+      config.resolve.alias['pg-native'] = false;
+      config.externals = config.externals || [];
+      config.externals.push('pg-native');
     }
+
     return config;
   },
   experimental: {
