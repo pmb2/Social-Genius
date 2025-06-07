@@ -4,7 +4,7 @@ FROM node:18-slim AS base
 FROM base AS deps
 WORKDIR /app
 
-# Install dependencies required for Playwright
+# Install dependencies required for Playwright and PostgreSQL
 RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     libnss3 \
@@ -32,7 +32,13 @@ RUN apt-get update && apt-get install -y \
     xvfb \
     zip \
     unzip \
-    libc6-dev
+    libc6-dev \
+    libpq-dev \
+    postgresql-client \
+    build-essential \
+    python3 \
+    make \
+    g++
 
 # Copy package files
 COPY package.json package-lock.json ./
@@ -84,7 +90,7 @@ ENV NODE_ENV production
 # Copy Playwright binaries and dependencies from deps stage
 COPY --from=deps /root/.cache/ms-playwright /root/.cache/ms-playwright
 
-# Install runtime dependencies
+# Install runtime dependencies including PostgreSQL client libraries
 RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     libnss3 \
@@ -108,6 +114,7 @@ RUN apt-get update && apt-get install -y \
     libasound2 \
     libatspi2.0-0 \
     fonts-liberation \
+    libpq5 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
