@@ -53,89 +53,141 @@ docker ps -a | grep -E "social.*genius|pgadmin|postgres" | awk '{print $1}' | xa
 
 # Check for port conflicts and handle them intelligently
 echo -e "${YELLOW}Checking for port conflicts...${NC}"
-ORIGINAL_PORTS=(3001 5050 5432)
-FINAL_PORTS=()
 
-for i in "${!ORIGINAL_PORTS[@]}"; do
-  PORT=${ORIGINAL_PORTS[$i]}
-  echo -e "${YELLOW}Checking port $PORT...${NC}"
+# Define all ports used by the application
+declare -A SERVICE_PORTS=(
+  ["app"]="3001"
+  ["pgadmin"]="5050"
+  ["postgres"]="5435"
+  ["redis"]="6380"
+  ["browser-use-api"]="5055"
+  ["redis-commander"]="8081"
+)
+
+declare -A FINAL_PORTS=()
+
+# Function to check if a port is available
+check_port_available() {
+  local port=$1
+  if lsof -i:"$port" -t &>/dev/null || (command -v netstat &>/dev/null && netstat -tuln 2>/dev/null | grep -q ":$port "); then
+    return 1  # Port is in use
+  else
+    return 0  # Port is available
+  fi
+}
+
+# Function to find next available port
+find_available_port() {
+  local base_port=$1
+  local current_port=$base_port
   
-  # Check if port is in use
-  if lsof -i:"$PORT" -t &>/dev/null || (command -v netstat &>/dev/null && netstat -tuln 2>/dev/null | grep -q ":$PORT "); then
+  while ! check_port_available $current_port; do
+    current_port=$((current_port + 1))
+    if [ $current_port -gt $((base_port + 100)) ]; then
+      echo -e "${RED}Could not find a free port in range $base_port-$((base_port + 100)). Please free up some ports.${NC}"
+      exit 1
+    fi
+  done
+  
+  echo $current_port
+}
+
+# Check each service port
+for service in "${!SERVICE_PORTS[@]}"; do
+  original_port=${SERVICE_PORTS[$service]}
+  echo -e "${YELLOW}Checking port $original_port for $service...${NC}"
+  
+  if check_port_available $original_port; then
+    echo -e "${GREEN}Port $original_port is free for $service.${NC}"
+    FINAL_PORTS[$service]=$original_port
+  else
     # Check if it's our own docker container using the port
-    OUR_CONTAINER=$(docker ps --filter "name=${PROJECT_NAME}" --filter "publish=$PORT" -q)
+    OUR_CONTAINER=$(docker ps --filter "name=${PROJECT_NAME}" --filter "publish=$original_port" -q)
     
     if [ -n "$OUR_CONTAINER" ]; then
-      echo -e "${YELLOW}Port $PORT is used by our own container. Stopping it...${NC}"
+      echo -e "${YELLOW}Port $original_port is used by our own container. Stopping it...${NC}"
       docker stop "$OUR_CONTAINER"
-      FINAL_PORTS+=($PORT)
+      FINAL_PORTS[$service]=$original_port
     else
-      # If it's not our container, find an alternative port
-      echo -e "${YELLOW}Port $PORT is used by another application. Finding alternative port...${NC}"
-      
-      # Start with base port number and increment until we find a free port
-      ALT_PORT=$((PORT + 1))
-      while lsof -i:"$ALT_PORT" -t &>/dev/null || (command -v netstat &>/dev/null && netstat -tuln 2>/dev/null | grep -q ":$ALT_PORT "); do
-        ALT_PORT=$((ALT_PORT + 1))
-        if [ $ALT_PORT -gt $((PORT + 100)) ]; then
-          # Give up after trying 100 ports to avoid infinite loop
-          echo -e "${RED}Could not find a free port in range $(PORT)-$((PORT + 100)). Please free up some ports.${NC}"
-          exit 1
-        fi
-      done
-      
-      echo -e "${GREEN}Found alternative port: $ALT_PORT${NC}"
-      FINAL_PORTS+=($ALT_PORT)
-      
-      # We'll update the docker-compose file with this port later
-      if [ $PORT -eq 3001 ]; then
-        APP_PORT=$ALT_PORT
-      elif [ $PORT -eq 5050 ]; then
-        PGADMIN_PORT=$ALT_PORT
-      elif [ $PORT -eq 5432 ]; then
-        DB_PORT=$ALT_PORT
-      fi
+      # Find an alternative port
+      echo -e "${YELLOW}Port $original_port is used by another application. Finding alternative port for $service...${NC}"
+      alt_port=$(find_available_port $original_port)
+      echo -e "${GREEN}Found alternative port: $alt_port for $service${NC}"
+      FINAL_PORTS[$service]=$alt_port
     fi
-  else
-    # Port is free, use as is
-    echo -e "${GREEN}Port $PORT is free.${NC}"
-    FINAL_PORTS+=($PORT)
   fi
 done
 
 # Inform user of the ports we're using
-echo -e "${GREEN}Using ports: app=${FINAL_PORTS[0]}, pgadmin=${FINAL_PORTS[1]}, postgres=${FINAL_PORTS[2]}${NC}"
+echo -e "${GREEN}Using ports:${NC}"
+for service in "${!FINAL_PORTS[@]}"; do
+  echo -e "${GREEN}  $service: ${FINAL_PORTS[$service]}${NC}"
+done
 
-# Create a temporary docker-compose override file if needed
-if [ -n "$APP_PORT" ] || [ -n "$PGADMIN_PORT" ] || [ -n "$DB_PORT" ]; then
+# Check if we need to create an override file for custom ports
+NEEDS_OVERRIDE=false
+for service in "${!FINAL_PORTS[@]}"; do
+  original_port=${SERVICE_PORTS[$service]}
+  final_port=${FINAL_PORTS[$service]}
+  if [ "$original_port" != "$final_port" ]; then
+    NEEDS_OVERRIDE=true
+    break
+  fi
+done
+
+if [ "$NEEDS_OVERRIDE" = true ]; then
   echo -e "${YELLOW}Creating temporary docker-compose override for custom ports...${NC}"
   
   cat > docker-compose.override.yml << EOF
-version: '3.8'
 services:
 EOF
 
-  if [ -n "$APP_PORT" ]; then
+  # Add port overrides for services that need them
+  if [ "${FINAL_PORTS[app]}" != "${SERVICE_PORTS[app]}" ]; then
     cat >> docker-compose.override.yml << EOF
   app:
     ports:
-      - "${APP_PORT}:3000"
+      - "${FINAL_PORTS[app]}:3000"
 EOF
   fi
   
-  if [ -n "$PGADMIN_PORT" ]; then
+  if [ "${FINAL_PORTS[pgadmin]}" != "${SERVICE_PORTS[pgadmin]}" ]; then
     cat >> docker-compose.override.yml << EOF
   pgadmin:
     ports:
-      - "${PGADMIN_PORT}:5050"
+      - "${FINAL_PORTS[pgadmin]}:5050"
 EOF
   fi
   
-  if [ -n "$DB_PORT" ]; then
+  if [ "${FINAL_PORTS[postgres]}" != "${SERVICE_PORTS[postgres]}" ]; then
     cat >> docker-compose.override.yml << EOF
   postgres:
     ports:
-      - "${DB_PORT}:5432"
+      - "${FINAL_PORTS[postgres]}:5432"
+EOF
+  fi
+  
+  if [ "${FINAL_PORTS[redis]}" != "${SERVICE_PORTS[redis]}" ]; then
+    cat >> docker-compose.override.yml << EOF
+  redis:
+    ports:
+      - "${FINAL_PORTS[redis]}:6379"
+EOF
+  fi
+  
+  if [ "${FINAL_PORTS[browser-use-api]}" != "${SERVICE_PORTS[browser-use-api]}" ]; then
+    cat >> docker-compose.override.yml << EOF
+  browser-use-api:
+    ports:
+      - "${FINAL_PORTS[browser-use-api]}:5055"
+EOF
+  fi
+  
+  if [ "${FINAL_PORTS[redis-commander]}" != "${SERVICE_PORTS[redis-commander]}" ]; then
+    cat >> docker-compose.override.yml << EOF
+  redis-commander:
+    ports:
+      - "${FINAL_PORTS[redis-commander]}:8081"
 EOF
   fi
   
@@ -143,6 +195,7 @@ EOF
 else
   # If no custom ports, ensure override file doesn't exist to avoid conflicts
   rm -f docker-compose.override.yml
+  echo -e "${GREEN}All ports are available, no override needed.${NC}"
 fi
 
 # Apply database connection fixes
@@ -304,16 +357,13 @@ if [ "$RUNNING_CONTAINERS" -gt 0 ]; then
   echo -e "${GREEN}Development containers rebuilt and started successfully!${NC}"
   
   # Print the actual ports being used
-  if [ -f docker-compose.override.yml ]; then
-    APP_PORT=$(docker-compose -f docker-compose.dev.yml -f docker-compose.override.yml port app 3000 | cut -d':' -f2 || echo "${FINAL_PORTS[0]}")
-    PGADMIN_PORT=$(docker-compose -f docker-compose.dev.yml -f docker-compose.override.yml port pgadmin 80 | cut -d':' -f2 || echo "${FINAL_PORTS[1]}")
-  else
-    APP_PORT=$(docker-compose -f docker-compose.dev.yml port app 3000 | cut -d':' -f2 || echo "3001")
-    PGADMIN_PORT=$(docker-compose -f docker-compose.dev.yml port pgadmin 80 | cut -d':' -f2 || echo "5050")
-  fi
-  
-  echo -e "${GREEN}Web app: http://localhost:${APP_PORT}${NC}"
-  echo -e "${GREEN}pgAdmin: http://localhost:${PGADMIN_PORT} (login with admin@socialgenius.com / admin)${NC}"
+  echo -e "${GREEN}Services are running on the following ports:${NC}"
+  echo -e "${GREEN}Web app: http://localhost:${FINAL_PORTS[app]}${NC}"
+  echo -e "${GREEN}pgAdmin: http://localhost:${FINAL_PORTS[pgadmin]} (login with admin@socialgenius.com / admin)${NC}"
+  echo -e "${GREEN}Redis Commander: http://localhost:${FINAL_PORTS[redis-commander]}${NC}"
+  echo -e "${GREEN}Browser API: http://localhost:${FINAL_PORTS[browser-use-api]}${NC}"
+  echo -e "${GREEN}Redis: localhost:${FINAL_PORTS[redis]}${NC}"
+  echo -e "${GREEN}PostgreSQL: localhost:${FINAL_PORTS[postgres]}${NC}"
   
   # Check database connectivity
   echo -e "${YELLOW}Testing database connectivity...${NC}"
