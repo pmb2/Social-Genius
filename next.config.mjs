@@ -61,10 +61,8 @@ const nextConfig = {
       config.resolve.alias['pg-cloudflare'] = false;
       config.resolve.alias['pg-native'] = false;
     } else {
-      // Server-side: exclude pg-native and force pg to use JS implementation
-      config.resolve.alias['pg-native'] = false;
-      config.externals = config.externals || [];
-      config.externals.push('pg-native');
+      // Server-side: alias pg-native to our mock implementation instead of false
+      config.resolve.alias['pg-native'] = path.resolve('./pg-native-mock.cjs');
     }
 
     return config;
