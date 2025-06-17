@@ -2,10 +2,6 @@ import path from 'path';
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Define app directory and use default dist directory '.next'
-  experimental: {
-    appDir: true,
-  },
   reactStrictMode: true,
   webpack: (config, { isServer }) => {
     // Configure aliases for both client and server
@@ -68,22 +64,29 @@ const nextConfig = {
     return config;
   },
   experimental: {
-    // These packages will only be used server-side
     serverComponentsExternalPackages: [
       'pg', 
       'playwright', 
       'playwright-core',
       'bcryptjs',
     ],
-    // Ensure all necessary modules are included for API routes
     outputFileTracingIncludes: {
       '/api/**/*': ['node_modules/**/*'],
     },
-    // Keep this enabled for middleware support
     esmExternals: 'loose',
-    // Default runtime for pages
     serverActions: {
       bodySizeLimit: '2mb',
+    },
+    outputFileTracingRoot: "/home/ubuntu/Social-Genius",
+    outputFileTracingExcludes: {
+      '*': [
+        '.git/**',
+        '.next/**',
+        '.vscode/**',
+        'node_modules/better-sqlite3/**',
+        'node_modules/@swc/**',
+        'node_modules/webpack/**',
+      ],
     },
   },
   // Improved handling for server modules
@@ -120,27 +123,6 @@ const nextConfig = {
   // Increase timeouts and memory limits for build process
   staticPageGenerationTimeout: 180,
   
-  // Set the source directory path
-  experimental: {
-    appDir: true,
-    serverComponentsExternalPackages: [
-      'pg', 
-      'playwright', 
-      'playwright-core',
-      'bcryptjs',
-    ],
-    outputFileTracingRoot: "/home/ubuntu/Social-Genius",
-    outputFileTracingExcludes: {
-      '*': [
-        '.git/**',
-        '.next/**',
-        '.vscode/**',
-        'node_modules/better-sqlite3/**',
-        'node_modules/@swc/**',
-        'node_modules/webpack/**',
-      ],
-    },
-  },
   
   // Mark all API routes as fully dynamic (not static-generated)
   async rewrites() {
@@ -158,33 +140,6 @@ const nextConfig = {
     ];
   },
   
-  // Configure headers for proper caching and dynamic routing
-  async headers() {
-    return [
-      {
-        source: '/api/:path*',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'no-store, no-cache, must-revalidate',
-          },
-          {
-            key: 'x-use-dynamic-data',
-            value: 'true',
-          },
-        ],
-      },
-      {
-        source: '/fonts/:path*',
-        headers: [
-          {
-            key: 'Cache-Control',
-            value: 'public, max-age=31536000, immutable',
-          },
-        ],
-      },
-    ];
-  },
   // Skip some of the build-time checks for API routes
   // Use default Next.js build directory
   images: {

@@ -43,44 +43,51 @@ if (Client && Client.prototype) {
   }
 }
 
-// First let's find the pg module
-const pgDir = path.join(cwd, "node_modules", "pg");
-const pgPoolDir = path.join(cwd, "node_modules", "pg-pool");
+// Function to patch pg-pool
+function patchPgPool() {
+  const pgPoolDir = path.join(cwd, "node_modules", "pg-pool");
+  
+  if (!fs.existsSync(pgPoolDir)) {
+    console.log("pg-pool directory not found, skipping patch");
+    return;
+  }
 
-// Patch pg-pool/index.js to fix "this.Client is not a constructor" issue
-if (fs.existsSync(pgPoolDir)) {
   const poolPath = path.join(pgPoolDir, "index.js");
   
-  if (fs.existsSync(poolPath)) {
-    try {
-      console.log("Patching pg-pool to fix Client constructor issues...");
-      
-      const poolContent = fs.readFileSync(poolPath, "utf8");
-      
-      // Check if already patched to avoid double-patching
-      if (poolContent.includes("// PATCHED BY pg-patch.cjs")) {
-        console.log("pg-pool already patched, skipping...");
-        return;
-      }
-      
-      let patchedContent = poolContent;
-      
-      // Add patch marker at the top
-      patchedContent = `// PATCHED BY pg-patch.cjs\n${patchedContent}`;
-      
-      // Fix the constructor to ensure Client is always available
-      patchedContent = patchedContent.replace(
-        /constructor\s*\(options\)\s*{[\s\S]*?this\.options\s*=\s*Object\.assign\(\{\},\s*options\)/,
-        `constructor(options) {
+  if (!fs.existsSync(poolPath)) {
+    console.log("pg-pool index.js not found, skipping patch");
+    return;
+  }
+
+  try {
+    console.log("Patching pg-pool to fix Client constructor issues...");
+    
+    const poolContent = fs.readFileSync(poolPath, "utf8");
+    
+    // Check if already patched to avoid double-patching
+    if (poolContent.includes("// PATCHED BY pg-patch.cjs")) {
+      console.log("pg-pool already patched, skipping...");
+      return;
+    }
+    
+    let patchedContent = poolContent;
+    
+    // Add patch marker at the top
+    patchedContent = `// PATCHED BY pg-patch.cjs\n${patchedContent}`;
+    
+    // Fix the constructor to ensure Client is always available
+    patchedContent = patchedContent.replace(
+      /constructor\s*\(options\)\s*{[\s\S]*?this\.options\s*=\s*Object\.assign\(\{\},\s*options\)/,
+      `constructor(options) {
     super()
     this.options = Object.assign({}, options)`
-      );
-      
-      // Ensure Client is set properly in constructor
-      if (patchedContent.includes("this.Client = options.Client || Client")) {
-        patchedContent = patchedContent.replace(
-          "this.Client = options.Client || Client",
-          `// Ensure Client is always available
+    );
+    
+    // Ensure Client is set properly in constructor
+    if (patchedContent.includes("this.Client = options.Client || Client")) {
+      patchedContent = patchedContent.replace(
+        "this.Client = options.Client || Client",
+        `// Ensure Client is always available
     try {
       const pg = require('pg');
       this.Client = options.Client || pg.Client;
@@ -91,12 +98,12 @@ if (fs.existsSync(pgPoolDir)) {
     if (!this.Client) {
       this.Client = function DummyClient() {};
     }`
-        );
-      } else {
-        // Add Client assignment if it doesn't exist
-        patchedContent = patchedContent.replace(
-          "this.options = Object.assign({}, options)",
-          `this.options = Object.assign({}, options)
+      );
+    } else {
+      // Add Client assignment if it doesn't exist
+      patchedContent = patchedContent.replace(
+        "this.options = Object.assign({}, options)",
+        `this.options = Object.assign({}, options)
     
     // Ensure Client is always available
     try {
@@ -109,14 +116,14 @@ if (fs.existsSync(pgPoolDir)) {
     if (!this.Client) {
       this.Client = function DummyClient() {};
     }`
-        );
-      }
-      
-      // Ensure newClient method exists and works
-      if (!patchedContent.includes("newClient()")) {
-        patchedContent = patchedContent.replace(
-          /connect\s*\(\)\s*{/,
-          `newClient() {
+      );
+    }
+    
+    // Ensure newClient method exists and works
+    if (!patchedContent.includes("newClient()")) {
+      patchedContent = patchedContent.replace(
+        /connect\s*\(\)\s*{/,
+        `newClient() {
     if (!this.Client) {
       try {
         const pg = require('pg');
@@ -129,14 +136,13 @@ if (fs.existsSync(pgPoolDir)) {
   }
 
   connect() {`
-        );
-      }
-      
-      fs.writeFileSync(poolPath, patchedContent, "utf8");
-      console.log("✅ Successfully patched pg-pool module");
-    } catch (err) {
-      console.error("Failed to patch pg-pool:", err);
+      );
     }
+    
+    fs.writeFileSync(poolPath, patchedContent, "utf8");
+    console.log("✅ Successfully patched pg-pool module");
+  } catch (err) {
+    console.error("Failed to patch pg-pool:", err);
   }
 }
 
@@ -145,6 +151,9 @@ function applyPgPatches() {
   try {
     // Force disable native modules
     process.env.NODE_PG_FORCE_NATIVE = "0";
+    
+    // Apply the pg-pool patch
+    patchPgPool();
     
     // Export our patched versions
     const result = {
@@ -160,6 +169,9 @@ function applyPgPatches() {
     return { patched: false, error: error.message };
   }
 }
+
+// Apply patches immediately
+applyPgPatches();
 
 // Export our patched versions
 module.exports = {
