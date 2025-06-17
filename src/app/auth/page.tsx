@@ -43,6 +43,39 @@ export default function AuthPage() {
         }
     }, [user, loading, router]);
 
+    // Handle OAuth errors from URL parameters
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const urlParams = new URLSearchParams(window.location.search);
+            const oauthError = urlParams.get('error');
+            
+            if (oauthError) {
+                switch (oauthError) {
+                    case 'twitter_oauth_denied':
+                        setError('Twitter login was cancelled');
+                        break;
+                    case 'twitter_oauth_invalid':
+                        setError('Invalid Twitter OAuth response');
+                        break;
+                    case 'twitter_oauth_state_mismatch':
+                        setError('Twitter OAuth security error');
+                        break;
+                    case 'twitter_token_exchange_failed':
+                        setError('Failed to connect with Twitter');
+                        break;
+                    case 'twitter_user_fetch_failed':
+                        setError('Failed to get Twitter user information');
+                        break;
+                    default:
+                        setError('Twitter login failed');
+                }
+                
+                // Clear the error from URL
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+        }
+    }, []);
+
     const toggleView = () => {
         setIsLogin(!isLogin);
         setError('');
