@@ -4,6 +4,7 @@ import {useState, useEffect} from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {Linkedin, Instagram, Facebook, ChevronRight} from "lucide-react";
+import { FaXTwitter } from "react-icons/fa6";
 import {useRouter} from 'next/navigation';
 import {useAuth} from '@/lib/auth/context';
 
@@ -251,7 +252,17 @@ export default function AuthPage() {
                                 </Link>
 
                                 <div className="mt-12 text-center w-full">
-                                    <h3 className="text-white text-lg mb-6">Choose your Accounts</h3>
+                                    <h3 className="text-white text-lg mb-6">Or sign in with</h3>
+                                    <div className="flex justify-center">
+                                        <Link
+                                            href="/api/auth/signin/twitter"
+                                            className="flex items-center justify-center px-6 py-3 rounded-full bg-black hover:bg-gray-800 transition-colors duration-200 focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
+                                        >
+                                            <FaXTwitter className="w-5 h-5 text-white mr-2"/>
+                                            <span className="text-white font-medium">Sign in with X</span>
+                                        </Link>
+                                    </div>
+                                    {/* Commented out previous social login buttons
                                     <div className="flex justify-center space-x-4">
                                         <Link
                                             href="#"
@@ -272,6 +283,7 @@ export default function AuthPage() {
                                             <Facebook className="w-5 h-5 text-white"/>
                                         </Link>
                                     </div>
+                                    */}
                                 </div>
 
                                 <button
@@ -368,6 +380,16 @@ export default function AuthPage() {
 
                                 <div className="mt-8 text-center w-full">
                                     <p className="text-white text-lg mb-4">Or sign up with</p>
+                                    <div className="flex justify-center">
+                                        <Link
+                                            href="/api/auth/signin/twitter"
+                                            className="flex items-center justify-center px-6 py-3 rounded-full bg-black hover:bg-gray-800 transition-colors duration-200 focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
+                                        >
+                                            <FaXTwitter className="w-5 h-5 text-white mr-2"/>
+                                            <span className="text-white font-medium">Sign up with X</span>
+                                        </Link>
+                                    </div>
+                                    {/* Commented out previous social login buttons
                                     <div className="flex justify-center items-center space-x-4">
                                         <Link
                                             href="#"
@@ -383,11 +405,12 @@ export default function AuthPage() {
                                         </Link>
                                         <Link
                                             href="#"
-                                            className="w-10 h-10 flex items-center justify-center rounded-full bg-[#1877F2] focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
+                                            className="w-10 h-10 flex items-center justify-center rounded-full bg-[#1877F2] focus:border-[3px] focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
                                         >
                                             <Facebook className="w-5 h-5 text-white"/>
                                         </Link>
                                     </div>
+                                    */}
                                 </div>
 
                                 <button
