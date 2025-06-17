@@ -57,79 +57,78 @@ if (fs.existsSync(pgPoolDir)) {
       
       const poolContent = fs.readFileSync(poolPath, "utf8");
       
-      // We need to ensure Client is always available on the Pool prototype
-      let patchedContent;
+      // Check if already patched to avoid double-patching
+      if (poolContent.includes("// PATCHED BY pg-patch.cjs")) {
+        console.log("pg-pool already patched, skipping...");
+        return;
+      }
       
-      if (poolContent.includes("this.Client = options.Client || pg.Client")) {
-        // Modify existing assignment to ensure Client is also on the prototype
-        patchedContent = poolContent.replace(
-          "this.Client = options.Client || pg.Client",
-          `this.Client = options.Client || pg.Client || DummyClient;
-          // Also set Client on the prototype for safety
-          Pool.prototype.Client = this.Client;
-          Pool.Client = this.Client;`
+      let patchedContent = poolContent;
+      
+      // Add patch marker at the top
+      patchedContent = `// PATCHED BY pg-patch.cjs\n${patchedContent}`;
+      
+      // Fix the constructor to ensure Client is always available
+      patchedContent = patchedContent.replace(
+        /constructor\s*\(options\)\s*{[\s\S]*?this\.options\s*=\s*Object\.assign\(\{\},\s*options\)/,
+        `constructor(options) {
+    super()
+    this.options = Object.assign({}, options)`
+      );
+      
+      // Ensure Client is set properly in constructor
+      if (patchedContent.includes("this.Client = options.Client || Client")) {
+        patchedContent = patchedContent.replace(
+          "this.Client = options.Client || Client",
+          `// Ensure Client is always available
+    try {
+      const pg = require('pg');
+      this.Client = options.Client || pg.Client;
+    } catch (e) {
+      // Fallback if pg module fails
+      this.Client = function DummyClient() {};
+    }
+    if (!this.Client) {
+      this.Client = function DummyClient() {};
+    }`
         );
       } else {
-        // Older versions might have different patterns
-        // Try to find constructor and inject our client there
-        patchedContent = poolContent.replace(
-          /constructor\s*\([^)]*\)\s*{/,
-          `constructor(options) {
-            super();
-            this.options = options || {};
-            // Ensure Client is always available
-            try {
-              const pg = require("pg");
-              this.Client = options.Client || pg.Client || DummyClient;
-            } catch (e) {
-              this.Client = DummyClient;
-            }
-            // Also set on prototype
-            Pool.prototype.Client = this.Client;
-            Pool.Client = this.Client;`
+        // Add Client assignment if it doesn't exist
+        patchedContent = patchedContent.replace(
+          "this.options = Object.assign({}, options)",
+          `this.options = Object.assign({}, options)
+    
+    // Ensure Client is always available
+    try {
+      const pg = require('pg');
+      this.Client = options.Client || pg.Client;
+    } catch (e) {
+      // Fallback if pg module fails
+      this.Client = function DummyClient() {};
+    }
+    if (!this.Client) {
+      this.Client = function DummyClient() {};
+    }`
         );
       }
       
-      // Also fix or create the newClient method to use our Client
-      if (patchedContent.includes("newClient()")) {
+      // Ensure newClient method exists and works
+      if (!patchedContent.includes("newClient()")) {
         patchedContent = patchedContent.replace(
-          /newClient\s*\(\)\s*{[^}]*}/,
+          /connect\s*\(\)\s*{/,
           `newClient() {
-            // Make sure Client is available
-            if (!this.Client) {
-              const pg = require("pg");
-              this.Client = pg.Client || DummyClient;
-            }
-            return new this.Client(this.options);
-          }`
-        );
-      } else {
-        // Add the method if it doesn't exist
-        patchedContent = patchedContent.replace(
-          /class Pool extends EventEmitter {/,
-          `class Pool extends EventEmitter {
-          newClient() {
-            // Make sure Client is available
-            if (!this.Client) {
-              const pg = require("pg");
-              this.Client = pg.Client || DummyClient;
-            }
-            return new this.Client(this.options);
-          }`
-        );
+    if (!this.Client) {
+      try {
+        const pg = require('pg');
+        this.Client = pg.Client;
+      } catch (e) {
+        this.Client = function DummyClient() {};
       }
-      
-      // Make sure Pool can be called with or without "new"
-      if (!patchedContent.includes("if (!(this instanceof Pool))")) {
-        patchedContent = patchedContent.replace(
-          "module.exports = Pool",
-          `module.exports = function createPool(options) {
-            if (!(this instanceof createPool)) {
-              return new Pool(options);
-            }
-            return new Pool(options);
-          };
-          module.exports.Pool = Pool`
+    }
+    return new this.Client(this.options)
+  }
+
+  connect() {`
         );
       }
       
