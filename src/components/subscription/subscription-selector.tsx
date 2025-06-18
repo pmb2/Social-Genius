@@ -98,7 +98,7 @@ export function SubscriptionSelector({
             </div>
             
             <div className="text-sm mb-6">
-              <div className="font-medium mb-2">For {plan.locationRange.min}-{plan.locationRange.max || '∞'} locations</div>
+              <div className="font-medium">For {plan.locationRange.min}-{plan.locationRange.max === null ? '∞' : plan.locationRange.max} locations</div>
             </div>
             
             <div className="space-y-3 mb-6">
