@@ -3,6 +3,15 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth/context';
+import { Metadata } from 'next'; // ADD THIS LINE
+
+// ADD THIS BLOCK
+export const metadata: Metadata = {
+    title: 'SocialGenius',
+    icons: {
+        icon: '/favicon.ico',
+    },
+};
 
 export default function HomePage() {
     const router = useRouter();
@@ -51,4 +60,3 @@ export default function HomePage() {
         </div>
     );
 }
-
