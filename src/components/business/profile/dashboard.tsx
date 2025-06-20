@@ -18,7 +18,7 @@ import PlusIcon from "lucide-react/dist/esm/icons/plus"
 import Image from "next/image"
 import dynamic from "next/dynamic"
 import Link from "next/link"; // ADDED: For the X account connect button
-import { FaXTwitter } from "react-icons/fa"; // ADDED: For the X icon
+import { FaXTwitter } from "react-icons/fa6"; // ADDED: For the X icon
 
 // Dynamically import heavy components to reduce initial load time
 const BusinessProfileModal = dynamic(() => import("./modal"), {
