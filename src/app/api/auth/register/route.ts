@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { randomBytes, scryptSync } from 'crypto';
 import '@/lib/utilities/pg-patch'; // Import pg patch to ensure pg-native is correctly handled
 import { DatabaseService } from '@/services/database';
 import { AuthService } from '@/services/auth';
-import { initializeDatabase } from '@/services/database/init-db';
 
 // Specify that this route runs on the Node.js runtime, not Edge
 export const runtime = 'nodejs';
@@ -14,43 +12,12 @@ export const preferredRegion = 'auto';
 // Proper registration endpoint
 export async function POST(req: NextRequest) {
   console.log('==========================================');
-  console.log('*** REGISTER API CALLED - DEBUGGING CONNECTION ISSUES ***');
+  console.log('*** REGISTER API CALLED ***'); // Simplified log
   console.log('Request headers:', JSON.stringify(Array.from(req.headers.entries())));
   console.log('Environment:', process.env.NODE_ENV);
-  console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
   
-  // Check if running in Docker
-  const runningInDocker = process.env.RUNNING_IN_DOCKER === 'true';
-  console.log('Running in Docker:', runningInDocker);
-  
-  // Explicitly set connection string based on environment
-  if (runningInDocker) {
-    process.env.DATABASE_URL = 'postgresql://postgres:postgres@postgres:5432/socialgenius';
-    console.log('Using Docker database connection: postgres:5432');
-  } else {
-    process.env.DATABASE_URL = 'postgresql://postgres:postgres@localhost:5435/socialgenius';
-    console.log('Using host machine connection: localhost:5435');
-  }
-  
-  // Make sure pg-native is disabled
-  process.env.NODE_PG_FORCE_NATIVE = '0';
-  console.log('NODE_PG_FORCE_NATIVE set to:', process.env.NODE_PG_FORCE_NATIVE);
-  
-  // Wrap everything in a try/catch to catch any unexpected errors
   try {
     console.log('Register API called with content-type:', req.headers.get('content-type'));
-    
-    // Initialize database first to ensure tables exist
-    console.log('Ensuring database is initialized...');
-    const dbInitialized = await initializeDatabase();
-    
-    if (!dbInitialized) {
-      console.error('Database initialization failed');
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Database initialization failed. Please check database configuration.' 
-      }, { status: 500 });
-    }
     
     // Get database service
     const dbService = DatabaseService.getInstance();

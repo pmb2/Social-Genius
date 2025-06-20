@@ -13,7 +13,7 @@ class AuthService {
 
   private constructor() {
     this.db = PostgresService.getInstance();
-    this.redis = RedisService.getInstance();
+    this.redis = RedisService; // FIX: Assign the imported instance directly
     // In production, this should be set from environment variables
     this.JWT_SECRET = process.env.JWT_SECRET || 'social-genius-secret-key-change-in-production';
   }
@@ -1196,9 +1196,8 @@ class AuthService {
 
   /**
    * Creates a new user session or retrieves an existing one based on social account details.
-   * If a social account exists, it updates its tokens and logs in the associated user.
-   * If not, it creates a new user (or links to an existing one if `existingUserId` is provided)
-   * and then creates the social account and logs in the user.
+   * If a social account with the given platform and platform_user_id exists, it updates it.
+   * Otherwise, it inserts a new one.
    * @param platform The social media platform.
    * @param platformUserId The unique ID of the user on that platform.
    * @param username The username/display name from the platform.

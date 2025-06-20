@@ -8,30 +8,11 @@ export const runtime = 'nodejs';
 
 // Proper login endpoint
 export async function POST(req: NextRequest) {
-  // Wrap everything in a try/catch to catch any unexpected errors
   try {
     console.log('==========================================');
-    console.log('LOGIN API CALLED - DEBUGGING CONNECTION ISSUES');
+    console.log('LOGIN API CALLED'); // Simplified log
     console.log('Content-type:', req.headers.get('content-type'));
     console.log('Environment:', process.env.NODE_ENV);
-    console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
-    
-    // Check if running in Docker
-    const runningInDocker = process.env.RUNNING_IN_DOCKER === 'true';
-    console.log('Running in Docker:', runningInDocker);
-    
-    // Explicitly set connection string based on environment
-    if (runningInDocker) {
-      process.env.DATABASE_URL = 'postgresql://postgres:postgres@postgres:5432/socialgenius';
-      console.log('Using Docker database connection: postgres:5432');
-    } else {
-      process.env.DATABASE_URL = 'postgresql://postgres:postgres@localhost:5435/socialgenius';
-      console.log('Using host machine connection: localhost:5435');
-    }
-    
-    // Make sure pg-native is disabled
-    process.env.NODE_PG_FORCE_NATIVE = '0';
-    console.log('NODE_PG_FORCE_NATIVE set to:', process.env.NODE_PG_FORCE_NATIVE);
     
     // Get services
     const authService = AuthService.getInstance();
