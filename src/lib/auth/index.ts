@@ -1,3 +1,4 @@
 // Export auth utilities for easier importing
 export { AuthProvider, useAuth } from './context';
-export { authMiddleware, createAuthRoute } from './middleware';
+// Removed server-side middleware exports to prevent client-side bundling
+// export { authMiddleware, createAuthRoute } from './middleware';

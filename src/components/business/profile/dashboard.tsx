@@ -8,7 +8,7 @@ import {Button} from "@/components/ui/button"
 import {ProgressCircle} from "@/components/ui/progress-circle"
 import {StatusIndicator} from "@/components/ui/status-indicator"
 import {SubscriptionUpgradeModal} from "@/components/subscription/subscription-upgrade-modal"
-import {useAuth} from "@/lib/auth"
+import {useAuth} from "@/lib/auth/context" // Directly import useAuth from context
 import {subscriptionPlans} from "@/services/subscription/plans"
 import {encryptPassword} from "@/utils/password-encryption"
 // Import specific icons instead of the whole library to reduce bundle size
@@ -1383,6 +1383,7 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
             <Dialog open={isModalOpen} onOpenChange={(open) => {
                 setIsModalOpen(open);
                 // Only refresh businesses list when modal is closed if changes were made
+                // This prevents unnecessary refreshes when just viewing the modal
                 // This prevents unnecessary refreshes when just viewing the modal
                 if (!open && selectedBusiness) {
                     // Use the timestamp approach to determine if we need to refresh
