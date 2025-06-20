@@ -12,7 +12,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: dev-secret-key-change-me
-      BROWSER_USE_API_URL: http://browser-use-api:5055
+      # BROWSER_USE_API_URL: http://browser-use-api:5055
       REDIS_URL: redis://host.docker.internal:6380
       REDIS_PREFIX: "social-genius:dev:"
       SESSION_TTL: 86400
@@ -21,7 +21,6 @@ services:
       - /app/node_modules
     depends_on:
       - postgres
-      - browser-use-api
       - redis
     command: >
       sh -c "echo 'Waiting for database to be ready...' &&
