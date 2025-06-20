@@ -1,4 +1,5 @@
 import { randomBytes, scryptSync, timingSafeEqual, createHmac } from 'crypto';
+import '@/lib/utilities/pg-patch'; // Import pg patch to ensure pg-native is correctly handled
 import PostgresService from '../database/postgres-service';
 
 class AuthService {

@@ -1,6 +1,7 @@
 // This is the fixed version of the database connection logic
 // It prioritizes using the Docker service name instead of hard-coded IP addresses
 
+import '@/lib/utilities/pg-patch'; // Import pg patch to ensure pg-native is correctly handled
 import { Pool } from 'pg';
 import { OpenAIEmbeddings } from '@langchain/openai';
 
@@ -18,6 +19,8 @@ class PostgresService {
 
   private constructor() {
     try {
+      // Explicitly set important environment variables
+      process.env.NODE_PG_FORCE_NATIVE = '0';
       
       let connectionString: string;
       
@@ -33,31 +36,46 @@ class PostgresService {
       console.log('PGDATABASE:', process.env.PGDATABASE);
       console.log('NODE_PG_FORCE_NATIVE:', process.env.NODE_PG_FORCE_NATIVE);
       
-      if (runningInDocker) {
+      // Always prioritize explicitly set DATABASE_URL
+      if (process.env.DATABASE_URL) {
+        connectionString = process.env.DATABASE_URL;
+        console.log('Using explicit DATABASE_URL from environment');
+      } else if (runningInDocker) {
         // Inside Docker container - use Docker network DNS (service name)
         // IMPORTANT: Always use the service name "postgres" instead of IP address
-        connectionString = process.env.DATABASE_URL_DOCKER || 
-                          'postgresql://postgres:postgres@postgres:5432/socialgenius';
+        connectionString = 'postgresql://postgres:postgres@postgres:5432/socialgenius';
         console.log('Using Docker network (service name): postgres:5432');
+        // Also set the environment variable for other components
+        process.env.DATABASE_URL = connectionString;
       } else {
         // Outside Docker container - use host to container communication
-        connectionString = process.env.DATABASE_URL || 
-                          'postgresql://postgres:postgres@localhost:5435/socialgenius';
+        connectionString = 'postgresql://postgres:postgres@localhost:5435/socialgenius';
         console.log('Using host machine connection: localhost:5435');
+        // Also set the environment variable for other components
+        process.env.DATABASE_URL = connectionString;
       }
       
       // Always log which connection we're using (hide credentials)
-      console.log(`PostgresService: Connecting to database with connection string: ${connectionString.split('@')[0]}@***@${connectionString.split('@')[1]}`);
+      const [creds, endpoint] = connectionString.split('@');
+      console.log(`PostgresService: Connecting to database at endpoint: ${endpoint}`);
       
-      this.pool = new Pool({
+      // Create explicit connection params to bypass any pg-native issues
+      const config = {
         connectionString,
-        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
         max: 10,
         min: 2,
         connectionTimeoutMillis: 10000,
         idleTimeoutMillis: 60000,
         native: false // Force JavaScript implementation
+      };
+      
+      console.log('Connection config:', { 
+        ...config, 
+        connectionString: '***REDACTED***' // Don't log credentials
       });
+      
+      this.pool = new Pool(config);
       
       this.embeddings = new OpenAIEmbeddings({
         openAIApiKey: process.env.OPENAI_API_KEY,
@@ -82,6 +100,7 @@ class PostgresService {
       
       this.pool = new Pool({
         connectionString: fallbackConnection,
+        ssl: false,
         connectionTimeoutMillis: 8000,
         native: false,
         max: 5
@@ -105,16 +124,39 @@ class PostgresService {
   // Advanced database connection testing with retry logic
   public async testConnection(): Promise<boolean> {
     // Set up proper timeouts for connection testing
-    const queryTimeout = 5000; // 5 second query timeout
+    const queryTimeout = 10000; // 10 second query timeout for better reliability
     let client;
     
     // For build process, use a shortened timeout to avoid hanging builds
     const isBuildProcess = process.env.NODE_ENV === 'production' || 
                         process.env.NEXT_PHASE?.includes('build');
     
+    // Print current connection status
+    console.log('===== DATABASE CONNECTION TEST =====');
+    console.log('Current connection active:', this.connectionActive);
+    console.log('Current reconnect attempt:', this.currentReconnectAttempt);
+    console.log('DATABASE_URL:', process.env.DATABASE_URL?.replace(/:[^:]*@/, ':***@')); // Hide password
+    console.log('Running in Docker:', process.env.RUNNING_IN_DOCKER === 'true');
+    console.log('Node.js version:', process.version);
+    console.log('NODE_PG_FORCE_NATIVE:', process.env.NODE_PG_FORCE_NATIVE);
+    
     try {
       console.log('Testing database connection...');
-      client = await this.pool.connect();
+      
+      // Ensure non-native implementation
+      process.env.NODE_PG_FORCE_NATIVE = '0';
+      
+      // Set a timeout for the client connect operation
+      const connectPromise = this.pool.connect();
+      const connectTimeoutPromise = new Promise<any>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`Connection attempt timed out after ${queryTimeout}ms`));
+        }, queryTimeout);
+      });
+      
+      // Race the connect against the timeout
+      client = await Promise.race([connectPromise, connectTimeoutPromise]);
+      console.log('Client connection established successfully');
       
       // Execute a simple query with timeout to verify connection
       const queryPromise = client.query('SELECT 1 as connection_test');
@@ -123,10 +165,11 @@ class PostgresService {
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => {
           reject(new Error(`Query timed out after ${queryTimeout}ms`));
-        }, isBuildProcess ? 2000 : queryTimeout);
+        }, isBuildProcess ? 5000 : queryTimeout);
       });
       
       // Race the query against the timeout
+      console.log('Executing test query...');
       const result = await Promise.race([queryPromise, timeoutPromise]) as any;
       
       if (result && result.rows && result.rows.length > 0 && result.rows[0].connection_test === 1) {
@@ -139,6 +182,19 @@ class PostgresService {
         if (this.connectionRetryTimer) {
           clearTimeout(this.connectionRetryTimer);
           this.connectionRetryTimer = null;
+        }
+        
+        // Try a second query to verify database is working properly
+        console.log('Executing second test query to verify database...');
+        try {
+          const secondTestResult = await client.query("SELECT current_database() as db_name, current_user as username, version()");
+          console.log('Database info:', {
+            database: secondTestResult.rows[0].db_name,
+            user: secondTestResult.rows[0].username,
+            version: secondTestResult.rows[0].version
+          });
+        } catch (secondQueryError) {
+          console.warn('Second query failed but connection is still considered valid:', secondQueryError);
         }
         
         client.release();
