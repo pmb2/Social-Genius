@@ -4,6 +4,11 @@ import "./globals.css";
 import { Providers } from "./providers";
 import InitDbScript from './init-db-script';
 
+// Import development configuration
+if (process.env.NODE_ENV === 'development') {
+  import('../config/development.js');
+}
+
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {

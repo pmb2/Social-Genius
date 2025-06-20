@@ -534,6 +534,7 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
                                 height={120}
                                 priority={true}
                                 quality={80}
+                                style={{ width: 'auto', height: 'auto' }}
                             />
                         </div>
 
