@@ -6,11 +6,11 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "3001:3000"
+      - "3000:3000"
     environment:
       NODE_ENV: development
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
-      NEXTAUTH_URL: http://localhost:3001
+      NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: dev-secret-key-change-me
       BROWSER_USE_API_URL: http://browser-use-api:5055
       REDIS_URL: redis://host.docker.internal:6380
@@ -59,36 +59,6 @@ services:
       - "5050:5050"
     depends_on:
       - postgres
-    networks:
-      - social_genius_network
-
-  browser-use-api:
-    build:
-      context: ./src/api/browser-use
-      dockerfile: Dockerfile
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    container_name: social-genius-browser-api
-    volumes:
-      - ./src/api/browser-use/screenshots:/app/screenshots
-    environment:
-      - PORT=5055
-      - HOST=0.0.0.0
-      - MAX_CONCURRENT_BROWSERS=10
-      - SCREENSHOT_PATH=/app/screenshots
-      - REDIS_URL=redis://host.docker.internal:6380
-    ports:
-      - "5055:5055"
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:5055/health" ]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
     networks:
       - social_genius_network
 
