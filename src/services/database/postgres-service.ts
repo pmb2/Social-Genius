@@ -5,6 +5,23 @@ import '@/lib/utilities/pg-patch'; // Import pg patch to ensure pg-native is cor
 import { Pool } from 'pg';
 import { OpenAIEmbeddings } from '@langchain/openai';
 
+/**
+ * Interface for a social media account linked to a user.
+ */
+export interface SocialAccount {
+  id: number;
+  user_id: number;
+  platform: 'twitter' | 'facebook' | 'instagram' | 'linkedin';
+  platform_user_id: string;
+  username: string;
+  access_token: string;
+  refresh_token?: string;
+  expires_at?: Date;
+  business_id?: string; // Optional, links to businesses table
+  created_at: Date;
+  updated_at: Date;
+}
+
 class PostgresService {
   private static instance: PostgresService;
   private pool: Pool;
@@ -108,7 +125,7 @@ class PostgresService {
       
       // Still create embeddings
       this.embeddings = new OpenAIEmbeddings({
-        openAIApiKey: process.env.OPENAI_API_KEY || '',
+        openAIAIApiKey: process.env.OPENAI_API_KEY || '',
         modelName: "text-embedding-3-small"
       });
     }
@@ -393,7 +410,33 @@ class PostgresService {
       console.error('Error creating businesses table:', error.message);
     }
     
-    // 4. Create documents table (depends on users and businesses)
+    // 4. Create social_accounts table (depends on users and businesses)
+    try {
+      console.log('Creating social_accounts table...');
+      await client.query('BEGIN');
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS social_accounts (
+          id SERIAL PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          platform VARCHAR(50) NOT NULL,
+          platform_user_id TEXT UNIQUE NOT NULL,
+          username TEXT NOT NULL,
+          access_token TEXT NOT NULL,
+          refresh_token TEXT,
+          expires_at TIMESTAMP WITH TIME ZONE,
+          business_id TEXT REFERENCES businesses(business_id) ON DELETE SET NULL, -- Link to businesses
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(platform, platform_user_id)
+        );
+      `);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error creating social_accounts table:', error.message);
+    }
+
+    // 5. Create documents table (depends on users and businesses)
     try {
       console.log('Creating documents table...');
       await client.query('BEGIN');
@@ -416,7 +459,7 @@ class PostgresService {
       console.error('Error creating documents table:', error.message);
     }
     
-    // 5. Create document_chunks table (without foreign key first)
+    // 6. Create document_chunks table (without foreign key first)
     try {
       console.log('Creating document_chunks table...');
       await client.query('BEGIN');
@@ -436,7 +479,7 @@ class PostgresService {
       console.error('Error creating document_chunks table:', error.message);
     }
     
-    // 5a. Add foreign key constraint in a separate transaction
+    // 6a. Add foreign key constraint in a separate transaction
     try {
       await client.query('BEGIN');
       // Use a safer approach that works with all PostgreSQL versions
@@ -471,7 +514,7 @@ class PostgresService {
       console.warn('Note: Could not add foreign key constraint to document_chunks table:', fkError.message);
     }
     
-    // 6. Create task_logs table (no critical dependencies)
+    // 7. Create task_logs table (no critical dependencies)
     try {
       console.log('Creating task_logs table...');
       await client.query('BEGIN');
@@ -495,7 +538,7 @@ class PostgresService {
       console.error('Error creating task_logs table:', error.message);
     }
     
-    // 7. Create notifications table (depends on users)
+    // 8. Create notifications table (depends on users)
     try {
       console.log('Creating notifications table...');
       await client.query('BEGIN');
@@ -530,7 +573,9 @@ class PostgresService {
       'CREATE INDEX IF NOT EXISTS idx_task_logs_task_id ON task_logs(task_id)',
       'CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)',
       'CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read)',
-      'CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, read)'
+      'CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, read)',
+      'CREATE INDEX IF NOT EXISTS idx_social_accounts_user_id ON social_accounts(user_id)',
+      'CREATE INDEX IF NOT EXISTS idx_social_accounts_platform_user_id ON social_accounts(platform, platform_user_id)'
     ];
     
     for (const indexQuery of indexQueries) {
@@ -1178,6 +1223,107 @@ class PostgresService {
       return result.rowCount > 0;
     } catch (error) {
       console.error('Error deleting notification:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Upsert a social account record.
+   * If a social account with the given platform and platform_user_id exists, it updates it.
+   * Otherwise, it inserts a new one.
+   */
+  public async upsertSocialAccount(
+    userId: number,
+    platform: SocialAccount['platform'],
+    platformUserId: string,
+    username: string,
+    accessToken: string,
+    refreshToken?: string,
+    expiresAt?: Date,
+    businessId?: string | null
+  ): Promise<SocialAccount> {
+    try {
+      const result = await this.pool.query(
+        `INSERT INTO social_accounts (user_id, platform, platform_user_id, username, access_token, refresh_token, expires_at, business_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (platform, platform_user_id) DO UPDATE SET
+           user_id = EXCLUDED.user_id,
+           username = EXCLUDED.username,
+           access_token = EXCLUDED.access_token,
+           refresh_token = COALESCE(EXCLUDED.refresh_token, social_accounts.refresh_token), -- Only update if new refresh token is provided
+           expires_at = EXCLUDED.expires_at,
+           business_id = COALESCE(EXCLUDED.business_id, social_accounts.business_id), -- Only update if new business_id is provided
+           updated_at = CURRENT_TIMESTAMP
+         RETURNING *`,
+        [userId, platform, platformUserId, username, accessToken, refreshToken, expiresAt, businessId]
+      );
+      return result.rows[0];
+    } catch (error) {
+      console.error(`Error upserting social account for ${platform} user ${platformUserId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all social accounts for a given user ID.
+   */
+  public async getSocialAccountsByUserId(userId: number): Promise<SocialAccount[]> {
+    try {
+      const result = await this.pool.query(
+        `SELECT * FROM social_accounts WHERE user_id = $1`,
+        [userId]
+      );
+      return result.rows;
+    } catch (error) {
+      console.error(`Error getting social accounts for user ${userId}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * Get a social account by its platform and platform-specific user ID.
+   */
+  public async getSocialAccountByPlatformId(platform: SocialAccount['platform'], platformUserId: string): Promise<SocialAccount | null> {
+    try {
+      const result = await this.pool.query(
+        `SELECT * FROM social_accounts WHERE platform = $1 AND platform_user_id = $2`,
+        [platform, platformUserId]
+      );
+      return result.rows.length > 0 ? result.rows[0] : null;
+    } catch (error) {
+      console.error(`Error getting social account for ${platform} user ${platformUserId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Update the business_id for a specific social account.
+   */
+  public async updateSocialAccountBusinessId(socialAccountId: number, businessId: string | null): Promise<boolean> {
+    try {
+      const result = await this.pool.query(
+        `UPDATE social_accounts SET business_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+        [businessId, socialAccountId]
+      );
+      return result.rowCount > 0;
+    } catch (error) {
+      console.error(`Error updating business_id for social account ${socialAccountId}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Delete a social account by its ID.
+   */
+  public async deleteSocialAccount(socialAccountId: number): Promise<boolean> {
+    try {
+      const result = await this.pool.query(
+        `DELETE FROM social_accounts WHERE id = $1 RETURNING id`,
+        [socialAccountId]
+      );
+      return result.rowCount > 0;
+    } catch (error) {
+      console.error(`Error deleting social account ${socialAccountId}:`, error);
       return false;
     }
   }
