@@ -18,7 +18,6 @@ import PlusIcon from "lucide-react/dist/esm/icons/plus"
 import Image from "next/image"
 import dynamic from "next/dynamic"
 import Link from "next/link"; // ADDED: For the X account connect button
-import { FaXTwitter } from "react-icons/fa6"; // ADDED: For the X icon
 
 // Dynamically import heavy components to reduce initial load time
 const BusinessProfileModal = dynamic(() => import("./modal"), {
@@ -672,7 +671,7 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
                                                 <div className="flex justify-center space-x-2">
                                                     {business.socialAccounts && business.socialAccounts.map(account => (
                                                         <span key={account.id} className="text-gray-600" title={account.username || account.platform}>
-                                                            {account.platform === 'twitter' && <FaXTwitter className="h-5 w-5 text-black" />}
+                                                            {account.platform === 'twitter' && <i className="fa-brands fa-x-twitter h-5 w-5 text-black"></i>}
                                                             {/* Add other social icons here */}
                                                         </span>
                                                     ))}
@@ -837,7 +836,7 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
                                         className="flex items-center justify-center px-6 py-3 rounded-full bg-black hover:bg-gray-800 transition-colors duration-200 focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
                                         onClick={() => setIsAddBusinessModalOpen(false)} // Close modal when redirecting
                                     >
-                                        <FaXTwitter className="w-5 h-5 text-white mr-2"/>
+                                        <i className="fa-brands fa-x-twitter w-5 h-5 text-white mr-2"></i>
                                         <span className="text-white font-medium">Connect X Account</span>
                                     </Link>
                                 </div>
