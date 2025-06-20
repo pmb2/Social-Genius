@@ -53,24 +53,36 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
--- Create triggers for all tables
-DROP TRIGGER IF EXISTS update_users_updated_at ON users;
-CREATE TRIGGER update_users_updated_at
-    BEFORE UPDATE ON users
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+-- Create triggers for all tables (only if tables exist)
+DO $$
+BEGIN
+    -- Create trigger for users table
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users') THEN
+        DROP TRIGGER IF EXISTS update_users_updated_at ON users;
+        CREATE TRIGGER update_users_updated_at
+            BEFORE UPDATE ON users
+            FOR EACH ROW
+            EXECUTE FUNCTION update_updated_at_column();
+    END IF;
 
-DROP TRIGGER IF EXISTS update_businesses_updated_at ON businesses;
-CREATE TRIGGER update_businesses_updated_at
-    BEFORE UPDATE ON businesses
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+    -- Create trigger for businesses table
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'businesses') THEN
+        DROP TRIGGER IF EXISTS update_businesses_updated_at ON businesses;
+        CREATE TRIGGER update_businesses_updated_at
+            BEFORE UPDATE ON businesses
+            FOR EACH ROW
+            EXECUTE FUNCTION update_updated_at_column();
+    END IF;
 
-DROP TRIGGER IF EXISTS update_social_accounts_updated_at ON social_accounts;
-CREATE TRIGGER update_social_accounts_updated_at
-    BEFORE UPDATE ON social_accounts
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+    -- Create trigger for social_accounts table
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'social_accounts') THEN
+        DROP TRIGGER IF EXISTS update_social_accounts_updated_at ON social_accounts;
+        CREATE TRIGGER update_social_accounts_updated_at
+            BEFORE UPDATE ON social_accounts
+            FOR EACH ROW
+            EXECUTE FUNCTION update_updated_at_column();
+    END IF;
+END $$;
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
