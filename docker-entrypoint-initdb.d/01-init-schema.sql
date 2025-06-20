@@ -1,7 +1,16 @@
 -- Initialize database schema for Social Genius
 -- This file is automatically executed when the PostgreSQL container starts
 
--- Ensure the users table has all required columns
+-- Create users table if it doesn't exist
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Ensure the users table has all required columns (for existing tables)
 DO $$
 BEGIN
     -- Add updated_at column if it doesn't exist
@@ -33,13 +42,16 @@ $$ language 'plpgsql';
 -- Create trigger for users table if it doesn't exist
 DO $$
 BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_trigger WHERE tgname = 'update_users_updated_at'
-    ) THEN
-        CREATE TRIGGER update_users_updated_at
-            BEFORE UPDATE ON users
-            FOR EACH ROW
-            EXECUTE FUNCTION update_updated_at_column();
+    -- Check if users table exists before creating trigger
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users') THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_trigger WHERE tgname = 'update_users_updated_at'
+        ) THEN
+            CREATE TRIGGER update_users_updated_at
+                BEFORE UPDATE ON users
+                FOR EACH ROW
+                EXECUTE FUNCTION update_updated_at_column();
+        END IF;
     END IF;
 END $$;
 
