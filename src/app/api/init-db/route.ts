@@ -31,7 +31,11 @@ async function initDb(req: NextRequest) {
     
     // Load pg patch first to ensure it's applied
     try {
-      require('@/pg-patch.cjs');
+      // Set explicitly to disable native
+      process.env.NODE_PG_FORCE_NATIVE = '0';
+      
+      // Import our patch
+      import('@/lib/utilities/pg-patch');
       console.log('✅ pg-patch applied successfully');
     } catch (patchError) {
       console.error('Failed to apply pg-patch:', patchError);
