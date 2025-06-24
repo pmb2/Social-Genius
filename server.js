@@ -1,70 +1,84 @@
-// Simple HTTP server for Next.js
-const http = require('http');
-const { createReadStream } = require('fs');
-const { join } = require('path');
+const { createServer } = require('http');
+const { parse } = require('url');
+const next = require('next');
 
-// Always bind to 0.0.0.0 to ensure external accessibility
+// Determine if we are in development mode
+const dev = process.env.NODE_ENV !== 'production';
+// Parse the port from environment variables or default to 3000
 const port = parseInt(process.env.PORT || '3000', 10);
+// Use 0.0.0.0 to bind to all network interfaces, ensuring external accessibility
+const hostname = '0.0.0.0';
 
-console.log(`Starting simple server on port ${port}`);
-console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+// Create the Next.js app instance
+// This prepares the Next.js application for handling requests.
+const app = next({ dev, hostname, port });
+// Get the Next.js request handler. This function will process all Next.js routes,
+// API routes, and static files (like favicon.ico from the public directory).
+const handle = app.getRequestHandler();
 
-// Static HTML for health checks
-const healthHtml = 'OK';
+// Prepare the Next.js app. This must complete before the server starts listening.
+app.prepare().then(() => {
+  // Create a standard Node.js HTTP server
+  createServer(async (req, res) => {
+    try {
+      // Parse the incoming request URL to extract pathname and query parameters
+      const parsedUrl = parse(req.url, true);
+      // const { pathname, query } = parsedUrl; // Destructure if you need to handle custom routes before Next.js
 
-// Create a basic HTTP server
-const server = http.createServer((req, res) => {
-  // Log all requests except health checks
-  if (req.url !== '/health' && req.url !== '/api/health') {
-    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
-  }
+      // --- Custom Server-Side Logic (Optional) ---
+      // You can add custom routes here that should be handled by your Node.js server
+      // *before* Next.js gets a chance to process them.
+      // For example, a simple health check that doesn't go through Next.js:
+      if (parsedUrl.pathname === '/health' || parsedUrl.pathname === '/api/health') {
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'text/plain');
+        res.end('OK');
+        return; // Important: return after handling the request
+      }
 
-  // Simple router
-  if (req.url === '/health' || req.url === '/api/health') {
-    res.statusCode = 200;
-    res.setHeader('Content-Type', 'text/plain');
-    res.end(healthHtml);
-    return;
-  }
-
-  // For all other routes, serve the placeholder
-  res.statusCode = 200;
-  res.setHeader('Content-Type', 'text/html');
-  res.end(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Social Genius - Maintenance</title>
-        <style>
-          body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-          .container { max-width: 800px; margin: 0 auto; }
-          h1 { color: #333; }
-          .message { margin: 20px 0; padding: 20px; background: #f9f9f9; border-radius: 5px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <h1>Social Genius</h1>
-          <div class="message">
-            <h2>Site Maintenance</h2>
-            <p>We're performing scheduled maintenance. We'll be back shortly!</p>
-            <p>Server is responding correctly - this is a temporary maintenance page.</p>
-          </div>
-        </div>
-      </body>
-    </html>
-  `);
+      // --- Delegate to Next.js ---
+      // For all other requests, let Next.js handle them.
+      // This includes:
+      // - All Next.js pages (e.g., /, /about, /blog/[slug])
+      // - All Next.js API routes (e.g., /api/hello)
+      // - All static files located in the `public` directory (e.g., /favicon.ico, /images/logo.png)
+      await handle(req, res, parsedUrl);
+    } catch (err) {
+      // Log any errors that occur during request handling
+      console.error('Error occurred handling request:', req.url, err);
+      // Send a 500 Internal Server Error response
+      res.statusCode = 500;
+      res.end('Internal Server Error');
+    }
+  })
+  // Start the server and listen on the specified port and hostname
+  .listen(port, hostname, (err) => {
+    if (err) {
+      // If there's an error starting the server (e.g., port already in use), throw it
+      throw err;
+    }
+    console.log(`> Ready on http://${hostname}:${port}`);
+  });
+})
+.catch((err) => {
+  // Catch any errors that occur during the Next.js app preparation phase
+  console.error('Failed to prepare Next.js app:', err);
+  // Exit the process if Next.js app preparation fails, as the server cannot function
+  process.exit(1);
 });
 
-// Start the server on all interfaces (0.0.0.0)
-server.listen(port, '0.0.0.0', () => {
-  console.log(`Server running at http://0.0.0.0:${port}/`);
+// --- Global Error Handling (Good Practice) ---
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Depending on your application, you might want to log this and exit,
+  // or just log and continue if it's not critical.
 });
 
-// Handle errors
-server.on('error', (e) => {
-  console.error('Server error:', e);
-  if (e.code === 'EADDRINUSE') {
-    console.error(`Port ${port} is already in use!`);
-  }
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  // It is crucial to exit the process after an uncaught exception
+  // to prevent the application from running in an undefined state.
+  process.exit(1);
 });
