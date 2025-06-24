@@ -147,7 +147,7 @@ export const GET = createAuthRoute(async (req: NextRequest, userId: number) => {
     const { searchParams } = new URL(req.url);
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '50', 10);
-    const includeSocialAccounts = searchParams.get('includeSocialAccounts') === 'true'; // NEW: Check for this param
+    const includeSocialAccounts = searchParams.get('includeSocialAccounts') === 'true';
     
     log(`Getting businesses for user ${userId}`, LogLevel.INFO, {
       page,
@@ -177,7 +177,7 @@ export const GET = createAuthRoute(async (req: NextRequest, userId: number) => {
       }, { 
         status: 200,
         headers: {
-          'Cache-Control': 'max-age=60', // Browser caching
+          'Cache-Control': 'max-age=60'
         }
       });
       
@@ -193,11 +193,11 @@ export const GET = createAuthRoute(async (req: NextRequest, userId: number) => {
     
     // Get services
     const authService = AuthService.getInstance();
-    const dbService = PostgresService.getInstance(); // Use PostgresService directly for DB operations
+    const dbService = PostgresService.getInstance();
     
     // Fetch businesses from the database for this user
     const startFetch = Date.now();
-    const result = await authService.getBusinesses(userId); // This gets basic business info
+    const result = await authService.getBusinesses(userId);
     const fetchTime = Date.now() - startFetch;
     
     log(`Fetched basic businesses from database in ${fetchTime}ms`, 
@@ -222,7 +222,7 @@ export const GET = createAuthRoute(async (req: NextRequest, userId: number) => {
 
     let businessesToReturn = result.businesses || [];
 
-    // NEW: Fetch social accounts if requested
+    // Fetch social accounts if requested
     if (includeSocialAccounts && businessesToReturn.length > 0) {
       log(`Fetching social accounts for ${businessesToReturn.length} businesses`, LogLevel.INFO);
       const socialAccountsFetchStart = Date.now();
@@ -322,7 +322,7 @@ export const POST = createAuthRoute(async (req: NextRequest, userId: number) => 
       body = JSON.parse(bodyText);
       log(`Request body parsed successfully`, LogLevel.INFO, { 
         name: body.name ? `"${body.name}"` : 'Missing',
-        type: body.type || 'Not specified', // Still log if sent, but not used for addBusiness
+        type: body.type || 'Not specified',
         bodySize: bodyText.length
       });
     } catch (parseError) {
@@ -361,7 +361,7 @@ export const POST = createAuthRoute(async (req: NextRequest, userId: number) => 
     log(`Creating business for user ID: ${userId} with name "${name}"`, LogLevel.INFO);
     
     const startCreate = Date.now();
-    const result = await authService.addBusiness(userId, name.trim()); // Use authService.addBusiness
+    const result = await authService.addBusiness(userId, name.trim());
     const createTime = Date.now() - startCreate;
     
     log(`Business creation completed in ${createTime}ms`, 
