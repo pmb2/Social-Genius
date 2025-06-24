@@ -245,7 +245,7 @@ export const GET = createAuthRoute(async (req: NextRequest, userId: number) => {
     
     // Store in cache
     businessesCache.set(cacheKey, {
-      data: { businesses: businessesToReturn }, // Store the enriched data
+      data: { businesses: businessesToReturn },
       timestamp: now
     });
     
@@ -261,7 +261,7 @@ export const GET = createAuthRoute(async (req: NextRequest, userId: number) => {
     }, { 
       status: 200,
       headers: {
-        'Cache-Control': 'max-age=60' // Browser caching
+        'Cache-Control': 'max-age=60'
       }
     });
     
