@@ -16,7 +16,7 @@ export const runtime = 'nodejs';
 
 // Cache for businesses data (in-memory cache for development, would use Redis in production)
 const CACHE_TTL = 60 * 1000; // 1 minute in milliseconds
-const businessesCache = new Map<number, { data: any, timestamp: number }>();
+const businessesCache = new Map<number, { data: any; timestamp: number }>();
 
 // Handle DELETE requests for businesses
 export const DELETE = createAuthRoute(async (req: NextRequest, userId: number) => {
