@@ -310,6 +310,11 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
     // The entire block from line 100 to line 230 (or wherever it ends in your file) should be removed.
     // This includes the `tryAutoLoginForAllBusinesses` function definition and the `useEffect` that calls it.
 
+    // Initial data fetch on component mount
+    useEffect(() => {
+        fetchBusinesses();
+    }, [fetchBusinesses]);
+
     // ADDED: New useEffect to handle successful social account connection redirect
     useEffect(() => {
         if (typeof window !== 'undefined') {
