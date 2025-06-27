@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react'; // Added useCallback import
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { X, Bell, CheckCircle, Clock, Info, AlertTriangle } from 'lucide-react';
@@ -29,15 +29,7 @@ export default function NotificationsDialog({ open, onOpenChange }: Notification
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
   
-  const unreadCount = notifications.filter(n => !n.read).length;
-  
-  // Fetch notifications when the dialog opens or user changes
-  useEffect(() => {
-    if (open && user) {
-      fetchNotifications();
-    }
-  }, [open, user, filter, fetchNotifications]);
-  
+  // Move fetchNotifications declaration BEFORE the useEffect that uses it
   const fetchNotifications = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -64,7 +56,16 @@ export default function NotificationsDialog({ open, onOpenChange }: Notification
     } finally {
       setIsLoading(false);
     }
-  }, [filter]);
+  }, [filter]); // filter is a dependency of this useCallback
+
+  const unreadCount = notifications.filter(n => !n.read).length;
+  
+  // Fetch notifications when the dialog opens or user changes
+  useEffect(() => {
+    if (open && user) {
+      fetchNotifications();
+    }
+  }, [open, user, filter, fetchNotifications]); // fetchNotifications is now correctly in scope
   
   const getTypeIcon = (type: Notification['type']) => {
     switch (type) {
