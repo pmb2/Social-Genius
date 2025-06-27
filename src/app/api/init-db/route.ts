@@ -49,15 +49,6 @@ async function initDb(req: NextRequest) {
     console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
     console.log('DATABASE_URL_DOCKER:', process.env.DATABASE_URL_DOCKER ? 'SET' : 'NOT SET');
     
-    // Set explicit connection string based on environment
-    if (inDocker) {
-      process.env.DATABASE_URL = 'postgresql://postgres:postgres@postgres:5432/socialgenius';
-      console.log('Using Docker database connection');
-    } else {
-      process.env.DATABASE_URL = 'postgresql://postgres:postgres@localhost:5435/socialgenius';
-      console.log('Using local database connection');
-    }
-    
     // Get database service (but don't reset connection - let our improved logic handle it)
     const dbService = PostgresService.getInstance();
     
