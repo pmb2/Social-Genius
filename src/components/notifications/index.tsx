@@ -36,12 +36,12 @@ export default function NotificationsDialog({ open, onOpenChange }: Notification
     if (open && user) {
       fetchNotifications();
     }
-  }, [open, user, filter]);
+  }, [open, user, filter, fetchNotifications]);
   
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
       const unreadParam = filter === 'unread' ? '&unread=true' : '';
       const response = await fetch(`/api/notifications?limit=50${unreadParam}`, {
@@ -51,11 +51,11 @@ export default function NotificationsDialog({ open, onOpenChange }: Notification
         },
         credentials: 'include',
       });
-      
+
       if (!response.ok) {
         throw new Error('Failed to fetch notifications');
       }
-      
+
       const data = await response.json();
       setNotifications(data.notifications || []);
     } catch (err) {
@@ -64,7 +64,7 @@ export default function NotificationsDialog({ open, onOpenChange }: Notification
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [filter]);
   
   const getTypeIcon = (type: Notification['type']) => {
     switch (type) {
