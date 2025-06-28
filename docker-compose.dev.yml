@@ -8,9 +8,10 @@ services:
     ports:
       - "3000:3000"
     environment:
-      PGHOST: 127.0.0.1
+      PGHOST: postgres # Use the service name for inter-container communication
       NODE_ENV: development
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5435/socialgenius
+      RUNNING_IN_DOCKER: 'true' # Explicitly tell the app it's running in Docker
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius # Use service name and internal port
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: dev-secret-key-change-me
       # BROWSER_USE_API_URL: http://browser-use-api:5055
