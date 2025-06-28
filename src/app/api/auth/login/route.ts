@@ -10,7 +10,7 @@ export const runtime = 'nodejs';
 export async function POST(req: NextRequest) {
   try {
     console.log('==========================================');
-    console.log('LOGIN API CALLED'); // Simplified log
+    console.log('Hey there, login API just got a ping!'); // More casual greeting
     console.log('Content-type:', req.headers.get('content-type'));
     console.log('Environment:', process.env.NODE_ENV);
     
@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
       console.log('[LOGIN-API] Setting cookies with session ID:', sessionId?.substring(0, 8) + '...');
       console.log('[LOGIN-API] Cookie environment settings:', {
         nodeEnv: process.env.NODE_ENV,
-        secure: process.env.NODE_ENV === 'production',
+        secure: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         maxAge: 30 * 24 * 60 * 60 // 30 days in seconds
       });

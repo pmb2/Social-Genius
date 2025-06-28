@@ -9,7 +9,7 @@ const dev = process.env.NODE_ENV !== 'production';
 const hostname = '0.0.0.0';
 const port = parseInt(process.env.PORT || '3000', 10);
 
-console.log(`Starting server with binding to ${hostname}:${port}, NODE_ENV=${process.env.NODE_ENV}`);
+console.log(`Server's firing up on ${hostname}:${port}, NODE_ENV=${process.env.NODE_ENV}`); // More casual greeting
 console.log(`NEXTAUTH_URL=${process.env.NEXTAUTH_URL}, GOOGLE_REDIRECT_URI=${process.env.GOOGLE_REDIRECT_URI}`);
 
 // Initialize Next.js
