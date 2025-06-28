@@ -8,8 +8,9 @@ services:
     ports:
       - "3000:3000"
     environment:
+      PGHOST: 127.0.0.1
       NODE_ENV: development
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5435/socialgenius
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: dev-secret-key-change-me
       # BROWSER_USE_API_URL: http://browser-use-api:5055
