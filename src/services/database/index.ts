@@ -7,18 +7,10 @@ try {
   // In development, we need to pre-load the pg patch
   if (process.env.NODE_ENV === 'development') {
     try {
-      await import('../../../app/pg-patch.cjs');
+      await import('../../../pg-patch.cjs');
       console.log('pg patch applied: true');
     } catch (error) {
       console.warn('Could not apply pg-patch:', error);
-      
-      // Try using the patch from the main directory
-      try {
-        await import('../../../pg-patch.cjs');
-        console.log('Main pg patch applied: true');
-      } catch (e) {
-        console.warn('Could not apply main pg-patch:', e);
-      }
     }
   }
 } catch (err) {
