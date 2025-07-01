@@ -24,7 +24,7 @@ applyPatches();
 
 // Initialize services
 const postgresService = PostgresService.getInstance();
-// const redisService = RedisService.getInstance();
+const redisService = RedisService.getInstance(); // Uncommented
 
 // Export services individually
 export { PostgresService };
@@ -33,7 +33,7 @@ export { default as DatabaseService } from './postgres-service';
 // Export as a default object
 const services = {
   postgres: postgresService,
-  // redis: redisService,
+  redis: redisService, // Uncommented
 };
 
 export default services;
