@@ -311,7 +311,7 @@ export default function AuthPage() {
                                         </Link>
                                         <Link
                                             href="#"
-                                            className="w-10 h-10 flex items-center justify-center rounded-full bg-[#1877F2] focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
+                                            className="w-10 h-10 flex items-center justify-center rounded-full bg-[#1877F2] focus:border-[3px] focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
                                         >
                                             <Facebook className="w-5 h-5 text-white"/>
                                         </Link>
