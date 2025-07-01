@@ -6,9 +6,9 @@
  * that all services are reachable.
  */
 
-const http = require('http');
-const Redis = require('ioredis');
-const { Client } = require('pg');
+import http from 'http';
+import Redis from 'ioredis';
+import { Client } from 'pg';
 
 // Configuration
 const BROWSER_API_URL = process.env.BROWSER_USE_API_URL || 'http://browser-use-api:5055';

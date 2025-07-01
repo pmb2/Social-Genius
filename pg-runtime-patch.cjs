@@ -3,7 +3,14 @@
 /**
  * Runtime patch for PostgreSQL modules
  * This file is loaded dynamically by postgres-service.ts to fix constructor issues
+ * and handle pg-native dependency issues
  */
+
+// First load our pg-native interceptor to handle all future requires
+require('./pg-native-loader.cjs');
+
+// Also directly load our mock implementation for immediate use
+const MockNative = require('./pg-native-mock.cjs');
 
 module.exports = function applyPgRuntimePatches() {
   console.log('Applying PostgreSQL runtime patches');
@@ -41,6 +48,28 @@ module.exports = function applyPgRuntimePatches() {
       pg.Pool = SafePool;
       
       console.log('Successfully patched pg.Pool constructor');
+    }
+    
+    // Ensure pg.native is available but using our mock
+    if (pg && !pg.native) {
+      console.log('Adding mock pg.native implementation');
+      
+      // Create a PG instance using our mock Native client
+      const PG = function(clientConstructor) {
+        this.Client = clientConstructor;
+        this.defaults = pg.defaults;
+        this.types = pg.types;
+        this.Pool = function(options) {
+          return new pg.Pool(Object.assign({}, options, { Client: this.Client }));
+        };
+      };
+      
+      // Set our mock native property
+      Object.defineProperty(pg, 'native', {
+        configurable: true,
+        enumerable: false,
+        value: new PG(require('./pg-native-mock'))
+      });
     }
     
     // Return the patched modules

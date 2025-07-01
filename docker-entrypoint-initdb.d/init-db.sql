@@ -35,7 +35,21 @@ CREATE TABLE IF NOT EXISTS users (
   profile_picture TEXT,
   phone_number TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  last_login TIMESTAMP WITH TIME ZONE
+  last_login TIMESTAMP WITH TIME ZONE,
+  x_account_id VARCHAR(255) UNIQUE
+);
+
+-- Create a new table to store linked X.com accounts for each user.
+CREATE TABLE IF NOT EXISTS linked_accounts (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    business_id VARCHAR(255) NOT NULL UNIQUE,
+    x_account_id VARCHAR(255) NOT NULL UNIQUE,
+    x_username VARCHAR(255),
+    access_token TEXT NOT NULL,
+    refresh_token TEXT,
+    token_expires_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Create businesses table to store business profiles

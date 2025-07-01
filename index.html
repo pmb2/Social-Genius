@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Low Poly GTA-Style Game</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cannon@0.6.2/build/cannon.min.js"></script>
+<script>
+    // Scene setup
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({canvas: document.getElementById('gameCanvas'), antialias: true});
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0x404040, 1.5);
+    scene.add(ambientLight);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(10, 20, 10);
+    scene.add(directionalLight);
+
+    // Ground
+    const groundGeometry = new THREE.PlaneGeometry(100, 100);
+    const groundMaterial = new THREE.MeshLambertMaterial({color: 0x888888});
+    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+    ground.rotation.x = -Math.PI / 2;
+    scene.add(ground);
+
+    // Buildings
+    const buildingGeometry = new THREE.BoxGeometry(5, 10, 5);
+    const buildingMaterial = new THREE.MeshLambertMaterial({color: 0x00ff00});
+    const buildings = [];
+    for (let i = 0; i < 10; i++) {
+        const building = new THREE.Mesh(buildingGeometry, buildingMaterial);
+        building.position.set(
+            (Math.random() - 0.5) * 80,
+            5,
+            (Math.random() - 0.5) * 80
+        );
+        scene.add(building);
+        buildings.push(building);
+    }
+
+    // Car
+    const carBodyGeometry = new THREE.BoxGeometry(2, 1, 4);
+    const carBodyMaterial = new THREE.MeshLambertMaterial({color: 0xff0000});
+    const carBody = new THREE.Mesh(carBodyGeometry, carBodyMaterial);
+    carBody.position.set(0, 0.5, 0);
+    scene.add(carBody);
+
+    const wheelGeometry = new THREE.CylinderGeometry(0.5, 0.5, 0.5, 8);
+    const wheelMaterial = new THREE.MeshLambertMaterial({color: 0x000000});
+    const wheels = [];
+    const wheelPositions = [
+        [-1, 0.25, 1.5], [1, 0.25, 1.5], [-1, 0.25, -1.5], [1, 0.25, -1.5]
+    ];
+    wheelPositions.forEach(pos => {
+        const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+        wheel.position.set(pos[0], pos[1], pos[2]);
+        wheel.rotation.z = Math.PI / 2;
+        scene.add(wheel);
+        wheels.push(wheel);
+    });
+
+    // Physics setup
+    const world = new CANNON.World();
+    world.gravity.set(0, -9.82, 0);
+    world.broadphase = new CANNON.NaiveBroadphase();
+    world.solver.iterations = 10;
+
+    // Ground physics
+    const groundShape = new CANNON.Plane();
+    const groundBody = new CANNON.Body({mass: 0});
+    groundBody.addShape(groundShape);
+    groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+    world.addBody(groundBody);
+
+    // Car physics
+    const carShape = new CANNON.Box(new CANNON.Vec3(1, 0.5, 2));
+    const carPhysBody = new CANNON.Body({mass: 10});
+    carPhysBody.addShape(carShape);
+    carPhysBody.position.set(0, 2, 0);
+    world.addBody(carPhysBody);
+
+    // Buildings physics
+    const buildingShape = new CANNON.Box(new CANNON.Vec3(2.5, 5, 2.5));
+    buildings.forEach(building => {
+        const buildingBody = new CANNON.Body({mass: 0});
+        buildingBody.addShape(buildingShape);
+        buildingBody.position.copy(building.position);
+        world.addBody(buildingBody);
+    });
+
+    // Player controls
+    const keys = {};
+    document.addEventListener('keydown', (event) => {
+        keys[event.key] = true;
+    });
+    document.addEventListener('keyup', (event) => {
+        keys[event.key] = false;
+    });
+
+    const carSpeed = 50;
+    const turnSpeed = 1.5;
+    let velocity = new CANNON.Vec3();
+    let angularVelocity = 0;
+
+    function updateControls(delta) {
+        velocity.set(0, 0, 0);
+        angularVelocity = 0;
+
+        if (keys['ArrowUp']) velocity.z -= carSpeed * delta;
+        if (keys['ArrowDown']) velocity.z += carSpeed * delta;
+        if (keys['ArrowLeft']) angularVelocity = turnSpeed;
+        if (keys['ArrowRight']) angularVelocity = -turnSpeed;
+
+        // Apply velocity in the car's forward direction
+        const quaternion = carPhysBody.quaternion;
+        const forward = new CANNON.Vec3(0, 0, 1);
+        const rotatedForward = forward.clone().vapplyQuaternion(quaternion); // Fix: Use vapplyQuaternion
+        carPhysBody.velocity.set(
+            rotatedForward.x * velocity.z,
+            carPhysBody.velocity.y,
+            rotatedForward.z * velocity.z
+        );
+        carPhysBody.angularVelocity.y = angularVelocity;
+    }
+
+    // Camera follow
+    function updateCamera() {
+        const offset = new THREE.Vector3(0, 5, 10);
+        const carPosition = carBody.position;
+        const carQuaternion = carBody.quaternion;
+        const offsetRotated = offset.clone().applyQuaternion(carQuaternion);
+        camera.position.copy(carPosition).add(offsetRotated);
+        camera.lookAt(carPosition);
+    }
+
+    // Render loop
+    let lastTime = 0;
+
+    function animate(time) {
+        requestAnimationFrame(animate);
+        const delta = (time - lastTime) / 1000;
+        lastTime = time;
+
+        // Update physics
+        world.step(1 / 60, delta, 3);
+
+        // Update controls
+        updateControls(delta);
+
+        // Sync car mesh with physics body
+        carBody.position.copy(carPhysBody.position);
+        carBody.quaternion.copy(carPhysBody.quaternion);
+
+        // Update wheels
+        wheelPositions.forEach((pos, i) => {
+            const wheelWorldPos = new THREE.Vector3(pos[0], pos[1], pos[2]).applyQuaternion(carBody.quaternion).add(carBody.position);
+            wheels[i].position.copy(wheelWorldPos);
+            wheels[i].quaternion.copy(carBody.quaternion);
+        });
+
+        // Update camera
+        updateCamera();
+
+        // Render scene
+        renderer.render(scene, camera);
+    }
+
+    animate(0);
+</script>
+</body>
+</html>

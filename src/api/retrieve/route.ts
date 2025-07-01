@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
       // Filter is now applied directly in the retriever options above
       
       // Retrieve relevant documents
-      let docs = await retriever.getRelevantDocuments(query);
+      const docs = await retriever.getRelevantDocuments(query);
       
       // Apply similarity threshold filtering manually
       // For this, we need to use the vectorStore directly to get scores

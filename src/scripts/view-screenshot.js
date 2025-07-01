@@ -5,11 +5,11 @@
  * Usage: node view-screenshot.js <userId> <screenshotFilename>
  */
 
-const fs = require('fs');
-const path = require('path');
-const http = require('http');
-const open = require('open');
-const url = require('url');
+import fs from 'fs';
+import path from 'path';
+import http from 'http';
+import open from 'open';
+import url from 'url';
 
 // Base directory for screenshots
 const SCREENSHOTS_BASE_DIR = path.join(__dirname, '..', 'api', 'browser-use', 'screenshots');

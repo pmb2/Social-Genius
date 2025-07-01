@@ -1,6 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { BrowserAutomationService, BrowserTaskResult } from './index';
-import { encryptPassword } from '../utilities/password-encryption';
 
 interface UseGoogleAuthProps {
   businessId: string;
@@ -74,7 +72,7 @@ export function useGoogleAuth({
       default:
         console.log(`${prefix} ${message}`);
     }
-  }, [businessId, enableLogging]);
+  }, [businessId, enableLogging, checkAuthStatus]);
   
   // Clean up interval on unmount
   useEffect(() => {
@@ -196,7 +194,7 @@ export function useGoogleAuth({
   }, [businessId, log, onError]);
   
   // Check the authentication status
-  const checkAuthStatus = useCallback(async (): Promise<boolean> => {
+  const checkAuthStatus = useCallback(async () => {
     if (!taskId) {
       log('No task ID available, cannot check status', 'warn');
       return false;

@@ -1,7 +1,7 @@
 // This is the fixed version of the database connection logic
 // It prioritizes using the Docker service name instead of hard-coded IP addresses
 
-import '@/lib/utilities/pg-patch'; // Import pg patch to ensure pg-native is correctly handled
+
 import { Pool } from 'pg';
 import { OpenAIEmbeddings } from '@langchain/openai';
 
@@ -768,7 +768,7 @@ class PostgresService {
       console.log(`Looking up session with ID: ${sessionId.substring(0, 8)}...`);
       
       const result = await this.pool.query(
-        `SELECT s.*, u.id as user_id, u.email, u.name, u.profile_picture, u.phone_number
+        `SELECT s.*, u.id as user_id, u.email, u.name
          FROM sessions s
          JOIN users u ON s.user_id = u.id
          WHERE s.session_id = $1 AND s.expires_at > NOW()`,

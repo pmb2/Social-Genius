@@ -886,7 +886,7 @@ export class GoogleAuthenticator {
           }
           
           // For all other permissions, pass through to the original
-          return originalQuery.apply(navigator.permissions, arguments);
+          return originalQuery.apply(navigator.permissions, parameters);
         };
         navigator.permissions.query.__stealth = true;
       }
@@ -955,8 +955,8 @@ export class GoogleAuthenticator {
         const originalSetLocalDescription = RTCPeerConnection.prototype.setLocalDescription;
         
         // Override createOffer to modify ICE candidates
-        RTCPeerConnection.prototype.createOffer = function() {
-          const offerOptions = arguments.length > 0 ? arguments[0] : {};
+        RTCPeerConnection.prototype.createOffer = function(...args: any[]) {
+          const offerOptions = args.length > 0 ? args[0] : {};
           
           // Ensure the options prevent IP leakage
           const newOptions = {
@@ -973,8 +973,8 @@ export class GoogleAuthenticator {
         RTCPeerConnection.prototype.createOffer.__stealth = true;
         
         // Do the same for createAnswer
-        RTCPeerConnection.prototype.createAnswer = function() {
-          const answerOptions = arguments.length > 0 ? arguments[0] : {};
+        RTCPeerConnection.prototype.createAnswer = function(...args: any[]) {
+          const answerOptions = args.length > 0 ? args[0] : {};
           
           // Modified options
           const newOptions = {

@@ -1,6 +1,6 @@
 'use client';
 
-import {createContext, useContext, useEffect, useState, ReactNode} from 'react';
+import {createContext, useContext, useEffect, useState, useCallback, ReactNode} from 'react';
 
 type User = {
     id: number;
@@ -8,6 +8,8 @@ type User = {
     name?: string;
     profilePicture?: string;
     phoneNumber?: string;
+    businessCount?: number;
+    planId?: string;
 };
 
 type AuthContextType = {
@@ -32,167 +34,19 @@ const AuthContext = createContext<AuthContextType>({
     updateUser: async () => false,
 });
 
-// Context provider component
+
+
+    
+
+    // Context provider component
 export function AuthProvider({children}: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
 
-    // Check if the user is already logged in when the app loads
-    // and set up periodic session refresh - but only once
-    useEffect(() => {
-        // Logger is temporarily disabled
-        let logger: any;
-        // Initialize logger with a simple stub implementation
-        logger = {
-            info: (category: string, message: string) => {
-                console.log(`[${category}] ${message}`);
-            }
-        };
-        logger.info('AUTH-PROVIDER', 'Auth provider initialized');
-
-        // Minimal logging for authentication flow
-        const showDebug = process.env.NODE_ENV === 'development' && process.env.DEBUG_AUTH === 'true';
-        if (showDebug) console.log("AuthProvider: Starting initial auth check");
-
-        let isActive = true; // Track if component is still mounted
-        let sessionRefreshTimer: NodeJS.Timeout | null = null;
-
-        // Function to check session status and update state
-        const checkSessionAndUpdateState = async () => {
-            if (!isActive) return;
-
-            try {
-                const sessionActive = await checkSession();
-
-                // Only update state if component is still mounted
-                if (!isActive) return;
-
-                if (!sessionActive && user !== null) {
-                    setUser(null);
-                }
-            } catch (error) {
-                // Only update state if component is still mounted
-                if (!isActive) return;
-
-                // Minimal error logging - only show in development with debugging enabled
-                if (showDebug) {
-                    console.error("Auth init error:", error instanceof Error ? error.message : 'Unknown error');
-                }
-
-                // Only set to null if previously not null to avoid unnecessary state changes
-                if (user !== null) {
-                    setUser(null);
-                }
-            } finally {
-                // Only update state if component is still mounted
-                if (!isActive) return;
-
-                setLoading(false);
-            }
-        };
-
-        // Function to set up periodic session refresh
-        const setupSessionRefresh = () => {
-            // Clear any existing timer
-            if (sessionRefreshTimer) {
-                clearInterval(sessionRefreshTimer);
-            }
-
-            // Set up a new timer that checks the session every 30 minutes
-            // This ensures the session remains active during long periods of user activity
-            // with minimal disruption to user experience
-            sessionRefreshTimer = setInterval(() => {
-                if (!isActive || !user) return; // Skip if component unmounted or no user
-
-                // Only check if we have an active user to avoid unnecessary requests
-                if (showDebug) console.log("Preparing for periodic session refresh check");
-
-                // Check for app state issues that would disrupt the user experience
-                const isModalOpen = typeof window !== 'undefined' && window.__modalOpen === true;
-                const isFocused = typeof document !== 'undefined' && document.hasFocus();
-                const hasActiveInputs = typeof document !== 'undefined' &&
-                    (document.activeElement instanceof HTMLInputElement ||
-                        document.activeElement instanceof HTMLTextAreaElement ||
-                        document.activeElement?.closest('form') !== null);
-
-                // Create a decision log for debugging
-                if (showDebug) {
-                    console.log(`Session check conditions: 
-            Modal open: ${isModalOpen}
-            Document focused: ${isFocused}
-            Active inputs: ${hasActiveInputs}`);
-                }
-
-                // Always use the silent check method that doesn't trigger page refreshes
-                // This prevents modals from being interrupted during session checks
-                if (showDebug) console.log("Using silent session check to prevent UI disruption");
-                checkSessionSilently();
-            }, 30 * 60 * 1000); // 30 minutes - doubled to reduce disruption
-        };
-
-        // A quieter version of checkSession that doesn't trigger UI updates unless necessary
-        const checkSessionQuietly = async () => {
-            try {
-                const response = await fetch('/api/auth/session?t=' + Date.now(), {
-                    method: 'GET',
-                    headers: {
-                        'X-Session-Check': 'quiet',
-                        'Cache-Control': 'no-cache'
-                    },
-                    credentials: 'include'
-                });
-
-                // Only process if we got an error or session is invalid
-                if (!response.ok) {
-                    // Session is invalid, update state
-                    if (user !== null) {
-                        setUser(null);
-                    }
-                }
-            } catch (error) {
-                // Network error - don't do anything to avoid disrupting user
-                if (showDebug) console.log('Quiet session check network error - continuing');
-            }
-        };
-
-        // A completely silent version that never updates UI state
-        // Used when modals/dialogs are open to avoid disrupting user experience
-        const checkSessionSilently = async () => {
-            try {
-                await fetch('/api/auth/session?t=' + Date.now(), {
-                    method: 'GET',
-                    headers: {
-                        'X-Session-Check': 'silent',
-                        'Cache-Control': 'no-cache'
-                    },
-                    credentials: 'include'
-                });
-                // Do nothing with the response
-                // This just keeps the session cookie alive without any state updates
-            } catch (error) {
-                // Completely silent - no logging, no state changes
-            }
-        };
-
-        // Initialize auth without delay
-        checkSessionAndUpdateState();
-
-        // Set up the session refresh mechanism
-        setupSessionRefresh();
-
-        // Cleanup function to prevent state updates and clear timers after unmount
-        return () => {
-            isActive = false;
-            if (sessionRefreshTimer) {
-                clearInterval(sessionRefreshTimer);
-            }
-        };
-    }, []); // No dependencies - only run once on mount to prevent rerenders
-
     // Function to check the current session
-    const checkSession = async (): Promise<boolean> => {
+    const checkSession = useCallback(async (): Promise<boolean> => {
         // Initialize logger with a simple stub implementation
-        let logger: any = {
+        const logger: any = {
             logSessionActivity: (message: string, data?: any) => {
                 console.log(`[SESSION] ${message}`, data);
             },
@@ -353,7 +207,157 @@ export function AuthProvider({children}: { children: ReactNode }) {
                 return false;
             }
         }
-    };
+    }, [user, setUser]);
+
+    // Check if the user is already logged in when the app loads
+    // and set up periodic session refresh - but only once
+    useEffect(() => {
+        // Logger is temporarily disabled
+        const logger: any = {
+            info: (category: string, message: string) => {
+                console.log(`[${category}] ${message}`);
+            }
+        };
+        logger.info('AUTH-PROVIDER', 'Auth provider initialized');
+
+        // Minimal logging for authentication flow
+        const showDebug = process.env.NODE_ENV === 'development' && process.env.DEBUG_AUTH === 'true';
+        if (showDebug) console.log("AuthProvider: Starting initial auth check");
+
+        let isActive = true; // Track if component is still mounted
+        let sessionRefreshTimer: NodeJS.Timeout | null = null;
+
+        // Function to check session status and update state
+        const checkSessionAndUpdateState = async () => {
+            if (!isActive) return;
+
+            try {
+                const sessionActive = await checkSession();
+
+                // Only update state if component is still mounted
+                if (!isActive) return;
+
+                if (!sessionActive && user !== null) {
+                    setUser(null);
+                }
+            } catch (error) {
+                // Only update state if component is still mounted
+                if (!isActive) return;
+
+                // Minimal error logging - only show in development with debugging enabled
+                if (showDebug) {
+                    console.error("Auth init error:", error instanceof Error ? error.message : 'Unknown error');
+                }
+
+                // Only set to null if previously not null to avoid unnecessary state changes
+                if (user !== null) {
+                    setUser(null);
+                }
+            } finally {
+                // Only update state if component is still mounted
+                if (!isActive) return;
+
+                setLoading(false);
+            }
+        };
+
+        // Function to set up periodic session refresh
+        const setupSessionRefresh = () => {
+            // Clear any existing timer
+            if (sessionRefreshTimer) {
+                clearInterval(sessionRefreshTimer);
+            }
+
+            // Set up a new timer that checks the session every 30 minutes
+            // This ensures the session remains active during long periods of user activity
+            // with minimal disruption to user experience
+            sessionRefreshTimer = setInterval(() => {
+                if (!isActive || !user) return; // Skip if component unmounted or no user
+
+                // Only check if we have an active user to avoid unnecessary requests
+                if (showDebug) console.log("Preparing for periodic session refresh check");
+
+                // Check for app state issues that would disrupt the user experience
+                const isModalOpen = typeof window !== 'undefined' && window.__modalOpen === true;
+                const isFocused = typeof document !== 'undefined' && document.hasFocus();
+                const hasActiveInputs = typeof document !== 'undefined' &&
+                    (document.activeElement instanceof HTMLInputElement ||
+                        document.activeElement instanceof HTMLTextAreaElement ||
+                        document.activeElement?.closest('form') !== null);
+
+                // Create a decision log for debugging
+                if (showDebug) {
+                    console.log(`Session check conditions: 
+            Modal open: ${isModalOpen}
+            Document focused: ${isFocused}
+            Active inputs: ${hasActiveInputs}`);
+                }
+
+                // Always use the silent check method that doesn't trigger page refreshes
+                // This prevents modals from being interrupted during session checks
+                if (showDebug) console.log("Using silent session check to prevent UI disruption");
+                checkSessionSilently();
+            }, 30 * 60 * 1000); // 30 minutes - doubled to reduce disruption
+        };
+
+        // A quieter version of checkSession that doesn't trigger UI updates unless necessary
+        const checkSessionQuietly = async () => {
+            try {
+                const response = await fetch('/api/auth/session?t=' + Date.now(), {
+                    method: 'GET',
+                    headers: {
+                        'X-Session-Check': 'quiet',
+                        'Cache-Control': 'no-cache'
+                    },
+                    credentials: 'include'
+                });
+
+                // Only process if we got an error or session is invalid
+                if (!response.ok) {
+                    // Session is invalid, update state
+                    if (user !== null) {
+                        setUser(null);
+                    }
+                }
+            } catch (error) {
+                // Network error - don't do anything to avoid disrupting user
+                if (showDebug) console.log('Quiet session check network error - continuing');
+            }
+        };
+
+        // A completely silent version that never updates UI state
+        // Used when modals/dialogs are open to avoid disrupting user experience
+        const checkSessionSilently = async () => {
+            try {
+                await fetch('/api/auth/session?t=' + Date.now(), {
+                    method: 'GET',
+                    headers: {
+                        'X-Session-Check': 'silent',
+                        'Cache-Control': 'no-cache'
+                    },
+                    credentials: 'include'
+                });
+                // Do nothing with the response
+                // This just keeps the session cookie alive without any state updates
+            } catch (error) {
+                // Completely silent - no logging, no state changes
+            }
+        };
+
+        // Initialize auth without delay
+        checkSessionAndUpdateState();
+
+        // Set up the session refresh mechanism
+        setupSessionRefresh();
+
+        // Cleanup function to prevent state updates and clear timers after unmount
+        return () => {
+            isActive = false;
+            if (sessionRefreshTimer) {
+                clearInterval(sessionRefreshTimer);
+            }
+        };
+    }, [checkSession, user, setUser]);
 
     // Login function
     const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {

@@ -37,3 +37,5 @@ next-env.d.ts
 .aider*
 .env
 dist/cache/webpack/server-production/0.pack
+
+**/.claude/settings.local.json

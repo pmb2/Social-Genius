@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Color codes
 GREEN="\033[0;32m"
@@ -54,15 +54,108 @@ docker ps -a | grep -E "social.*genius|pgadmin|postgres" | awk '{print $1}' | xa
 # Check for port conflicts and handle them intelligently
 echo -e "${YELLOW}Checking for port conflicts...${NC}"
 
-# Define all ports used by the application
-declare -A SERVICE_PORTS=(
-  ["app"]="3001"
-  ["pgadmin"]="5050"
-  ["postgres"]="5435"
-  ["redis"]="6380"
-  ["browser-use-api"]="5055"
-  ["redis-commander"]="8081"
-)
+# Function to extract ports from docker-compose files
+extract_ports_from_compose() {
+  local compose_file=$1
+  declare -A extracted_ports
+  
+  # Extract port mappings from docker-compose file
+  if [ -f "$compose_file" ]; then
+    # Use grep and awk to find port mappings
+    while IFS= read -r line; do
+      if [[ $line =~ ^[[:space:]]*-[[:space:]]*\"?([0-9]+):([0-9]+)\"?[[:space:]]*$ ]]; then
+        local host_port="${BASH_REMATCH[1]}"
+        local container_port="${BASH_REMATCH[2]}"
+        echo "$host_port"
+      fi
+    done < <(grep -E '^\s*-\s*"?[0-9]+:[0-9]+"?\s*$' "$compose_file")
+  fi
+}
+
+# Dynamically detect ports from docker-compose files
+declare -A SERVICE_PORTS=()
+declare -A PORT_TO_SERVICE=()
+
+# Check multiple docker-compose files
+for compose_file in "docker-compose.dev.yml" "docker-compose.yml" "docker-compose-fixed.yml"; do
+  if [ -f "$compose_file" ]; then
+    echo -e "${YELLOW}Extracting ports from $compose_file...${NC}"
+    
+    # Parse the file more robustly using a different approach
+    current_service=""
+    in_ports_section=false
+    while IFS= read -r line; do
+      # Remove leading whitespace for easier matching
+      trimmed_line=$(echo "$line" | sed 's/^[[:space:]]*//')
+      
+      # Detect service definitions (must start at beginning or with minimal indentation)
+      if [[ $line =~ ^[[:space:]]{0,2}([a-zA-Z0-9_-]+):[[:space:]]*$ ]]; then
+        potential_service="${BASH_REMATCH[1]}"
+        # Skip top-level keys like 'services', 'volumes', 'networks', 'ports'
+        if [[ ! "$potential_service" =~ ^(services|volumes|networks|version|ports|environment|build|depends_on|command|image|restart|healthcheck|extra_hosts)$ ]]; then
+          current_service="$potential_service"
+          in_ports_section=false
+          echo -e "${YELLOW}Detected service: $current_service${NC}"
+        fi
+      # Detect 'ports:' section under a service
+      elif [[ $line =~ ^[[:space:]]{2,6}ports:[[:space:]]*$ ]] && [ -n "$current_service" ]; then
+        in_ports_section=true
+        echo -e "${YELLOW}Found ports section for service: $current_service${NC}"
+      # Detect port mappings within ports section
+      elif [[ $line =~ ^[[:space:]]{4,8}-[[:space:]]*\"?([0-9]+):([0-9]+)\"?[[:space:]]*$ ]] && [ "$in_ports_section" = true ] && [ -n "$current_service" ]; then
+        host_port="${BASH_REMATCH[1]}"
+        container_port="${BASH_REMATCH[2]}"
+        SERVICE_PORTS["$current_service"]="$host_port"
+        if [ -n "$host_port" ]; then
+          PORT_TO_SERVICE["$host_port"]="$current_service"
+        fi
+        echo -e "${GREEN}Found port mapping: $current_service -> $host_port${NC}"
+      # Reset ports section if we encounter another top-level key
+      elif [[ $line =~ ^[[:space:]]{2,6}[a-zA-Z_-]+:[[:space:]]*$ ]] && [[ ! $line =~ ports: ]]; then
+        in_ports_section=false
+      fi
+    done < "$compose_file"
+    break  # Use the first available compose file
+  fi
+done
+
+# Fallback ports if none detected
+if [ ${#SERVICE_PORTS[@]} -eq 0 ]; then
+  echo -e "${YELLOW}No ports detected from compose files, using defaults...${NC}"
+  SERVICE_PORTS=(
+    ["app"]="3000"
+    ["pgadmin"]="5050"
+    ["postgres"]="5435"
+    ["redis"]="6380"
+    ["browser-use-api"]="5055"
+    ["redis-commander"]="8081"
+  )
+fi
+
+# Additionally scan for any currently running Docker containers that might conflict
+echo -e "${YELLOW}Scanning for running Docker containers with port conflicts...${NC}"
+running_containers=$(docker ps --format "table {{.Names}}\t{{.Ports}}" 2>/dev/null | tail -n +2)
+if [ -n "$running_containers" ]; then
+  while IFS= read -r container_line; do
+    if [[ $container_line =~ 0\.0\.0\.0:([0-9]+)- ]]; then
+      used_port="${BASH_REMATCH[1]}"
+      container_name=$(echo "$container_line" | awk '{print $1}')
+      
+      # Check if this port conflicts with our services
+      for service in "${!SERVICE_PORTS[@]}"; do
+        if [ "${SERVICE_PORTS[$service]}" = "$used_port" ]; then
+          echo -e "${RED}Port conflict detected: $container_name is using port $used_port (needed for $service)${NC}"
+          
+          # Try to stop the conflicting container if it's not one of our services
+          if [[ ! $container_name =~ social.*genius ]]; then
+            echo -e "${YELLOW}Attempting to stop conflicting container: $container_name${NC}"
+            docker stop "$container_name" 2>/dev/null || true
+          fi
+        fi
+      done
+    fi
+  done <<< "$running_containers"
+fi
 
 declare -A FINAL_PORTS=()
 
@@ -220,54 +313,34 @@ if [ "$NEEDS_OVERRIDE" = true ]; then
 services:
 EOF
 
-  # Add port overrides for services that need them
-  if [ "${FINAL_PORTS[app]}" != "${SERVICE_PORTS[app]}" ]; then
-    cat >> docker-compose.override.yml << EOF
-  app:
+  # Add port overrides for services that need them dynamically
+  for service in "${!FINAL_PORTS[@]}"; do
+    original_port=${SERVICE_PORTS[$service]}
+    final_port=${FINAL_PORTS[$service]}
+    
+    if [ "$original_port" != "$final_port" ]; then
+      # Determine internal port based on service type or use a mapping
+      internal_port=""
+      case $service in
+        "app") internal_port="3000" ;;
+        "pgadmin") internal_port="5050" ;;
+        "postgres") internal_port="5432" ;;
+        "redis") internal_port="6379" ;;
+        "browser-use-api") internal_port="5055" ;;
+        "redis-commander") internal_port="8081" ;;
+        *) 
+          # For unknown services, assume internal port equals original external port
+          internal_port="$original_port"
+          ;;
+      esac
+      
+      cat >> docker-compose.override.yml << EOF
+  $service:
     ports:
-      - "${FINAL_PORTS[app]}:3000"
+      - "${final_port}:${internal_port}"
 EOF
-  fi
-  
-  if [ "${FINAL_PORTS[pgadmin]}" != "${SERVICE_PORTS[pgadmin]}" ]; then
-    cat >> docker-compose.override.yml << EOF
-  pgadmin:
-    ports:
-      - "${FINAL_PORTS[pgadmin]}:5050"
-EOF
-  fi
-  
-  if [ "${FINAL_PORTS[postgres]}" != "${SERVICE_PORTS[postgres]}" ]; then
-    cat >> docker-compose.override.yml << EOF
-  postgres:
-    ports:
-      - "${FINAL_PORTS[postgres]}:5432"
-EOF
-  fi
-  
-  if [ "${FINAL_PORTS[redis]}" != "${SERVICE_PORTS[redis]}" ]; then
-    cat >> docker-compose.override.yml << EOF
-  redis:
-    ports:
-      - "${FINAL_PORTS[redis]}:6379"
-EOF
-  fi
-  
-  if [ "${FINAL_PORTS[browser-use-api]}" != "${SERVICE_PORTS[browser-use-api]}" ]; then
-    cat >> docker-compose.override.yml << EOF
-  browser-use-api:
-    ports:
-      - "${FINAL_PORTS[browser-use-api]}:5055"
-EOF
-  fi
-  
-  if [ "${FINAL_PORTS[redis-commander]}" != "${SERVICE_PORTS[redis-commander]}" ]; then
-    cat >> docker-compose.override.yml << EOF
-  redis-commander:
-    ports:
-      - "${FINAL_PORTS[redis-commander]}:8081"
-EOF
-  fi
+    fi
+  done
   
   echo -e "${GREEN}Created docker-compose override file with custom ports.${NC}"
 else
@@ -430,67 +503,33 @@ start_containers_with_retry() {
 services:
 EOF
 
-          # Add port overrides for all services
+          # Add port overrides for all services dynamically
           for service in "${!FINAL_PORTS[@]}"; do
             original_port=${SERVICE_PORTS[$service]}
             final_port=${FINAL_PORTS[$service]}
             
-            case $service in
-              "app")
-                if [ "$original_port" != "$final_port" ]; then
-                  cat >> docker-compose.override.yml << EOF
-  app:
+            if [ "$original_port" != "$final_port" ]; then
+              # Determine internal port based on service type or use a mapping
+              internal_port=""
+              case $service in
+                "app") internal_port="3000" ;;
+                "pgadmin") internal_port="5050" ;;
+                "postgres") internal_port="5432" ;;
+                "redis") internal_port="6379" ;;
+                "browser-use-api") internal_port="5055" ;;
+                "redis-commander") internal_port="8081" ;;
+                *) 
+                  # For unknown services, assume internal port equals original external port
+                  internal_port="$original_port"
+                  ;;
+              esac
+              
+              cat >> docker-compose.override.yml << EOF
+  $service:
     ports:
-      - "${final_port}:3000"
+      - "${final_port}:${internal_port}"
 EOF
-                fi
-                ;;
-              "pgadmin")
-                if [ "$original_port" != "$final_port" ]; then
-                  cat >> docker-compose.override.yml << EOF
-  pgadmin:
-    ports:
-      - "${final_port}:5050"
-EOF
-                fi
-                ;;
-              "postgres")
-                if [ "$original_port" != "$final_port" ]; then
-                  cat >> docker-compose.override.yml << EOF
-  postgres:
-    ports:
-      - "${final_port}:5432"
-EOF
-                fi
-                ;;
-              "redis")
-                if [ "$original_port" != "$final_port" ]; then
-                  cat >> docker-compose.override.yml << EOF
-  redis:
-    ports:
-      - "${final_port}:6379"
-EOF
-                fi
-                ;;
-              "browser-use-api")
-                if [ "$original_port" != "$final_port" ]; then
-                  cat >> docker-compose.override.yml << EOF
-  browser-use-api:
-    ports:
-      - "${final_port}:5055"
-EOF
-                fi
-                ;;
-              "redis-commander")
-                if [ "$original_port" != "$final_port" ]; then
-                  cat >> docker-compose.override.yml << EOF
-  redis-commander:
-    ports:
-      - "${final_port}:8081"
-EOF
-                fi
-                ;;
-            esac
+            fi
           done
         fi
       fi

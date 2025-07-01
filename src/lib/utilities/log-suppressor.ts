@@ -21,7 +21,7 @@ const lastLogTime: Record<string, number> = {};
 const LOG_INTERVAL = 600000; // 10 minutes
 
 // Track compilation stats to avoid duplicate messages
-let lastCompilationTime = 0;
+const lastCompilationTime = 0;
 let compilationCount = 0;
 
 // Configure which patterns to filter

@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     const tempFilePath = `/tmp/${Date.now()}-${file.name}`;
     
     // Write buffer to file system
-    const fs = require("fs");
+    import fs from 'fs';
     fs.writeFileSync(tempFilePath, buffer);
     
     try {

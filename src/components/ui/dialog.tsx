@@ -164,7 +164,7 @@ const DialogContent = React.forwardRef<
   React.useEffect(() => {
     // Force a reflow when dialog content mounts to prevent style issues
     if (isOpen) {
-      document.body.offsetHeight;
+      void document.body.offsetHeight;
     }
     
     return () => {

@@ -5,9 +5,9 @@
  * Usage: node list-screenshots.js [userId]
  */
 
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
+import fs from 'fs';
+import path from 'path';
+import { execSync } from 'child_process';
 
 // Base directory for screenshots
 const SCREENSHOTS_BASE_DIR = path.join(__dirname, '..', 'api', 'browser-use', 'screenshots');

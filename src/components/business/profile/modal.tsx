@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogTitle, DialogContent, DialogDescription } from "@/components/ui/dialog"
 import BusinessProfileEdit from "./edit"
-import { ComplianceTab } from "@/components/compliance/tab"
+
 import { BrandAlignmentTab } from "@/components/business/brand-alignment-tab"
 import { CompetitorResearchTab } from "@/components/business/competitor/research-tab"
 import { toast } from "@/lib/ui/toast"
@@ -181,14 +181,6 @@ export default function BusinessProfileModal({
           <div className="h-[calc(100%-64px)] overflow-hidden flex-1">
             <div className="h-full overflow-y-auto scrollbar-hide">
               <TabsContent 
-                value="compliance" 
-                className="h-full data-[state=active]:flex data-[state=active]:flex-col"
-                forceMount={activeTab === "compliance"}
-              >
-                <ComplianceTab businessId={businessId} />
-              </TabsContent>
-
-              <TabsContent 
                 value="brand" 
                 className="h-full data-[state=active]:flex data-[state=active]:flex-col"
                 forceMount={activeTab === "brand"}
@@ -209,12 +201,6 @@ export default function BusinessProfileModal({
           {/* Fixed position tab bar at bottom */}
           <div className="h-[64px] shrink-0 flex items-center px-2 py-2 border-t mt-auto bg-white">
             <TabsList className="w-full h-12 p-0.5 rounded-5 bg-[url('https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Rectangle%2059-OqgO1gTt9VhosZRulWgSNvGYu6KkRA.png')] bg-cover">
-              <TabsTrigger
-                value="compliance"
-                className="flex-1 h-full rounded-5 text-black data-[state=active]:bg-white data-[state=active]:text-black data-[state=inactive]:text-black/77"
-              >
-                Compliance
-              </TabsTrigger>
               <TabsTrigger
                 value="brand"
                 className="flex-1 h-full rounded-5 text-black data-[state=active]:bg-white data-[state=active]:text-black data-[state=inactive]:text-black/77"

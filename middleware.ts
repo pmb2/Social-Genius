@@ -18,9 +18,7 @@ const publicRoutes = [
   '/favicon.ico',
   '/check-db',
   '/debug',
-  '/_next',
-  '/health',
-  '/api/health'
+  '/_next'
 ];
 
 export async function middleware(request: NextRequest) {
@@ -38,7 +36,7 @@ export async function middleware(request: NextRequest) {
   
   // Detect protocol for cookie security settings
   const protocol = request.headers.get('x-forwarded-proto') || 'http';
-  const isHttps = protocol === 'https' || process.env.NODE_ENV === 'production';
+  const isHttps = protocol === 'https';
   
   // Create the response object
   let response;
@@ -73,11 +71,7 @@ export async function middleware(request: NextRequest) {
   // Adding a header that can be read by the API routes
   
   // Add session debugging headers for API routes
-  if (pathname === '/api/health' || pathname === '/health') {
-    // Health check - don't add extra headers
-    // This significantly reduces the log spam from frequent ALB health checks
-  }
-  else if (pathname.startsWith('/api/')) {
+  if (pathname.startsWith('/api/')) {
     response.headers.set('X-Session-Debug', 'enabled');
     
     // API endpoints - default no caching

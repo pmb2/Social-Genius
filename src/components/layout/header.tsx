@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogClose, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -39,28 +39,8 @@ export function Header({ businessCount = 0 }: HeaderProps) {
   const currentPlan = subscriptionPlans.find(plan => plan.id === userSubscription) || subscriptionPlans[0];
   const locationLimit = currentPlan.businessLimit;
   
-  // Fetch notification count when user is authenticated
-  useEffect(() => {
-    if (user) {
-      fetchNotificationCount();
-      
-      // Set up a timer to periodically refresh notification count
-      // Using a longer interval to reduce refresh frequency and potential disruptions
-      const timer = setInterval(() => {
-        // Don't refresh if a modal is open, as this could disrupt user experience
-        if (typeof window !== 'undefined' && !window.__modalOpen) {
-          fetchNotificationCount();
-        }
-      }, 10 * 60000); // Check every 10 minutes to further reduce refresh frequency
-      
-      return () => {
-        clearInterval(timer);
-      };
-    }
-  }, [user]);
-  
   // Function to fetch notification count from API
-  const fetchNotificationCount = async () => {
+  const fetchNotificationCount = useCallback(async () => {
     if (!user) return;
     
     // Avoid state update if we're already loading
@@ -91,7 +71,28 @@ export function Header({ businessCount = 0 }: HeaderProps) {
     } finally {
       setIsLoadingNotifications(false);
     }
-  };
+  }, [user, notificationCount, isLoadingNotifications]);
+
+  // Fetch notification count when user is authenticated
+  useEffect(() => {
+    if (user) {
+      fetchNotificationCount();
+      
+      // Set up a timer to periodically refresh notification count
+      // Using a longer interval to reduce refresh frequency and potential disruptions
+      const timer = setInterval(() => {
+        // Don't refresh if a modal is open, as this could disrupt user experience
+        if (typeof window !== 'undefined' && !window.__modalOpen) {
+          fetchNotificationCount();
+        }
+      }, 10 * 60000); // Check every 10 minutes to further reduce refresh frequency
+      
+      return () => {
+        clearInterval(timer);
+      };
+    }
+  }, [user, fetchNotificationCount]);
+    
   
   // Function to handle notification clicks and mark them as read
   const handleOpenNotifications = () => {
@@ -184,7 +185,7 @@ export function Header({ businessCount = 0 }: HeaderProps) {
               <DropdownMenuItem onSelect={() => {
                   // Force close the dropdown menu
                   const closeEvent = new Event('mousedown', { bubbles: true });
-                  document.dispatchEvent(closeEvent);
+                  void document.dispatchEvent(closeEvent);
                   
                   // Open subscription modal using stable hook after a short delay
                   setTimeout(() => {
@@ -388,7 +389,7 @@ export function Header({ businessCount = 0 }: HeaderProps) {
               document.body.style.overflow = '';
               
               // Force redraw
-              document.body.offsetHeight;
+              void document.body.offsetHeight;
             }, 0);
           }
         }}

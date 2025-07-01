@@ -1,3 +1,4 @@
+import '@/lib/utilities/pg-patch'; // Import pg patch to ensure pg-native is correctly handled
 import PostgresService from '@/services/database/postgres-service';
 import AuthService from '@/services/auth/auth-service';
 import { Pool } from 'pg';

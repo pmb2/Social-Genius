@@ -6,6 +6,7 @@ WORKDIR /app
 # Install dependencies only when needed
 FROM base AS deps
 COPY package.json package-lock.json ./
+RUN apk add --no-cache python3 make g++ postgresql-dev
 RUN npm ci
 RUN npm install google-auth-library --save
 
@@ -16,8 +17,10 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Set production environment variables
+ARG NEXTAUTH_SECRET
 ENV NODE_ENV production
 ENV NEXT_TELEMETRY_DISABLED 1
+ENV NEXTAUTH_SECRET ${NEXTAUTH_SECRET}
 
 # Build Next.js application
 RUN npm run build
@@ -29,6 +32,7 @@ WORKDIR /app
 ENV NODE_ENV production
 ENV NEXT_TELEMETRY_DISABLED 1
 ENV PORT 3000
+ENV NEXTAUTH_SECRET ${NEXTAUTH_SECRET}
 
 # Copy necessary files
 COPY --from=builder /app/public ./public

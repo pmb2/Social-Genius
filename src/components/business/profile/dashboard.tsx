@@ -68,12 +68,10 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [isAddBusinessModalOpen, setIsAddBusinessModalOpen] = useState(false)
     const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false)
-    const [businessName, setBusinessName] = useState("")
-    // REMOVED: const [businessEmail, setBusinessEmail] = useState("")
-    // REMOVED: const [businessType, setBusinessType] = useState("google") // "google" or "invite"
     const [businesses, setBusinesses] = useState<Business[]>(initialBusinessAccounts)
     const [isLoading, setIsLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
+    const [modalError, setModalError] = useState<string | null>(null) // New state for modal-specific errors
     const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null)
     const [limitError, setLimitError] = useState<{
         currentSubscription: string;
@@ -81,22 +79,7 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
         currentCount: number;
         maxAllowed: number;
     } | null>(null);
-
-    // REMOVED ALL GOOGLE AUTH RELATED STATES:
-    // const [googleEmail, setGoogleEmail] = useState("")
-    // const [googlePassword, setGooglePassword] = useState("")
-    // const [isAuthSubmitting, setIsAuthSubmitting] = useState(false)
-    // const [authError, setAuthError] = useState("")
-    // const [isGoogleAuthStep, setIsGoogleAuthStep] = useState(false)
-    // const [autoLoginAttempted, setAutoLoginAttempted] = useState(false)
-    // const [authScreenshots, setAuthScreenshots] = useState<Record<string, string> | null>(null)
-    // const [isScreenshotModalOpen, setIsScreenshotModalOpen] = useState(false)
-    // const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null)
-    
-    // NEW STATE FOR THE ADD BUSINESS FLOW (already added in previous instructions, keeping)
-    const [currentBusinessId, setCurrentBusinessId] = useState<string | null>(null); // Stores the ID of the newly created business
-    const [isConnectingSocial, setIsConnectingSocial] = useState(false); // Controls the "Connect Social" step in the modal
-    const [isSubmittingBusiness, setIsSubmittingBusiness] = useState(false); // For the initial business name submission
+    const [isSubmittingBusiness, setIsSubmittingBusiness] = useState(false); // For the business creation process
 
     // Track if component is mounted to prevent operations after unmount
     const isMounted = useRef(true);
@@ -343,103 +326,14 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
         setLimitError(null);
     };
 
-    // MODIFIED handleAddBusiness function
-    const handleAddBusiness = async () => {
-        try {
-            // Check subscription limits first
-            if (locationLimit !== null && businesses.length >= locationLimit) {
-                const nextTier = subscriptionPlans.find(plan => plan.businessLimit > locationLimit);
-                setLimitError({
-                    currentSubscription: userSubscription,
-                    requiredSubscription: nextTier?.id || 'enterprise',
-                    currentCount: businesses.length,
-                    maxAllowed: locationLimit
-                });
-                setIsUpgradeModalOpen(true);
-                return;
-            }
-
-            // Step 1: Add Business Name
-            if (!isConnectingSocial) { // If not yet in the social connection step
-                log(`Starting to add new business: "${businessName}"`, 'info');
-
-                if (!businessName.trim()) {
-                    alert('Please enter a business name');
-                    return;
-                }
-
-                setIsSubmittingBusiness(true); // Set loading state for business creation
-                setError(null); // Clear any previous errors
-
-                try {
-                    const response = await fetch('/api/businesses', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Cache-Control': 'no-cache, no-store, must-revalidate',
-                            'Pragma': 'no-cache',
-                            'Expires': '0',
-                            'X-Requested-With': 'XMLHttpRequest'
-                        },
-                        credentials: 'include',
-                        body: JSON.stringify({
-                            name: businessName.trim(),
-                            type: 'general', // Default to 'general' type for now
-                            // REMOVED: authPending: false // No auth pending for general business creation
-                        }),
-                    });
-
-                    const data = await response.json();
-
-                    if (!response.ok) {
-                        if (response.status === 403 && data.limitReached) {
-                            setLimitError({
-                                currentSubscription: data.currentSubscription || userSubscription,
-                                requiredSubscription: data.requiredSubscription || 'enterprise',
-                                currentCount: data.currentCount || businesses.length,
-                                maxAllowed: data.maxAllowed || locationLimit
-                            });
-                            setIsUpgradeModalOpen(true);
-                            setIsAddBusinessModalOpen(false);
-                            return;
-                        }
-                        throw new Error(data.error || 'Failed to add business');
-                    }
-
-                    log(`Business added successfully: ${data.businessId}`, 'info');
-                    setCurrentBusinessId(data.businessId); // Store the newly created business ID
-                    setIsConnectingSocial(true); // Move to the social connection step
-                    setError(null); // Clear any errors
-                } catch (err) {
-                    log(`Error adding business: ${err instanceof Error ? err.message : String(err)}`, 'error');
-                    setError(err instanceof Error ? err.message : 'Unknown error adding business');
-                } finally {
-                    setIsSubmittingBusiness(false); // Clear loading state
-                }
-            } else {
-                // This block would be for handling social connection submission if it were a form
-                // For OAuth, we'll just redirect, so this part might not be directly used for submission.
-                // It serves as a placeholder if you add more social connection methods later.
-                log('Attempted to handle social connection submission (not applicable for direct OAuth redirect)', 'info');
-            }
-        } catch (err) {
-            log(`Fatal error in handleAddBusiness: ${err instanceof Error ? err.message : String(err)}`, 'error');
-            setError(err instanceof Error ? err.message : 'An unexpected error occurred.');
-        }
+    const handleConnectXAccount = () => {
+        window.location.href = '/api/auth/x/login?flow=link';
     };
 
     // Helper to reset the form
     const resetForm = () => {
-        setBusinessName("");
-        // REMOVED: setBusinessEmail("");
-        // REMOVED: setGoogleEmail("");
-        // REMOVED: setGooglePassword("");
-        // REMOVED: setAuthError("");
-        // REMOVED: setIsGoogleAuthStep(false);
-        setCurrentBusinessId(null); // Clear the business ID
-        setIsConnectingSocial(false); // Reset to initial step
-        setIsSubmittingBusiness(false); // Reset submitting state
-        // REMOVED: setIsAddBusinessModalOpen(false); // This is handled by onOpenChange
+        setModalError(null);
+        setIsSubmittingBusiness(false);
     }
 
     // Memoize filtered business counts to prevent recalculation on each render
@@ -473,24 +367,7 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
         setSelectedBusiness(business);
         setIsModalOpen(true);
 
-        // If the business has a browser instance, activate it
-        if (business.browserInstance) {
-            log(`Activating browser instance ${business.browserInstance} for business ${business.id}`, 'info');
-
-            // Tell the server to use this instance for subsequent operations
-            fetch('/api/compliance/activate-browser', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    businessId: business.id,
-                    instanceId: business.browserInstance
-                }),
-            }).catch(err => {
-                log(`Error activating browser instance: ${err instanceof Error ? err.message : String(err)}`, 'error');
-            });
-        }
+        
     }, []);
 
     const handleClose = useCallback(() => {
@@ -755,110 +632,50 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
                 </DialogContent>
             </Dialog>
 
-            {/* Add Business Modal - REVAMPED */}
+            {/* Sign in with X.com Modal */}
             <Dialog
                 open={isAddBusinessModalOpen}
                 onOpenChange={(open) => {
-                    if (!open) {
-                        resetForm();
+                    if (open) {
+                        resetForm(); // Reset form when opening the modal
                     }
                     setIsAddBusinessModalOpen(open);
                 }}
             >
-                <DialogContent className="max-w-sm p-6 max-h-[90vh]" aria-describedby="add-business-description">
-                    {!isConnectingSocial ? (
-                        // Step 1: Business Info (Name only)
-                        <>
-                            <DialogTitle className="text-xl font-semibold mb-2">Add New Business</DialogTitle>
-                            <DialogDescription id="add-business-description">
-                                Enter the name of the business you want to manage.
-                            </DialogDescription>
+                <DialogContent className="max-w-sm p-6" aria-describedby="add-x-account-description">
+                    <div className="absolute top-4 right-4">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setIsAddBusinessModalOpen(false)}
+                            className="rounded-full"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-x"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                        </Button>
+                    </div>
+                    <DialogTitle className="text-xl font-semibold mb-2">Connect X Account</DialogTitle>
+                    <DialogDescription id="add-x-account-description">
+                        You will be redirected to X.com to sign in and authorize access to your account.
+                    </DialogDescription>
 
-                            <div className="py-4 space-y-4">
-                                {/* Business Name Field */}
-                                <div className="space-y-2">
-                                    <label htmlFor="business-name" className="block text-sm font-medium">
-                                        Business Name
-                                    </label>
-                                    <input
-                                        id="business-name"
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
-                                        value={businessName}
-                                        onChange={(e) => setBusinessName(e.target.value)}
-                                        placeholder="e.g., My Awesome Business"
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                                e.preventDefault();
-                                                handleAddBusiness();
-                                            }
-                                        }}
-                                        disabled={isSubmittingBusiness}
-                                    />
-                                </div>
-                            </div>
+                    <div className="py-6 space-y-4">
+                        <Button
+                            onClick={handleConnectXAccount}
+                            disabled={isSubmittingBusiness}
+                            className="w-full flex items-center justify-center px-6 py-3 rounded-full bg-black hover:bg-gray-800 transition-colors duration-200 text-base font-medium"
+                        >
+                            <i className="fa-brands fa-x-twitter w-5 h-5 text-white mr-3"></i>
+                            <span className="text-white">
+                                {isSubmittingBusiness ? 'Preparing...' : 'Sign in with X'}
+                            </span>
+                        </Button>
+                    </div>
 
-                            {error && ( // Display error for business creation
-                                <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-md text-sm">
-                                    {error}
-                                </div>
-                            )}
-
-                            <div className="flex justify-end gap-3 pt-4 border-t">
-                                <Button
-                                    variant="outline"
-                                    onClick={() => setIsAddBusinessModalOpen(false)}
-                                    className="px-4 py-2"
-                                    disabled={isSubmittingBusiness}
-                                >
-                                    Cancel
-                                </Button>
-                                <Button
-                                    onClick={handleAddBusiness}
-                                    disabled={!businessName.trim() || isSubmittingBusiness}
-                                    className="px-4 py-2 bg-gradient-to-r from-[#FFAB1A] via-[#FF1681] to-[#0080FF] text-white hover:opacity-90"
-                                >
-                                    {isSubmittingBusiness ? 'Adding Business...' : 'Add Business'}
-                                </Button>
-                            </div>
-                        </>
-                    ) : (
-                        // Step 2: Connect Social Accounts
-                        <>
-                            <DialogTitle className="text-xl font-semibold mb-2">
-                                Connect Social Accounts
-                            </DialogTitle>
-                            <DialogDescription>
-                                Your business "{businessName}" has been created. Now, connect your social media accounts.
-                            </DialogDescription>
-
-                            <div className="py-4 space-y-4">
-                                <p className="text-sm text-gray-600">
-                                    Connect your X (Twitter) account to start managing it.
-                                </p>
-                                <div className="flex justify-center">
-                                    <Link
-                                        // Construct the OAuth URL with the new business ID
-                                        href={`/api/auth/signin/twitter?type=add_account&businessId=${currentBusinessId}`}
-                                        className="flex items-center justify-center px-6 py-3 rounded-full bg-black hover:bg-gray-800 transition-colors duration-200 focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
-                                        onClick={() => setIsAddBusinessModalOpen(false)} // Close modal when redirecting
-                                    >
-                                        <i className="fa-brands fa-x-twitter w-5 h-5 text-white mr-2"></i>
-                                        <span className="text-white font-medium">Connect X Account</span>
-                                    </Link>
-                                </div>
-                                {/* You can add more social media options here later */}
-                            </div>
-
-                            <div className="flex justify-end gap-3 pt-4 border-t">
-                                <Button
-                                    variant="outline"
-                                    onClick={() => setIsAddBusinessModalOpen(false)}
-                                    className="px-4 py-2"
-                                >
-                                    Done
-                                </Button>
-                            </div>
-                        </>
+                    {modalError && (
+                        <div className="p-3 bg-red-100 border border-red-400 text-red-700 rounded-md text-sm">
+                            <p className="font-bold">Connection Failed</p>
+                            <p>{modalError}</p>
+                        </div>
                     )}
                 </DialogContent>
             </Dialog>

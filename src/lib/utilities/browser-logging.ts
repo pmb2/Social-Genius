@@ -432,7 +432,7 @@ export function ensureUserScreenshotDirectory(userId: string | number): string {
   
   // In Node.js environment, create the directory if it doesn't exist
   try {
-    const fs = require('fs');
+    import * as fs from 'fs';
     if (!fs.existsSync(baseDir)) {
       fs.mkdirSync(baseDir, { recursive: true });
     }
@@ -489,7 +489,7 @@ export async function capturePageScreenshot(
     });
     
     // Verify the file was created and is a valid image
-    const fs = require('fs');
+    import * as fs from 'fs';
     if (fs.existsSync(path)) {
       const fileStats = fs.statSync(path);
       if (fileStats.size > 0) {

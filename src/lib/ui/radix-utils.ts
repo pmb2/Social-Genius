@@ -26,7 +26,7 @@ export function handleRadixAnimationComplete(callback: () => void) {
     // Force a refresh after animation completes
     if (typeof document !== 'undefined') {
       // Force a style update to ensure cleanup is applied
-      document.body.offsetHeight;
+      void document.body.offsetHeight;
       
       // Dispatch a custom event that our components can listen for
       const event = new CustomEvent('radixAnimationComplete');
@@ -85,7 +85,7 @@ export function resetRadixState() {
         el.setAttribute('data-state', 'closed');
         
         // Force style refresh
-        el.offsetHeight;
+        void el.offsetHeight;
         
         // Remove it after animation time
         setTimeout(() => {

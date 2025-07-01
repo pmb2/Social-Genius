@@ -15,15 +15,15 @@ echo -e "${YELLOW}This script will clean up containers, volumes, and rebuild the
 
 # Check if Docker is running
 if ! docker info > /dev/null 2>&1; then
-  echo -e "${YELLOW}Docker is not running. Attempting to start Docker...${NC}"
+  echo -e "${YELLOW}Docker is not running. Attempting to start Docker..."
   
   # Check if we're on macOS and try to start Docker Desktop
   if [ -d "/Applications/Docker.app" ]; then
-    echo -e "${YELLOW}Starting Docker Desktop...${NC}"
+    echo -e "${YELLOW}Starting Docker Desktop..."
     open -a Docker
     
     # Wait for Docker to start (max 60 seconds)
-    echo -e "${YELLOW}Waiting for Docker to start (this may take a moment)...${NC}"
+    echo -e "${YELLOW}Waiting for Docker to start (this may take a moment)..."
     for i in {1..60}; do
       sleep 1
       if docker info > /dev/null 2>&1; then

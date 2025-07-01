@@ -135,7 +135,7 @@ export function cleanupAfterModalClose() {
     });
     
     // 9. Force a style recalculation to flush changes
-    document.body.offsetHeight;
+    void document.body.offsetHeight;
     
     console.log('[Modal Cleanup] Performed DOM cleanup after modal close');
   });
@@ -151,5 +151,5 @@ export function prepareForModalOpen() {
   });
   
   // Force a reflow to apply changes
-  document.body.offsetHeight;
+  void document.body.offsetHeight;
 }

@@ -56,7 +56,7 @@ export function useStableModal(initialState = false) {
       });
       
       // Force redraw to apply changes
-      document.body.offsetHeight;
+      void document.body.offsetHeight;
     }
     
     // Clear processing flag after delay

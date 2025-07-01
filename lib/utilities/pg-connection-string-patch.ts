@@ -31,24 +31,43 @@ export function parse(connectionString: string) {
     for (const [key, value] of searchParams.entries()) {
       if (key === 'ssl') {
         ssl = value === 'true' || value === '1';
+        // Don't set params.ssl to the string value
+        continue;
       }
-      params[key] = value;
+      if (key === 'sslmode') {
+        // Handle sslmode properly - don't convert it to boolean
+        params[key] = value;
+      } else {
+        params[key] = value;
+      }
     }
   } else {
     // Parse key-value pair format
     connectionString.split(' ').forEach(function(str) {
       const [key, value] = str.split('=');
       if (key && value) {
-        params[key.trim()] = value.trim().replace(/^['"]|['"]$/g, '');
+        const cleanKey = key.trim();
+        const cleanValue = value.trim().replace(/^['"]|['"]$/g, '');
+        
+        if (cleanKey === 'ssl') {
+          ssl = cleanValue === 'true' || cleanValue === '1';
+          // Don't set params.ssl to the string value
+          return;
+        }
+        
+        params[cleanKey] = cleanValue;
       }
     });
   }
 
   if (ssl) {
-    params.ssl = ssl;
+    // Convert ssl=true to proper SSL object format for PostgreSQL
+    params.ssl = { rejectUnauthorized: false };
   }
 
   return params;
 }
 
-export default { parse };
+const pgConnectionString = { parse };
+
+export default pgConnectionString;

@@ -22,6 +22,7 @@ services:
       dockerfile: Dockerfile.prod
       args:
         DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
+        NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -34,7 +35,7 @@ services:
       RUNNING_IN_DOCKER: 'true'
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/socialgenius
       NEXTAUTH_URL: https://app.social-genius.com
-      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-your-secure-nextauth-secret}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
       # BROWSER_USE_API_URL: http://browser-use-api:5055 - No longer needed with API integration
       GOOGLE_REDIRECT_URI: https://app.social-genius.com/api/google-auth/callback
       # Use host.docker.internal to improve reliability

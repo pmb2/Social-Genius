@@ -469,7 +469,7 @@ class AuthService {
   }
 
   // Parse cookies from request headers (using simple parsing)
-  public parseCookies(cookieHeader?: string): Record<string, string> {
+  public parseCookies(cookieHeader?: string | null): Record<string, string> {
     const timestamp = new Date().toISOString();
     console.log(`[AUTH_SERVICE] ${timestamp} - Parsing cookies from header: ${cookieHeader ? 'present' : 'missing'}`); 
     
@@ -1094,14 +1094,14 @@ class AuthService {
   }
   
   // Get default profile picture URL
-  public getDefaultProfilePicture(): string {
+  public async getDefaultProfilePicture(): Promise<string> {
     // Check if we're in a browser context
     if (typeof window !== 'undefined') {
       return '/default-avatar.png'; // Relative URL works in browser
     }
     
     // In server context, use full URL with dynamic host detection
-    const { getBaseUrl } = require('@/lib/utilities/common');
+    const { getBaseUrl } = await import('@/lib/utilities/common');
     return `${getBaseUrl()}/default-avatar.png`;
   }
 

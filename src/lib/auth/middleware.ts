@@ -174,7 +174,7 @@ export async function authMiddleware(
         }
         
         // Add traceId as a custom property
-        // @ts-ignore - Adding a custom property to the request
+        // @ts-expect-error - Adding a custom property to the request
         req.traceId = traceId;
         
         log(`Auth bypass: Proceeding to handler with temporary user ID ${tempUserId}`, LogLevel.WARN);
@@ -374,17 +374,9 @@ export async function authMiddleware(
       
       // Add CORS headers for AJAX requests
       if (isAjaxRequest) {
-        const origin = req.headers.get('origin');
-        const allowedOrigins = ['https://app.social-genius.com', 'http://localhost:3000', 'http://localhost:3001', 'https://localhost'];
-        
-        if (origin && allowedOrigins.includes(origin)) {
-          response.headers.set('Access-Control-Allow-Origin', origin);
-        } else {
-          response.headers.set('Access-Control-Allow-Origin', '*');
-        }
-        
+        response.headers.set('Access-Control-Allow-Origin', '*');
         response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-        response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie, X-Requested-With');
+        response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie');
         response.headers.set('Access-Control-Allow-Credentials', 'true');
       }
       
@@ -464,7 +456,7 @@ export async function authMiddleware(
   
   try {
     // Don't clone the request - work with the original request directly
-    // @ts-ignore - Adding a custom property to the request
+    // @ts-expect-error - Adding a custom property to the request
     req.traceId = traceId;
     
     log(`Authentication successful, proceeding to handler`, LogLevel.INFO, {
