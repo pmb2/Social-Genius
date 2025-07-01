@@ -432,7 +432,7 @@ fi
 
 # Clean up any previous builds
 echo -e "${YELLOW}Cleaning up previous builds...${NC}"
-rm -rf dist/ node_modules/.cache
+rm -rf dist/ .next node_modules/.cache
 
 # Check if .env file exists
 if [ ! -f .env ]; then
@@ -634,8 +634,3 @@ if [ "$RUNNING_CONTAINERS" -gt 0 ]; then
   else
     docker-compose -f docker-compose.dev.yml logs -f app
   fi
-else
-  echo -e "${RED}Containers may have started but aren't running. Check docker ps for status.${NC}"
-  docker ps -a
-  exit 1
-fi
