@@ -6,8 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { initializeGoogleOAuth, verifyGoogleOAuthTables } from './init-google-oauth';
 
-// Set this to know if we've initialized
-let dbInitialized = false;
+import { globalState } from '@/lib/state';
 
 // Detect if running in Docker environment
 function detectDockerEnvironment() {
@@ -87,7 +86,7 @@ async function applySchema(db: PostgresService, schemaName: string): Promise<boo
 export async function initializeDatabase() {
   try {
     // Skip if already initialized
-    if (dbInitialized) {
+    if (globalState.dbInitialized) {
       console.log('Database already initialized, skipping');
       return true;
     }
@@ -169,7 +168,7 @@ export async function initializeDatabase() {
     const cleanedSessions = await authService.cleanupSessions();
     console.log(`Cleaned up ${cleanedSessions} expired sessions`);
     
-    dbInitialized = true;
+    globalState.dbInitialized = true;
     console.log('✅ Database successfully initialized and ready');
     return true;
   } catch (error) {

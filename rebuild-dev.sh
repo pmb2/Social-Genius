@@ -634,3 +634,4 @@ if [ "$RUNNING_CONTAINERS" -gt 0 ]; then
   else
     docker-compose -f docker-compose.dev.yml logs -f app
   fi
+fi

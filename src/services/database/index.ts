@@ -8,7 +8,7 @@ async function applyPatches() {
     // In development, we need to pre-load the pg patch
     if (process.env.NODE_ENV === 'development') {
       try {
-        await import('../../pg-runtime-patch.cjs'); // Corrected path
+        await import('../../../pg-runtime-patch.cjs'); // Corrected path
         console.log('pg patch applied: true');
       } catch (error) {
         console.warn('Could not apply pg-patch:', error);
@@ -24,7 +24,7 @@ applyPatches();
 
 // Initialize services
 const postgresService = PostgresService.getInstance();
-const redisService = RedisService.getInstance(); // Uncommented
+const redisService = RedisService; // Uncommented
 
 // Export services individually
 export { PostgresService };

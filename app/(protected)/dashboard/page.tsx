@@ -3,7 +3,6 @@
 import { BusinessProfileDashboard } from "@/components/business/profile/dashboard"
 import { FeedbackButton } from "@/components/ui/feedback/button"
 import { Header } from "@/components/layout/header"
-import NotificationSettingsTile from "@/components/notifications/settings-tile"
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/context";
@@ -13,16 +12,9 @@ export default function DashboardPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [businessCount, setBusinessCount] = useState(0);
 
-    // Use our custom auth context
     const { user, loading, checkSession } = useAuth();
 
-    const handleAddXAccount = () => {
-        window.location.href = '/api/auth/x/login?flow=link';
-    };
-    
     useEffect(() => {
-        // Removed excessive logging for clarity
-        // Only log critical errors or when explicitly enabled with DEBUG_DASHBOARD=true
         const debugEnabled = process.env.NODE_ENV === 'development' && process.env.DEBUG_DASHBOARD === 'true';
         
         if (debugEnabled) {
@@ -30,65 +22,44 @@ export default function DashboardPage() {
         }
         
         if (loading) {
-            // Set loading state without logging
             setIsLoading(true);
-            return; // Don't do anything else while loading
+            return;
         }
         
-        // If we already have a user, show the dashboard immediately
         if (user) {
             setIsLoading(false);
             return;
         }
         
-        // Only check session if absolutely necessary
-        // and only if no dialogs are open to prevent disruption
         const isModalOpen = typeof window !== 'undefined' && window.__modalOpen === true;
             
         if (isModalOpen) {
-            // Don't disrupt open dialogs with auth checks - assume valid for now
             setIsLoading(false);
             return;
         }
         
-        // If no user is found but cookies exist, try to re-verify the session
-        const hasCookies = typeof document !== 'undefined' && (
-            document.cookie.includes('session=') || document.cookie.includes('sessionId=')
-        );
-        
-        // If no user is found, perform a session check after a delay
-        // to ensure cookies have been properly processed
         const timer = setTimeout(async () => {
-            // Check again if any dialogs have been opened in the meantime
             const isModalOpen = typeof window !== 'undefined' && window.__modalOpen === true;
                 
             if (isModalOpen) {
-                // Don't disrupt open dialogs with auth checks
                 setIsLoading(false);
                 return;
             }
             
-            // Only log if debug is enabled
             if (debugEnabled) {
                 console.log("[DASHBOARD] Running delayed session check");
             }
             
             try {
-                // Try to verify the session one more time before redirecting
                 const hasSession = await checkSession();
                 
                 if (hasSession && user) {
                     setIsLoading(false);
                 } else {
-                    // Only redirect if no dialogs are open
                     const isModalOpen = typeof window !== 'undefined' && window.__modalOpen === true;
                         
                     if (!isModalOpen) {
-                        // Redirect to auth page without reloading the whole window
                         router.push('/auth?reason=session_expired');
-                    } else {
-                        // Just mark as loaded but don't redirect yet
-                        setIsLoading(false);
                     }
                 }
             } catch (error) {
@@ -96,17 +67,15 @@ export default function DashboardPage() {
                     console.error("[DASHBOARD] Session check error");
                 }
                 
-                // Only redirect if no dialogs are open
                 const isModalOpen = typeof window !== 'undefined' && window.__modalOpen === true;
                     
                 if (!isModalOpen) {
-                    // Redirect to auth page without reloading the whole window
                     router.push('/auth?reason=session_error');
                 }
                 
                 setIsLoading(false);
             }
-        }, 1500); // Increased delay to improve responsiveness and reduce frequency
+        }, 1500);
         
         return () => clearTimeout(timer);
     }, [user, loading, checkSession, router]);

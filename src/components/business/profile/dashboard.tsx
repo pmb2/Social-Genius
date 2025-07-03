@@ -327,8 +327,12 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
     };
 
     const handleConnectXAccount = () => {
-        window.location.href = '/api/auth/x/login?flow=link';
-    };
+    if (user && user.id) {
+      window.location.href = `/api/auth/x/login?flow=link&user_id=${user.id}`;
+    } else {
+      log('User ID not found, cannot initiate link flow.', 'error');
+    }
+  };
 
     // Helper to reset the form
     const resetForm = () => {

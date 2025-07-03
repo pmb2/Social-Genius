@@ -6,6 +6,7 @@ import Link from "next/link";
 import {Linkedin, Instagram, Facebook, ChevronRight} from "lucide-react";
 import {useRouter} from 'next/navigation';
 import {useAuth} from '@/lib/auth/context';
+import { getXOAuthUrl } from '@/lib/auth/x-oauth';
 
 // X (Twitter) Logo Component
 const XLogo = ({ className = "w-5 h-5" }) => (
@@ -130,8 +131,14 @@ export default function AuthPage() {
         }
     };
 
-    const handleXLogin = (flow: 'login' | 'register') => {
-        window.location.href = `/api/auth/x/login?flow=${flow}`;
+    const handleXLogin = async (flow: 'login' | 'register') => {
+        try {
+            const url = await getXOAuthUrl(flow);
+            window.location.href = url;
+        } catch (error) {
+            console.error('Failed to initiate X OAuth:', error);
+            setError('Could not sign in with X. Please try again later.');
+        }
     };
 
     return (
@@ -191,7 +198,7 @@ export default function AuthPage() {
                             fill
                             className="object-cover"
                             priority
-                            sizes="(max-width: 768px) 100vw, 600px"
+                            sizes=" (max-width: 768px) 100vw, 600px"
                             onError={(e) => {
                                 // If image fails to load, hide it (gradient background will show)
                                 e.currentTarget.style.display = 'none';

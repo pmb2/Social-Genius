@@ -2,6 +2,24 @@
 
 This document outlines the technical implementation plan for integrating X.com OAuth for login, registration, and account linking.
 
+## Implementation Checklist
+
+- [X] **Backend Setup**
+    - [X] Add `X_CLIENT_ID`, `X_CLIENT_SECRET`, and `X_REDIRECT_URI` to `.env.example`.
+- [X] **Database Schema**
+    - [X] Add `x_account_id` column to `users` table.
+    - [X] Create `linked_accounts` table.
+- [X] **Backend API Routes**
+    - [X] Create `GET /api/auth/x/login` route.
+    - [X] Create `GET /api/auth/x/callback` route.
+- [X] **Frontend Implementation**
+    - [X] Add "Sign in with X" button to login page.
+    - [X] Add "Sign up with X" button to registration page.
+    - [X] Add "Add X Account" button to dashboard.
+    - [X] Create "complete registration" form.
+    - [X] Implement frontend API service for X OAuth.
+    - [X] Handle OAuth state and feedback on the frontend.
+
 ## 1. High-Level Overview
 
 The goal is to allow users to "Sign in with X" from three different contexts:
@@ -78,10 +96,10 @@ To differentiate between the three flows (login, registration, link), a `state` 
         *   Upon submission of this form, a new user record will be created in the `users` table, linking the `x_account_id`.
         *   Log the user in and redirect to the dashboard.
 
-### C. Dashboard – "Add X Account"
+## C. Add Business Modal – "Connect X Account"
 
 1.  **Frontend**:
-    *   In the user's dashboard (`/app/(protected)/dashboard/page.tsx`), the "Add X Account" button will make an API call to the backend to get the redirect URL.
+    *   In the "Add Business" modal, the "Connect X Account" button will trigger the OAuth flow.
 
 2.  **Backend (`/api/auth/x/login`)**:
     *   This endpoint must be protected and only accessible by authenticated users.

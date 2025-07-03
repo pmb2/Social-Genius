@@ -12,9 +12,22 @@ CREATE TABLE IF NOT EXISTS users (
     name TEXT,
     profile_picture TEXT,
     phone_number TEXT,
+    x_account_id VARCHAR(255) UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_login TIMESTAMP WITH TIME ZONE
+);
+
+CREATE TABLE IF NOT EXISTS linked_accounts (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    business_id VARCHAR(255) NOT NULL UNIQUE,
+    x_account_id VARCHAR(255) NOT NULL UNIQUE,
+    x_username VARCHAR(255),
+    access_token TEXT NOT NULL,
+    refresh_token TEXT,
+    token_expires_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Create businesses table if it doesn't exist
