@@ -1,6 +1,10 @@
 
 import { NextRequest, NextResponse } from 'next/server';
-import { sign } from 'jsonwebtoken';
+import { getIronSession } from 'iron-session';
+import { sessionOptions, SessionData } from '@/lib/auth/session';
+import { cookies } from 'next/headers';
+import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -15,12 +19,23 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'User ID is required for link flow' }, { status: 400 });
   }
 
+  const session = await getIronSession<SessionData>(cookies(), sessionOptions);
+
+  const codeVerifier = crypto.randomBytes(32).toString('hex');
+  const codeChallenge = crypto
+    .createHash('sha256')
+    .update(codeVerifier)
+    .digest('base64url');
+
+  session.codeVerifier = codeVerifier;
+  await session.save();
+
   const statePayload: { flow: string; userId?: string } = { flow };
   if (flow === 'link' && userId) {
     statePayload.userId = userId;
   }
 
-  const state = sign(statePayload, process.env.JWT_SECRET as string, { expiresIn: '15m' });
+  const state = jwt.sign(statePayload, process.env.JWT_SECRET as string, { expiresIn: '15m' });
 
   const params = new URLSearchParams({
     response_type: 'code',
@@ -28,7 +43,7 @@ export async function GET(req: NextRequest) {
     redirect_uri: process.env.X_REDIRECT_URI as string,
     scope: 'users.read tweet.read',
     state: state,
-    code_challenge: 'challenge',
+    code_challenge: codeChallenge,
     code_challenge_method: 'plain',
   });
 
