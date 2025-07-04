@@ -1327,6 +1327,77 @@ class PostgresService {
       return false;
     }
   }
+
+  /**
+   * Get a user by X (Twitter) account ID
+   */
+  public async getUserByXAccountId(xAccountId: string): Promise<any | null> {
+    try {
+      const result = await this.pool.query(
+        `SELECT u.* FROM users u
+         JOIN social_accounts sa ON u.id = sa.user_id
+         WHERE sa.platform = 'twitter' AND sa.platform_user_id = $1`,
+        [xAccountId]
+      );
+      
+      return result.rows.length > 0 ? result.rows[0] : null;
+    } catch (error) {
+      console.error('Error getting user by X account ID:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get a linked account by X (Twitter) account ID
+   */
+  public async getLinkedAccountByXAccountId(xAccountId: string): Promise<SocialAccount | null> {
+    try {
+      const result = await this.pool.query(
+        `SELECT * FROM social_accounts WHERE platform = 'twitter' AND platform_user_id = $1`,
+        [xAccountId]
+      );
+      
+      return result.rows.length > 0 ? result.rows[0] : null;
+    } catch (error) {
+      console.error('Error getting linked account by X account ID:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Add a linked account for X (Twitter)
+   */
+  public async addLinkedAccount(accountData: {
+    userId: string | number;
+    businessId: string;
+    xAccountId: string;
+    xUsername: string;
+    accessToken: string;
+    refreshToken?: string;
+    tokenExpiresAt: Date;
+  }): Promise<SocialAccount> {
+    try {
+      const result = await this.pool.query(
+        `INSERT INTO social_accounts (user_id, platform, platform_user_id, username, access_token, refresh_token, expires_at, business_id)
+         VALUES ($1, 'twitter', $2, $3, $4, $5, $6, $7)
+         RETURNING *`,
+        [
+          accountData.userId,
+          accountData.xAccountId,
+          accountData.xUsername,
+          accountData.accessToken,
+          accountData.refreshToken,
+          accountData.tokenExpiresAt,
+          accountData.businessId
+        ]
+      );
+      
+      return result.rows[0];
+    } catch (error) {
+      console.error('Error adding linked account:', error);
+      throw error;
+    }
+  }
 }
 
 export default PostgresService;
