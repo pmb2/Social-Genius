@@ -21,11 +21,14 @@ export async function GET(req: NextRequest) {
 
   const session = await getIronSession<SessionData>(cookies(), sessionOptions);
 
-  const codeVerifier = crypto.randomBytes(32).toString('hex');
+  const codeVerifier = crypto.randomBytes(32).toString('base64url');
   const codeChallenge = crypto
     .createHash('sha256')
     .update(codeVerifier)
-    .digest('base64url');
+    .digest('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
 
   session.codeVerifier = codeVerifier;
   await session.save();
@@ -44,7 +47,7 @@ export async function GET(req: NextRequest) {
     scope: 'users.read tweet.read',
     state: state,
     code_challenge: codeChallenge,
-    code_challenge_method: 'plain',
+    code_challenge_method: 'S256',
   });
 
   const authUrl = `https://twitter.com/i/oauth2/authorize?${params.toString()}`;
