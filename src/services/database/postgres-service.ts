@@ -853,29 +853,31 @@ class PostgresService {
   /**
    * Add a business for a user
    */
-  public async addBusinessForUser(userId: number, businessName: string): Promise<string> {
-    const client = await this.pool.connect();
+  public async addBusinessForUser(userId: number, businessName: string, businessId?: string, client?: any): Promise<string> {
+    const dbClient = client || await this.pool.connect();
     try {
-      // Generate a unique business ID
-      const businessId = `biz_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      // Use provided business ID or generate a unique one
+      const finalBusinessId = businessId || `biz_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       
-      const result = await client.query(
+      const result = await dbClient.query(
         `INSERT INTO businesses (business_id, user_id, name, status, created_at, updated_at)
          VALUES ($1, $2, $3, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
          RETURNING id`,
-        [businessId, userId, businessName]
+        [finalBusinessId, userId, businessName]
       );
       
       if (result.rows.length === 0) {
         throw new Error('Failed to create business record');
       }
       
-      return businessId;
+      return finalBusinessId;
     } catch (error) {
       console.error('Error adding business for user:', error);
       throw error;
     } finally {
-      client.release();
+      if (!client) {
+        dbClient.release();
+      }
     }
   }
 
@@ -1375,9 +1377,10 @@ class PostgresService {
     accessToken: string;
     refreshToken?: string;
     tokenExpiresAt: Date;
-  }): Promise<SocialAccount> {
+  }, client?: any): Promise<SocialAccount> {
+    const dbClient = client || await this.pool.connect();
     try {
-      const result = await this.pool.query(
+      const result = await dbClient.query(
         `INSERT INTO social_accounts (user_id, platform, platform_user_id, username, access_token, refresh_token, expires_at, business_id)
          VALUES ($1, 'twitter', $2, $3, $4, $5, $6, $7)
          RETURNING *`,
@@ -1396,6 +1399,10 @@ class PostgresService {
     } catch (error) {
       console.error('Error adding linked account:', error);
       throw error;
+    } finally {
+      if (!client) {
+        dbClient.release();
+      }
     }
   }
 }
