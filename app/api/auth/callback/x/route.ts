@@ -127,8 +127,20 @@ export async function GET(req: NextRequest) {
     const xUsername = xUser.username;
     const db = DatabaseService.getInstance();
 
-    // Create proper base URL for redirects (avoid 0.0.0.0 which browsers can't access)
-    const baseUrl = req.url.includes('localhost') ? 'http://localhost:3000' : new URL(req.url).origin;
+    // Create proper base URL for redirects
+    const requestUrl = new URL(req.url);
+    let baseUrl: string;
+
+    // Handle different host scenarios
+    if (requestUrl.hostname === '0.0.0.0') {
+        baseUrl = 'http://localhost:3000';
+    } else if (requestUrl.hostname === 'localhost' || requestUrl.hostname === '127.0.0.1') {
+        baseUrl = `http://${requestUrl.hostname}:${requestUrl.port}`;
+    } else {
+        baseUrl = requestUrl.origin;
+    }
+
+    console.log('Redirect base URL determined:', baseUrl);
 
     if (flow === 'login') {
         const user = await db.getUserByXAccountId(xAccountId);
