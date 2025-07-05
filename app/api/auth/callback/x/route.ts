@@ -127,22 +127,25 @@ export async function GET(req: NextRequest) {
     const xUsername = xUser.username;
     const db = DatabaseService.getInstance();
 
+    // Create proper base URL for redirects (avoid 0.0.0.0 which browsers can't access)
+    const baseUrl = req.url.includes('localhost') ? 'http://localhost:3000' : new URL(req.url).origin;
+
     if (flow === 'login') {
         const user = await db.getUserByXAccountId(xAccountId);
         if (user) {
             session.id = user.id;
             session.isLoggedIn = true;
             await session.save();
-            return NextResponse.redirect(new URL('/app/(protected)/dashboard', req.url));
+            return NextResponse.redirect(new URL('/app/(protected)/dashboard', baseUrl));
         } else {
-            return NextResponse.redirect(new URL(`/app/auth/register?x_id=${xAccountId}&x_username=${xUsername}`, req.url));
+            return NextResponse.redirect(new URL(`/app/auth/register?x_id=${xAccountId}&x_username=${xUsername}`, baseUrl));
         }
     } else if (flow === 'register') {
         const user = await db.getUserByXAccountId(xAccountId);
         if (user) {
-            return NextResponse.redirect(new URL('/app/auth/register?error=x_account_exists', req.url));
+            return NextResponse.redirect(new URL('/app/auth/register?error=x_account_exists', baseUrl));
         } else {
-            return NextResponse.redirect(new URL(`/app/auth/complete-registration?x_id=${xAccountId}&x_username=${xUsername}`, req.url));
+            return NextResponse.redirect(new URL(`/app/auth/complete-registration?x_id=${xAccountId}&x_username=${xUsername}`, baseUrl));
         }
     } else if (flow === 'link') {
         if (!stateUserId) {
@@ -151,7 +154,7 @@ export async function GET(req: NextRequest) {
 
         const linkedAccount = await db.getLinkedAccountByXAccountId(xAccountId);
         if (linkedAccount) {
-            return NextResponse.redirect(new URL('/app/(protected)/dashboard?error=x_account_linked', req.url));
+            return NextResponse.redirect(new URL('/app/(protected)/dashboard?error=x_account_linked', baseUrl));
         } else {
             const client = await db.getPool().connect();
             try {
@@ -169,7 +172,7 @@ export async function GET(req: NextRequest) {
                     tokenExpiresAt: new Date(Date.now() + expires_in * 1000)
                 }, client);
                 await client.query('COMMIT');
-                return NextResponse.redirect(new URL('/app/(protected)/dashboard?success=x_account_added', req.url));
+                return NextResponse.redirect(new URL('/app/(protected)/dashboard?success=x_account_added', baseUrl));
             } catch (error) {
                 await client.query('ROLLBACK');
                 console.error('Transaction failed, rolling back:', error);
