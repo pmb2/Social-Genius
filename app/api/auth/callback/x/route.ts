@@ -148,7 +148,7 @@ export async function GET(req: NextRequest) {
             session.id = user.id;
             session.isLoggedIn = true;
             await session.save();
-            return NextResponse.redirect(new URL('/app/(protected)/dashboard', baseUrl));
+            return NextResponse.redirect(new URL('/app/dashboard', baseUrl));
         } else {
             return NextResponse.redirect(new URL(`/app/auth/register?x_id=${xAccountId}&x_username=${xUsername}`, baseUrl));
         }
@@ -184,7 +184,7 @@ export async function GET(req: NextRequest) {
                     tokenExpiresAt: new Date(Date.now() + expires_in * 1000)
                 }, client);
                 await client.query('COMMIT');
-                return NextResponse.redirect(new URL('/app/(protected)/dashboard?success=x_account_added', baseUrl));
+                return NextResponse.redirect(new URL('/app/dashboard?success=x_account_added', baseUrl));
             } catch (error) {
                 await client.query('ROLLBACK');
                 console.error('Transaction failed, rolling back:', error);
