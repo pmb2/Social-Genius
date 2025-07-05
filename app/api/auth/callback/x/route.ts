@@ -18,16 +18,39 @@ export async function GET(req: NextRequest) {
     console.log('Session data:', { 
         hasCodeVerifier: !!codeVerifier, 
         codeVerifierLength: codeVerifier?.length,
-        sessionKeys: Object.keys(session)
+        sessionKeys: Object.keys(session),
+        sessionId: session.id || 'no-session-id',
+        allSessionData: session
     });
 
-    if (!code || !state || !codeVerifier) {
-        console.error('Missing required parameters:', { 
+    // Additional debugging for cookies
+    const cookieHeader = req.headers.get('cookie');
+    console.log('Cookie header present:', !!cookieHeader);
+    console.log('Cookie header length:', cookieHeader?.length || 0);
+
+    if (!code || !state) {
+        console.error('Missing required OAuth parameters:', { 
             hasCode: !!code, 
-            hasState: !!state, 
-            hasCodeVerifier: !!codeVerifier 
+            hasState: !!state,
+            codeParam: code?.substring(0, 10) + '...',
+            stateParam: state?.substring(0, 20) + '...'
         });
-        return new NextResponse('Invalid request or missing code verifier', { status: 400 });
+        return new NextResponse('Invalid OAuth request - missing code or state', { status: 400 });
+    }
+
+    if (!codeVerifier) {
+        console.error('Code verifier not found in session. This indicates the OAuth flow was not properly initiated.');
+        console.error('Session debug info:', {
+            sessionExists: !!session,
+            sessionKeys: Object.keys(session),
+            sessionData: JSON.stringify(session, null, 2)
+        });
+        
+        // Try to provide a more helpful error message
+        return new NextResponse(
+            'OAuth flow error: Code verifier not found. Please restart the authentication process.',
+            { status: 400 }
+        );
     }
 
     let decodedState: any;
@@ -78,8 +101,16 @@ export async function GET(req: NextRequest) {
     const { access_token, refresh_token, expires_in } = await tokenResponse.json();
 
     // Clear the code verifier from session since it's single-use
+    console.log('Clearing code verifier from session');
     session.codeVerifier = undefined;
     await session.save();
+    
+    // Verify the session was cleared
+    const clearedSession = await getIronSession<SessionData>(cookies(), sessionOptions);
+    console.log('Session after clearing code verifier:', {
+        hasCodeVerifier: !!clearedSession.codeVerifier,
+        sessionKeys: Object.keys(clearedSession)
+    });
 
     const userResponse = await fetch('https://api.twitter.com/2/users/me', {
         headers: {
