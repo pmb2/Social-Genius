@@ -15,7 +15,18 @@ export async function GET(req: NextRequest) {
     const session = await getIronSession<SessionData>(cookies(), sessionOptions);
     const codeVerifier = session.codeVerifier;
 
+    console.log('Session data:', { 
+        hasCodeVerifier: !!codeVerifier, 
+        codeVerifierLength: codeVerifier?.length,
+        sessionKeys: Object.keys(session)
+    });
+
     if (!code || !state || !codeVerifier) {
+        console.error('Missing required parameters:', { 
+            hasCode: !!code, 
+            hasState: !!state, 
+            hasCodeVerifier: !!codeVerifier 
+        });
         return new NextResponse('Invalid request or missing code verifier', { status: 400 });
     }
 
@@ -36,6 +47,14 @@ export async function GET(req: NextRequest) {
         code_verifier: codeVerifier
     });
 
+    console.log('Token exchange params:', {
+        code: code.substring(0, 10) + '...',
+        grant_type: 'authorization_code',
+        client_id: process.env.X_CLIENT_ID,
+        redirect_uri: process.env.X_REDIRECT_URI,
+        code_verifier: codeVerifier.substring(0, 10) + '...'
+    });
+
     const tokenResponse = await fetch('https://api.twitter.com/2/oauth2/token', {
         method: 'POST',
         headers: {
@@ -47,11 +66,20 @@ export async function GET(req: NextRequest) {
 
     if (!tokenResponse.ok) {
         const errorText = await tokenResponse.text();
-        console.error('Failed to exchange code for token:', errorText);
+        console.error('Token exchange failed:', {
+            status: tokenResponse.status,
+            statusText: tokenResponse.statusText,
+            error: errorText,
+            codeVerifierUsed: codeVerifier.substring(0, 10) + '...'
+        });
         return new NextResponse('Failed to exchange code for token', { status: 400 });
     }
 
     const { access_token, refresh_token, expires_in } = await tokenResponse.json();
+
+    // Clear the code verifier from session since it's single-use
+    session.codeVerifier = undefined;
+    await session.save();
 
     const userResponse = await fetch('https://api.twitter.com/2/users/me', {
         headers: {
