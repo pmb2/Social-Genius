@@ -162,3 +162,15 @@ Screenshots can also be accessed via the API endpoint:
 ### Database Issues
 
 For database-related troubleshooting, refer to the detailed guides in the `/docs` directory.
+
+---
+
+### License & Ownership
+
+All source code, designs, and logic in this repository are the exclusive intellectual property of Paul Backus. This software has not been assigned or transferred to any entity, including Social Genius LLC.
+
+Any use, deployment, duplication, or licensing must be approved in writing by the author.
+
+For inquiries: [thebackusagency@gmail.com]
+
+© Paul Backus – All rights reserved.
