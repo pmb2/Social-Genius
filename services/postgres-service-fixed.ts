@@ -583,6 +583,104 @@ class PostgresService {
   }
 
   /**
+   * Get a user by X account ID
+   */
+  public async getUserByXAccountId(xAccountId: string): Promise<any | null> {
+    try {
+      const result = await this.pool.query(
+        'SELECT * FROM users WHERE x_account_id = $1',
+        [xAccountId]
+      );
+      
+      return result.rows.length > 0 ? result.rows[0] : null;
+    } catch (error) {
+      console.error('Error getting user by X account ID:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get a linked account by X account ID
+   */
+  public async getLinkedAccountByXAccountId(xAccountId: string): Promise<any | null> {
+    try {
+      const result = await this.pool.query(
+        'SELECT * FROM linked_accounts WHERE x_account_id = $1',
+        [xAccountId]
+      );
+      
+      return result.rows.length > 0 ? result.rows[0] : null;
+    } catch (error) {
+      console.error('Error getting linked account by X account ID:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Add a linked account
+   */
+  public async addLinkedAccount(data: { userId: number, businessId: string, xAccountId: string, xUsername: string, accessToken: string, refreshToken: string, tokenExpiresAt: Date }): Promise<void> {
+    try {
+      await this.pool.query(
+        'INSERT INTO linked_accounts (user_id, business_id, x_account_id, x_username, access_token, refresh_token, token_expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [data.userId, data.businessId, data.xAccountId, data.xUsername, data.accessToken, data.refreshToken, data.tokenExpiresAt]
+      );
+    } catch (error) {
+      console.error('Error adding linked account:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get a user by X account ID
+   */
+  public async getUserByXAccountId(xAccountId: string): Promise<any | null> {
+    try {
+      const result = await this.pool.query(
+        'SELECT * FROM users WHERE x_account_id = $1',
+        [xAccountId]
+      );
+      
+      return result.rows.length > 0 ? result.rows[0] : null;
+    } catch (error) {
+      console.error('Error getting user by X account ID:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get a linked account by X account ID
+   */
+  public async getLinkedAccountByXAccountId(xAccountId: string): Promise<any | null> {
+    try {
+      const result = await this.pool.query(
+        'SELECT * FROM linked_accounts WHERE x_account_id = $1',
+        [xAccountId]
+      );
+      
+      return result.rows.length > 0 ? result.rows[0] : null;
+    } catch (error) {
+      console.error('Error getting linked account by X account ID:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Add a linked account
+   */
+  public async addLinkedAccount(data: { userId: number, businessId: string, xAccountId: string, xUsername: string, accessToken: string, refreshToken: string, tokenExpiresAt: Date }): Promise<void> {
+    try {
+      await this.pool.query(
+        'INSERT INTO linked_accounts (user_id, business_id, x_account_id, x_username, access_token, refresh_token, token_expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [data.userId, data.businessId, data.xAccountId, data.xUsername, data.accessToken, data.refreshToken, data.tokenExpiresAt]
+      );
+    } catch (error) {
+      console.error('Error adding linked account:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Register a new user
    */
   public async registerUser(email: string, passwordHash: string, name?: string): Promise<number> {
@@ -808,24 +906,24 @@ class PostgresService {
   /**
    * Add a business for a user
    */
-  public async addBusinessForUser(userId: number, businessName: string): Promise<string> {
+  public async addBusinessForUser(userId: number, businessName: string, businessId?: string): Promise<string> {
     const client = await this.pool.connect();
     try {
-      // Generate a unique business ID
-      const businessId = `biz_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      // Generate a unique business ID if not provided
+      const finalBusinessId = businessId || `biz_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       
       const result = await client.query(
         `INSERT INTO businesses (business_id, user_id, name, status, created_at, updated_at)
          VALUES ($1, $2, $3, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
          RETURNING id`,
-        [businessId, userId, businessName]
+        [finalBusinessId, userId, businessName]
       );
       
       if (result.rows.length === 0) {
         throw new Error('Failed to create business record');
       }
       
-      return businessId;
+      return finalBusinessId;
     } catch (error) {
       console.error('Error adding business for user:', error);
       throw error;

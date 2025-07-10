@@ -1,0 +1,3 @@
+- shift Sign in with X to the left to center it in the button
+- shift Status title header on the accounts table on the dashboard to the left to provide some additional padding from the right side of the table
+- 

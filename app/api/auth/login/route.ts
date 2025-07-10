@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AuthService } from '@/services/auth';
 import { DatabaseService } from '@/services/database';
+import { getIronSession } from 'iron-session';
+import { sessionOptions, SessionData } from '@/lib/auth/session';
+import { cookies } from 'next/headers';
 
 // Specify that this route runs on the Node.js runtime, not Edge
 export const runtime = 'nodejs';
@@ -75,87 +78,28 @@ export async function POST(req: NextRequest) {
       
       console.log('[LOGIN-API] Login successful for user:', loginResult.user?.email);
       
+      // Get the iron-session instance
+      const session = await getIronSession(cookies(), sessionOptions);
+
+      // Set session data
+      session.id = loginResult.user.id;
+      session.isLoggedIn = true;
+      await session.save();
+
+      console.log(`[LOGIN-API] Session set for user ${email}, session ID: ${session.id}, loginResult.user.id: ${loginResult.user.id}`);
+      
       // Success - create a response with the login data
       const response = NextResponse.json({
         success: true,
         user: {
           id: loginResult.user.id,
           email: loginResult.user.email,
-          name: loginResult.user.name
-        }
+          name: loginResult.user.name,
+        },
       }, { status: 200 });
       
-      // Set the session cookie
-      const sessionId = loginResult.user.sessionId;
-      
-      // Debug the environment
-      console.log('Setting cookies with environment:', {
-        nodeEnv: process.env.NODE_ENV,
-        isDev: process.env.NODE_ENV !== 'production',
-        protocol: req.headers.get('x-forwarded-proto') || 'http', 
-        host: req.headers.get('host'),
-      });
-      
-      // Set both cookie names for compatibility - with relaxed settings for development
-      console.log('[LOGIN-API] Setting cookies with session ID:', sessionId?.substring(0, 8) + '...');
-      console.log('[LOGIN-API] Cookie environment settings:', {
-        nodeEnv: process.env.NODE_ENV,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-        maxAge: 30 * 24 * 60 * 60 // 30 days in seconds
-      });
-      
-      try {
-        // Add cookies to the response
-        const setSessionCookies = (response: NextResponse, sessionId: string) => {
-          // Determine environment for cookie settings
-          const nodeEnv = process.env.NODE_ENV || 'development';
-          const isDev = nodeEnv === 'development';
-          const protocol = isDev ? 'http' : 'https';
-          const host = process.env.HOST || req.headers.get('host') || 'localhost:3000';
-          
-          const timestamp = new Date().toISOString();
-          console.log(`[LOGIN-API] ${timestamp} - Setting cookies with environment:`, {
-            nodeEnv,
-            isDev,
-            protocol,
-            host
-          });
-          
-          // Explicitly use relaxed settings for development to ensure cookies are set
-          const cookieOptions = {
-            name: 'session',
-            value: sessionId,
-            httpOnly: true,
-            path: '/',
-            sameSite: 'lax' as const,
-            secure: false, // For development, always set to false
-            maxAge: 30 * 24 * 60 * 60, // 30 days in seconds
-          };
-          
-          console.log(`[LOGIN-API] ${timestamp} - Using relaxed cookie options for development:`, cookieOptions);
-          
-          // Set both formats for compatibility
-          response.cookies.set('session', sessionId, cookieOptions);
-          response.cookies.set('sessionId', sessionId, cookieOptions);
-          
-          // Log the cookies that were set in the response
-          console.log(`[LOGIN-API] ${timestamp} - Cookies set in response:`, 
-                     response.cookies.getAll().map(c => `${c.name}=${c.value.substring(0, 8)}...`));
-          
-          return response;
-        };
-        
-        // Apply the cookies
-        setSessionCookies(response, sessionId);
-        console.log('[LOGIN-API] Cookies set successfully with improved method');
-      } catch (cookieError) {
-        console.error('[LOGIN-API] Error setting cookies:', cookieError);
-        // Continue anyway since the login was successful
-      }
-      
-      console.log(`[LOGIN-API] Login successful for user ${email}, session created: ${sessionId?.substring(0, 8)}...`);
-      console.log(`[LOGIN-API] All cookies in response:`, Array.from(response.cookies.getAll().map(c => c.name)));
+      console.log(`[LOGIN-API] Response Set-Cookie header: ${response.headers.get('Set-Cookie')}`);
+      console.log(`[LOGIN-API] Login successful for user ${email}, session created: ${session.id}`);
       return response;
     } catch (loginError) {
       console.error('[LOGIN-API] Error during login process:', loginError);

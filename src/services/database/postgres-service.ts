@@ -35,6 +35,8 @@ class PostgresService {
   private reconnectInterval: number = 5000; // 5 seconds
 
   private constructor() {
+    console.log('[PostgresService Constructor] NODE_ENV:', process.env.NODE_ENV);
+    console.log('[PostgresService Constructor] IRON_SESSION_SECRET (first 5 chars):', process.env.IRON_SESSION_SECRET?.substring(0, 5));
     try {
       // Explicitly set important environment variables
       process.env.NODE_PG_FORCE_NATIVE = '0';

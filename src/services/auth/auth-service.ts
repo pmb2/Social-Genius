@@ -16,6 +16,8 @@ class AuthService {
     this.redis = RedisService; // FIX: Assign the imported instance directly
     // In production, this should be set from environment variables
     this.JWT_SECRET = process.env.JWT_SECRET || 'social-genius-secret-key-change-in-production';
+    console.log('[AuthService Constructor] NODE_ENV:', process.env.NODE_ENV);
+    console.log('[AuthService Constructor] IRON_SESSION_SECRET (first 5 chars):', process.env.IRON_SESSION_SECRET?.substring(0, 5));
   }
 
   public static getInstance(): AuthService {
@@ -97,10 +99,7 @@ class AuthService {
     }
   }
 
-  // Generate a session ID
-  private generateSessionId(): string {
-    return randomBytes(32).toString('hex');
-  }
+  
 
   // Create a simplified token with user info (not a real JWT, but a signed payload)
   private createToken(user: any): string {
@@ -232,19 +231,11 @@ class AuthService {
       // Generate token
       const token = this.createToken(user);
       
-      // Create session
-      const sessionId = this.generateSessionId();
-      const expiresAt = new Date(Date.now() + this.SESSION_EXPIRY);
-      await this.db.createSession(user.id, sessionId, expiresAt);
-      
-      console.log('Created session for user:', email, 'session ID:', sessionId);
-      
       // Return user info (without password)
       const userInfo = {
         id: user.id,
         email: user.email,
         name: user.name,
-        sessionId
       };
       
       return { success: true, token, user: userInfo };
@@ -255,25 +246,21 @@ class AuthService {
   }
 
   // Logout a user
-  public async logout(sessionId: string): Promise<boolean> {
-    try {
-      return await this.db.deleteSession(sessionId);
-    } catch (error) {
-      console.error('Logout error:', error);
-      return false;
-    }
+  public async logout(): Promise<boolean> {
+    // With iron-session, logout is handled by destroying the session in the API route.
+    // This method is kept for compatibility but doesn't perform DB operations related to session IDs.
+    return true;
   }
 
   // Verify a session
-  public async verifySession(sessionId: string, traceId?: string): Promise<any | null> {
+  public async verifySession(userId: number, traceId?: string): Promise<any | null> {
     // Generate a trace ID if one wasn't provided
     const sessionTraceId = traceId || `session-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const timestamp = new Date().toISOString();
     
     try {
       console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - 🔑 SESSION VERIFICATION STARTED`);
-      console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - Session ID: ${sessionId.substring(0, 8)}...`);
-      console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - Session ID length: ${sessionId.length}`);
+      console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - User ID: ${userId}`);
       console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - Environment: ${process.env.NODE_ENV || 'not set'}`);
       
       // Performance tracking
@@ -302,112 +289,17 @@ class AuthService {
         return null;
       }
       
-      // Try to get the session by ID
-      console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - Looking up session in database`);
-      const sessionLookupStart = Date.now();
-      const session = await this.db.getSessionById(sessionId);
-      const sessionLookupTime = Date.now() - sessionLookupStart;
-      
-      if (!session) {
-        console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - ❌ Session not found (${sessionLookupTime}ms)`);
-        
-        // Try to determine if this might be a token instead of a session ID
-        if (sessionId.indexOf('.') > 0) {
-          console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - 🔎 Session ID appears to be a token format, attempting to validate...`);
-          
-          try {
-            // Try to parse it as a token
-            const tokenStartTime = Date.now();
-            const tokenPayload = this.verifyToken(sessionId);
-            const tokenVerifyTime = Date.now() - tokenStartTime;
-            
-            if (tokenPayload) {
-              console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - ✅ Token validated successfully (${tokenVerifyTime}ms)`);
-              console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - User ID from token: ${tokenPayload.userId}`);
-              
-              // Since we have a valid token, create a temporary session object
-              const userLookupStart = Date.now();
-              const user = await this.db.getUserById(tokenPayload.userId);
-              const userLookupTime = Date.now() - userLookupStart;
-              
-              if (!user) {
-                console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - ❌ User not found for token (${userLookupTime}ms)`);
-                return null;
-              }
-              
-              console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - ✅ User found from token (${userLookupTime}ms)`);
-              console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - User details: ID ${user.id}, Email ${user.email}`);
-              
-              // Create temporary session
-              const tempSession = {
-                id: `token-${Date.now()}`,
-                userId: user.id,
-                user_id: user.id, // Duplicate for backward compatibility
-                user_email: user.email, // Add for logging
-                expiresAt: new Date(Date.now() + this.SESSION_EXPIRY).toISOString(),
-                createdAt: new Date().toISOString(),
-                lastUsedAt: new Date().toISOString(),
-                user: {
-                  id: user.id,
-                  email: user.email,
-                  name: user.name || ""
-                },
-                traceId: sessionTraceId // Include trace ID in session
-              };
-              
-              // Note: We're not persisting this session since it's temporary
-              console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - 🔄 Created temporary session from token`);
-              
-              return tempSession;
-            } else {
-              console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - ❌ Failed to validate token (${tokenVerifyTime}ms)`);
-            }
-          } catch (tokenError) {
-            console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - ❌ Error validating token:`, tokenError);
-          }
-        }
-        
-        return null;
-      }
-      
-      console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - ✅ Session found (${sessionLookupTime}ms)`);
-      console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - Session details: ID ${session.id}, User ID ${session.userId}`);
-      
-      // Check if session is expired
-      const now = new Date();
-      const expiresAt = new Date(session.expiresAt);
-      const timeToExpiration = expiresAt.getTime() - now.getTime();
-      const isExpired = now > expiresAt;
-      
-      console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - Session expiration status:`, {
-        isExpired,
-        timeToExpiration: `${Math.floor(timeToExpiration / 1000 / 60)} minutes`,
-        now: now.toISOString(),
-        expiresAt: expiresAt.toISOString()
-      });
-      
-      if (isExpired) {
-        console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - ❌ Session expired, cleaning up`);
-        // Try to delete the expired session
-        try {
-          await this.db.deleteSession(sessionId);
-          console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - Expired session deleted successfully`);
-        } catch (deleteError) {
-          console.error(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - Error deleting expired session:`, deleteError);
-        }
-        return null;
-      }
-      
-      // Also verify that the user exists
-      console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - Looking up user ID ${session.userId}`);
+      // Verify that the user exists
+      console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - Looking up user ID ${userId} in database...`);
       const userLookupStart = Date.now();
-      const user = await this.db.getUserById(session.userId);
+      const user = await this.db.getUserById(userId);
       const userLookupTime = Date.now() - userLookupStart;
       
       if (!user) {
-        console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - ❌ User not found (${userLookupTime}ms)`);
+        console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - ❌ User not found for ID ${userId} (${userLookupTime}ms)`);
         return null;
       }
+      console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - User found for ID ${userId}: ${JSON.stringify({ id: user.id, email: user.email })} (${userLookupTime}ms)`);
       
       console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - ✅ User found (${userLookupTime}ms)`);
       console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - User details: ID ${user.id}, Email ${user.email}`);
@@ -448,13 +340,14 @@ class AuthService {
       console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - User: ${user.email}`);
       
       // Add trace ID and user_email to the session before returning
-      return {
-        ...session,
+      const returnedSessionData = {
         user: userObj,
         user_email: user.email, // Add user email for logging
         traceId: sessionTraceId, // Include trace ID for cross-component tracing
         verificationTime: totalTime // Include verification time for performance tracking
       };
+      console.log(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - Returning session data: ${JSON.stringify(returnedSessionData)}`);
+      return userObj;
     } catch (error) {
       const totalTime = Date.now() - startTime;
       console.error(`[AUTH_SERVICE:${sessionTraceId}] ${timestamp} - ❌ Session verification error (${totalTime}ms):`, error);
@@ -1004,29 +897,15 @@ class AuthService {
       // Generate token
       const token = this.createToken(user);
       
-      // Create session
-      const sessionId = this.generateSessionId();
-      const expiresAt = new Date(Date.now() + this.SESSION_EXPIRY);
-      
-      try {
-        console.log('[AUTH-SERVICE] Creating session...');
-        await this.db.createSession(user.id, sessionId, expiresAt);
-        console.log('[AUTH-SERVICE] Created session, ID:', sessionId?.substring(0, 8) + '...');
-      } catch (sessionError) {
-        console.error('[AUTH-SERVICE] Error creating session:', sessionError);
-        console.error('[AUTH-SERVICE] Error stack:', sessionError instanceof Error ? sessionError.stack : 'No stack available');
-        return { success: false, error: 'Error creating session' };
-      }
-      
       // Return user info (without password)
       const userInfo = {
         id: user.id,
         email: user.email,
         name: user.name,
-        sessionId
       };
       
       console.log('[AUTH-SERVICE] Login successful for user:', email);
+      console.log('[AUTH-SERVICE] User ID being returned:', userInfo.id);
       console.log('=============================================');
       return { success: true, token, user: userInfo };
     } catch (error) {
@@ -1290,18 +1169,13 @@ class AuthService {
       }
 
       // At this point, we have a user and a socialAccount linked.
-      // Create a session for the user.
       await this.db.updateLastLogin(user.id);
       const token = this.createToken(user);
-      const sessionId = this.generateSessionId();
-      const expiresAtSession = new Date(Date.now() + this.SESSION_EXPIRY);
-      await this.db.createSession(user.id, sessionId, expiresAtSession);
 
       const userInfo = {
         id: user.id,
         email: user.email,
         name: user.name,
-        sessionId,
         socialAccounts: [socialAccount] // Include the newly created/updated social account
       };
 

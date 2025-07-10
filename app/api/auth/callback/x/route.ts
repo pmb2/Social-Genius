@@ -8,6 +8,7 @@ import { cookies } from 'next/headers';
 import crypto from 'crypto';
 
 export async function GET(req: NextRequest) {
+    console.log('[X_CALLBACK] GET function started.');
     const { searchParams } = new URL(req.url);
     const code = searchParams.get('code');
     const state = searchParams.get('state');
@@ -23,14 +24,14 @@ export async function GET(req: NextRequest) {
         allSessionData: session
     });
 
-    // Additional debugging for cookies
-    const cookieHeader = req.headers.get('cookie');
-    console.log('Cookie header present:', !!cookieHeader);
-    console.log('Cookie header length:', cookieHeader?.length || 0);
+    // // Additional debugging for cookies
+    // const cookieHeader = req.headers.get('cookie');
+    // console.log('Cookie header present:', !!cookieHeader);
+    // console.log('Cookie header length:', cookieHeader?.length || 0);
 
     if (!code || !state) {
-        console.error('Missing required OAuth parameters:', { 
-            hasCode: !!code, 
+        console.error('Missing required OAuth parameters:', {
+            hasCode: !!code,
             hasState: !!state,
             codeParam: code?.substring(0, 10) + '...',
             stateParam: state?.substring(0, 20) + '...'
@@ -106,10 +107,9 @@ export async function GET(req: NextRequest) {
     await session.save();
     
     // Verify the session was cleared
-    const clearedSession = await getIronSession<SessionData>(cookies(), sessionOptions);
     console.log('Session after clearing code verifier:', {
-        hasCodeVerifier: !!clearedSession.codeVerifier,
-        sessionKeys: Object.keys(clearedSession)
+        hasCodeVerifier: !!session.codeVerifier,
+        sessionKeys: Object.keys(session)
     });
 
     const userResponse = await fetch('https://api.twitter.com/2/users/me', {
@@ -119,6 +119,12 @@ export async function GET(req: NextRequest) {
     });
 
     if (!userResponse.ok) {
+        const errorText = await userResponse.text();
+        // console.error('Failed to fetch user profile:', {
+    //     status: userResponse.status,
+    //     statusText: userResponse.statusText,
+    //     error: errorText
+    // });
         return new NextResponse('Failed to fetch user profile', { status: 400 });
     }
 
@@ -140,15 +146,19 @@ export async function GET(req: NextRequest) {
         baseUrl = requestUrl.origin;
     }
 
-    console.log('Redirect base URL determined:', baseUrl);
+    // console.log('Redirect base URL determined:', baseUrl);
 
     if (flow === 'login') {
         const user = await db.getUserByXAccountId(xAccountId);
         if (user) {
             session.id = user.id;
             session.isLoggedIn = true;
+            console.log(`[X_CALLBACK] Login flow: Setting session.id to ${session.id} (user.id: ${user.id})`);
             await session.save();
-            return NextResponse.redirect(new URL('/app/(protected)/dashboard', baseUrl));
+            console.log(`[X_CALLBACK] Login flow: Session saved. session.id: ${session.id}, session.isLoggedIn: ${session.isLoggedIn}`);
+            const redirectUrl = new URL('/dashboard', baseUrl);
+            // console.log('Redirecting to:', redirectUrl.toString());
+            return NextResponse.redirect(redirectUrl);
         } else {
             return NextResponse.redirect(new URL(`/app/auth/register?x_id=${xAccountId}&x_username=${xUsername}`, baseUrl));
         }
@@ -160,21 +170,38 @@ export async function GET(req: NextRequest) {
             return NextResponse.redirect(new URL(`/app/auth/complete-registration?x_id=${xAccountId}&x_username=${xUsername}`, baseUrl));
         }
     } else if (flow === 'link') {
-        if (!stateUserId) {
-            return new NextResponse('User not authenticated', { status: 400 });
-        }
+        // console.log('Link flow initiated. stateUserId:', stateUserId);
+    // console.log('X Account ID:', xAccountId, 'X Username:', xUsername);
 
-        const linkedAccount = await db.getLinkedAccountByXAccountId(xAccountId);
+        // Ensure the session reflects the authenticated user from the state
+        console.log(`[X_CALLBACK] Link flow: stateUserId from decodedState: ${stateUserId}, type: ${typeof stateUserId}`);
+        session.id = stateUserId;
+        session.isLoggedIn = true;
+        console.log(`[X_CALLBACK] Link flow: Setting session.id to ${session.id} (stateUserId: ${stateUserId})`);
+        await session.save();
+        console.log(`[X_CALLBACK] Link flow: Session saved. session.id: ${session.id}, session.isLoggedIn: ${session.isLoggedIn}`);
+
+        const linkedAccount = await db.getLinkedAccountByXAccountId(xAccountId, stateUserId);
+        // console.log('Result of getLinkedAccountByXAccountId:', linkedAccount);
+
         if (linkedAccount) {
-            return NextResponse.redirect(new URL('/app/(protected)/dashboard?error=x_account_linked', baseUrl));
+            // console.log('X account already linked:', linkedAccount);
+            return NextResponse.redirect(new URL('/dashboard?error=x_account_linked', baseUrl));
         } else {
             const client = await db.getPool().connect();
             try {
+                console.log('[X_CALLBACK] Starting database transaction.');
                 await client.query('BEGIN');
                 const businessId = `bid_${Date.now()}`;
+                console.log(`[X_CALLBACK] Generated businessId: ${businessId}`);
+                
                 // Create a business entry for the user before linking the account
-                await db.addBusinessForUser(stateUserId, `X Business for ${xUsername}`, businessId, client);
-                await db.addLinkedAccount({
+                const businessName = `X Business for ${xUsername}`;
+                console.log(`[X_CALLBACK] Calling addBusinessForUser with userId: ${stateUserId}, businessName: ${businessName}, businessId: ${businessId}`);
+                await db.addBusinessForUser(stateUserId, businessName, businessId, client);
+                console.log('[X_CALLBACK] addBusinessForUser completed successfully.');
+
+                const accountData = {
                     userId: stateUserId,
                     businessId,
                     xAccountId,
@@ -182,14 +209,37 @@ export async function GET(req: NextRequest) {
                     accessToken: access_token,
                     refreshToken: refresh_token,
                     tokenExpiresAt: new Date(Date.now() + expires_in * 1000)
-                }, client);
+                };
+                console.log('[X_CALLBACK] Calling addLinkedAccount with data:', accountData);
+                await db.addLinkedAccount(accountData, client);
+                console.log('[X_CALLBACK] addLinkedAccount completed successfully.');
+
                 await client.query('COMMIT');
-                return NextResponse.redirect(new URL('/app/(protected)/dashboard?success=x_account_added', baseUrl));
+                console.log('[X_CALLBACK] Transaction committed successfully.');
+                
+                const redirectUrl = new URL('/dashboard?x_account_added=true', baseUrl);
+                console.log(`[X_CALLBACK] Redirecting to: ${redirectUrl.toString()}`);
+                const redirectResponse = NextResponse.redirect(redirectUrl);
+                
+                // Manually copy session cookies to the redirect response
+                const sessionCookie = session.headers?.get('set-cookie');
+                if (sessionCookie) {
+                    console.log('[X_CALLBACK] Forwarding session cookie to redirect response.');
+                    redirectResponse.headers.set('set-cookie', sessionCookie);
+                }
+
+                return redirectResponse;
             } catch (error) {
                 await client.query('ROLLBACK');
-                console.error('Transaction failed, rolling back:', error);
-                return new NextResponse('Failed to link X account due to a database error', { status: 500 });
+                console.error('[X_CALLBACK] Transaction failed, rolling back. Error:', error);
+                if (error instanceof Error) {
+                    console.error(`[X_CALLBACK] Error name: ${error.name}`);
+                    console.error(`[X_CALLBACK] Error message: ${error.message}`);
+                    console.error(`[X_CALLBACK] Error stack: ${error.stack}`);
+                }
+                return new NextResponse(`Failed to link X account due to a database error: ${error instanceof Error ? error.message : 'Unknown error'}`, { status: 500 });
             } finally {
+                console.log('[X_CALLBACK] Releasing database client.');
                 client.release();
             }
         }

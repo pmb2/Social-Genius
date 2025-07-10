@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/context";
 
 export default function DashboardPage() {
+    // console.log("[DASHBOARD] DashboardPage component rendered.");
     const router = useRouter();
     const [isLoading, setIsLoading] = useState(true);
     const [businessCount, setBusinessCount] = useState(0);

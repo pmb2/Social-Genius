@@ -6,6 +6,8 @@ export async function GET(req: NextRequest) {
     try {
         const session = await auth();
 
+        console.log('[BUSINESSES] Server-side request headers cookie:', req.headers.get('cookie'));
+
         if (!session || !session.user || !session.user.id) {
             return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
         }
@@ -13,6 +15,8 @@ export async function GET(req: NextRequest) {
     const userId = parseInt(session.user.id);
         const dbService = PostgresService.getInstance();
         const businesses = await dbService.getBusinessesForUser(userId);
+
+        console.log('[BUSINESSES] Fetched businesses:', JSON.stringify(businesses, null, 2));
 
         return NextResponse.json({ success: true, businesses });
     } catch (error) {

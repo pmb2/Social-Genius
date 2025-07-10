@@ -41,7 +41,15 @@ fi
 
 # Stop existing containers but preserve volumes for database persistence
 echo -e "${YELLOW}Stopping all existing containers but preserving database volumes...${NC}"
-docker-compose -f docker-compose.dev.yml down --remove-orphans # Removed the -v flag to preserve volumes
+docker-compose -f docker-compose.dev.yml down --remove-orphans
+
+# Ensure named volumes exist (Docker will reuse if they already exist)
+docker volume create ${PROJECT_NAME}_postgres_data 2>/dev/null || true
+docker volume create ${PROJECT_NAME}_redis_data 2>/dev/null || true
+
+# Explicitly remove named volumes to ensure a clean state
+# echo -e "${YELLOW}Removing Docker volumes to ensure a clean database state...${NC}"
+# # docker volume rm -f ${PROJECT_NAME}_postgres_data ${PROJECT_NAME}_redis_data 2>/dev/null || true
 
 # Remove any stale networks
 echo -e "${YELLOW}Removing any stale Docker networks...${NC}"
@@ -447,6 +455,9 @@ if [ ! -f .env ]; then
 fi
 
 # Rebuild the images
+echo -e "${YELLOW}Clearing Docker build cache...${NC}"
+docker builder prune -f
+
 echo -e "${YELLOW}Rebuilding all containers with no cache...${NC}"
 if [ -f docker-compose.override.yml ]; then
   echo -e "${YELLOW}Using custom port configuration for build...${NC}"

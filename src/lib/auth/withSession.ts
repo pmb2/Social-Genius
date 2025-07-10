@@ -1,6 +1,5 @@
-import { IronSessionOptions } from 'iron-session';
+import { getIronSession, IronSessionOptions } from 'iron-session';
 import { cookies } from 'next/headers';
-import { getIronSession } from 'iron-session';
 
 export interface SessionData {
     id: number;
@@ -15,13 +14,10 @@ declare module 'iron-session' {
 export const sessionOptions: IronSessionOptions = {
     cookieName: 'social_genius_session',
     password: process.env.IRON_SESSION_SECRET as string,
-    // Log the secret to ensure it's loaded
-    // console.log('IRON_SESSION_SECRET (first 5 chars):', process.env.IRON_SESSION_SECRET?.substring(0, 5));
     cookieOptions: {
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax',
-        domain: process.env.NODE_ENV === 'development' ? 'localhost' : undefined, // Explicitly set domain for development
-        path: '/', // Ensure cookie is valid for all paths
+        domain: undefined,
     },
 };
 

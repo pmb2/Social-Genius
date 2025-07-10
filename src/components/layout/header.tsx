@@ -49,6 +49,7 @@ export function Header({ businessCount = 0 }: HeaderProps) {
     }
     
     try {
+      console.log('Client-side document.cookie before fetching notification count:', document.cookie);
       const response = await fetch('/api/notifications/count', {
         method: 'GET',
         headers: {

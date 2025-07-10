@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import AuthService from '@/services/auth/auth-service';
+import { getIronSession } from 'iron-session';
+import { sessionOptions, SessionData } from '@/lib/auth/session';
+import { cookies } from 'next/headers';
 
 // Specify that this route runs on the Node.js runtime, not Edge
 export const runtime = 'nodejs';
@@ -17,9 +20,11 @@ export async function GET(request: NextRequest) {
     const isSilentCheck = request.headers.get('X-Session-Check') === 'silent';
     const isQuietCheck = request.headers.get('X-Session-Check') === 'quiet';
     
-    // Try to get cookie-based session info - check both cookies for compatibility
-    const sessionCookie = request.cookies.get('session') || request.cookies.get('sessionId');
+    // Get session from iron-session
+    const session = await getIronSession<SessionData>(cookies(), sessionOptions);
+
     const allCookieKeys = Array.from(request.cookies.getAll()).map(c => c.name).join(', ');
+    console.log(`[SESSION_API] ${timestamp} - Raw incoming cookie header: ${request.headers.get('cookie')}`);
     
     console.log(`[SESSION_API] ${timestamp} - Session request from ${request.nextUrl.toString()}`);
     console.log(`[SESSION_API] ${timestamp} - Request headers:`);
@@ -30,81 +35,52 @@ export async function GET(request: NextRequest) {
     console.log(`[SESSION_API] ${timestamp} - Origin: ${request.headers.get('origin') || 'none'}`);
     console.log(`[SESSION_API] ${timestamp} - Referer: ${request.headers.get('referer') || 'none'}`);
     console.log(`[SESSION_API] ${timestamp} - Cookie presence: ${allCookieKeys || 'no cookies'}`);
-    console.log(`[SESSION_API] ${timestamp} - Session cookie: ${sessionCookie ? `found (${sessionCookie.name})` : 'not found'}`);
+    console.log(`[SESSION_API] ${timestamp} - Session cookie: ${session.isLoggedIn ? `found (social_genius_session)` : 'not found'}`);
     
-    if (sessionCookie && sessionCookie.value) {
-      console.log(`[SESSION_API] ${timestamp} - Session cookie value: ${sessionCookie.value.substring(0, 8)}...`);
-      
+    if (session.isLoggedIn && session.id) {
+      console.log(`[SESSION_API] ${timestamp} - Session ID from iron-session: ${session.id}`);
       
       try {
-        // Use our existing AuthService to validate the session
         const authService = AuthService.getInstance();
-        console.log(`[SESSION_API] ${timestamp} - Verifying session with AuthService...`);
-        // The verifySession method will also update the last_login timestamp
-        const session = await authService.verifySession(sessionCookie.value);
+        // Directly get user from DB using the session ID from iron-session
+        console.log(`[SESSION_API] ${timestamp} - Verifying session for session.id: ${session.id}`);
+        const user = await authService.verifySession(session.id);
+        console.log(`[SESSION_API] ${timestamp} - User object after verifySession: ${JSON.stringify(user)}`);
+        console.log(`[SESSION_API] ${timestamp} - User returned from verifySession: ${user ? user.id : 'null'}`);
         
-        if (session && session.user) {
-          // Create the response with the authenticated user
-          let responseData: { authenticated: boolean; timestamp: string; user?: { id: string; email: string; name: string | null | undefined; profilePicture: string | undefined; phoneNumber: string | undefined; }; } = {
+        if (user) {
+          console.log(`[SESSION_API] ${timestamp} - User data from verifySession: ${JSON.stringify(user)}`);
+          // Update last login timestamp
+          await authService.getDatabase().updateLastLogin(user.id);
+
+          let responseData: { authenticated: boolean; timestamp: string; user?: { id: number; email: string; name: string | null | undefined; profilePicture: string | undefined; phoneNumber: string | undefined; }; } = {
             authenticated: true,
             timestamp: timestamp,
             user: undefined
           };
           
-          // Only include user data for non-silent checks
           if (!isSilentCheck) {
             responseData = {
               ...responseData,
               user: {
-                id: session.user.id,
-                email: session.user.email,
-                name: session.user.name || "",
-                profilePicture: session.user.profilePicture,
-                phoneNumber: session.user.phoneNumber
+                id: user.id,
+                email: user.email,
+                name: user.name || "",
+                profilePicture: user.profile_picture,
+                phoneNumber: user.phone_number
               }
             };
           }
           
           const response = NextResponse.json(responseData);
           
-          // Add cache control headers to prevent automatic refreshes
           response.headers.set('Cache-Control', 'private, max-age=60');
           response.headers.set('X-Session-Updated', new Date().toISOString());
           
-          // Maximize the session cookie lifetime on each verification
-          // This effectively creates a sliding session that stays active as long as the user is active
+          // Save the session to update its expiration (sliding session)
+          await session.save();
+          console.log(`[SESSION_API] ${timestamp} - Session saved (expiration updated)`);
           
-          console.log(`[SESSION_API] ${timestamp} - Refreshing session cookies...`);
-          
-          // Use authService's cookie options function and pass the request headers
-          // This ensures cookie settings are consistent throughout the app
-          const cookieSettings = authService.getSessionCookieOptions(30 * 24 * 60 * 60 * 1000, request.headers);
-          
-          const options = {
-            secure: cookieSettings.options.secure,
-            httpOnly: cookieSettings.options.httpOnly,
-            sameSite: cookieSettings.options.sameSite,
-            // Use a very long expiration to prevent expiry during active usage
-            maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days in seconds
-          };
-          
-          // Re-add the session cookie to ensure it doesn't expire
-          response.cookies.set(sessionCookie.name, sessionCookie.value, options);
-          console.log(`[SESSION_API] ${timestamp} - Set cookie: ${sessionCookie.name} (value: ${sessionCookie.value.substring(0, 8)}...)`);
-          
-          // Also set the other cookie format for compatibility
-          const otherCookieName = sessionCookie.name === 'session' ? 'sessionId' : 'session';
-          response.cookies.set(otherCookieName, sessionCookie.value, options);
-          console.log(`[SESSION_API] ${timestamp} - Set compatibility cookie: ${otherCookieName}`);
-          
-          // Log the full cookie details for debugging
-          console.log(`[SESSION_API] ${timestamp} - Cookie options used:`, JSON.stringify(options));
-          console.log(`[SESSION_API] ${timestamp} - Response cookie headers set: ${response.headers.has('set-cookie') ? 'yes' : 'no'}`);
-          if (response.headers.has('set-cookie')) {
-            console.log(`[SESSION_API] ${timestamp} - Set-Cookie header: ${response.headers.get('set-cookie')?.substring(0, 100)}...`);
-          }
-          
-          // Log the cookie renewal (only in development and not for silent checks)
           if (process.env.NODE_ENV === 'development' && !isSilentCheck && !isQuietCheck) {
             console.log(`Session cookie renewed, expires in 30 days`);
           }
@@ -112,11 +88,12 @@ export async function GET(request: NextRequest) {
           return response;
         }
       } catch (sessionError) {
-        // Silent error handling for session endpoint
+        console.error(`[SESSION_API] ${timestamp} - Error verifying session or fetching user:`, sessionError);
+        // Invalidate session if there's an error fetching user
+        session.destroy();
       }
     }
     
-    // For silent checks, always return success to avoid disrupting the UI
     if (isSilentCheck) {
       return NextResponse.json({
         acknowledged: true,
@@ -124,20 +101,15 @@ export async function GET(request: NextRequest) {
       });
     }
     
-    // No valid session
     return NextResponse.json({
       authenticated: false,
       user: null,
       timestamp: timestamp
     });
   } catch (error) {
-    // Create a new timestamp for the error handling section
     const errorTimestamp = new Date().toISOString();
-    
-    // Check if this is a silent session check (used when modals are open)
     const isSilentCheck = request.headers.get('X-Session-Check') === 'silent';
     
-    // For silent checks, never log errors or disrupt the UI
     if (isSilentCheck) {
       return NextResponse.json({
         acknowledged: true,
@@ -148,13 +120,8 @@ export async function GET(request: NextRequest) {
     console.error(`[SESSION_API] ${errorTimestamp} - Error in session endpoint:`, error);
     console.error(`[SESSION_API] ${errorTimestamp} - Error stack:`, error instanceof Error ? error.stack : 'No stack');
     
-    // Return a simple 200 response for favicon requests to avoid console errors
     if (request.nextUrl.pathname.includes('favicon.ico')) {
-      return NextResponse.json({
-        authenticated: false,
-        user: null,
-        timestamp: errorTimestamp
-      });
+      return new NextResponse(null, { status: 204 });
     }
     
     return NextResponse.json({

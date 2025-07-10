@@ -9,13 +9,13 @@ interface XUser {
   username: string;
 }
 
-async function exchangeCodeForToken(code: string) {
+async function exchangeCodeForToken(code: string, codeVerifier: string) {
   const params = new URLSearchParams({
     code,
     grant_type: 'authorization_code',
     client_id: process.env.X_CLIENT_ID as string,
     redirect_uri: process.env.X_REDIRECT_URI as string,
-    code_verifier: 'challenge',
+    code_verifier: codeVerifier,
   });
 
   const response = await fetch('https://api.twitter.com/2/oauth2/token', {
@@ -50,10 +50,17 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const session = await getIronSession<SessionData>(cookies(), sessionOptions);
+    const codeVerifier = session.codeVerifier;
+
+    if (!code || !state || !codeVerifier) {
+        return new NextResponse('Invalid request or missing code verifier', { status: 400 });
+    }
+
     const decodedState = verify(state, process.env.JWT_SECRET as string) as { flow: string; userId?: string };
     const { flow, userId } = decodedState;
 
-    const tokenData = await exchangeCodeForToken(code);
+    const tokenData = await exchangeCodeForToken(code, codeVerifier);
     if (tokenData.error) {
       console.error('Error exchanging code for token:', tokenData.error);
       return NextResponse.redirect('/auth/login?error=x_oauth_failed');

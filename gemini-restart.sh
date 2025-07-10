@@ -42,7 +42,15 @@ fi
 # Stop existing containers but preserve volumes for database persistence
 echo -e "${YELLOW}Stopping all existing containers but preserving database volumes...${NC}"
 # Stop existing containers and remove volumes for a clean database state
-docker-compose -f docker-compose.dev.yml down --volumes --remove-orphans
+docker-compose -f docker-compose.dev.yml down --remove-orphans
+
+# Ensure named volumes exist (Docker will reuse if they already exist)
+docker volume create ${PROJECT_NAME}_postgres_data 2>/dev/null || true
+docker volume create ${PROJECT_NAME}_redis_data 2>/dev/null || true
+
+# # Explicitly remove named volumes to ensure a clean state
+# echo -e "${YELLOW}Removing Docker volumes to ensure a clean database state...${NC}"
+# docker volume rm -f ${PROJECT_NAME}_postgres_data ${PROJECT_NAME}_redis_data 2>/dev/null || true
 
 # Remove any stale networks
 echo -e "${YELLOW}Removing any stale Docker networks...${NC}"

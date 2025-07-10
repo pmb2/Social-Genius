@@ -19,6 +19,7 @@ services:
       REDIS_URL: redis://host.docker.internal:6380
       REDIS_PREFIX: "social-genius:dev:"
       SESSION_TTL: 86400
+      IRON_SESSION_SECRET: "your_very_long_and_random_secret_key_here_at_least_32_characters"
     volumes:
       - .:/app
       - /app/node_modules

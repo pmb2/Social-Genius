@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { getIronSession } from 'iron-session';
+import { sessionOptions, SessionData } from '@/lib/auth/session';
+import { cookies } from 'next/headers';
 
 // Specify server-side runtime for this middleware
 export const runtime = 'nodejs';
@@ -18,18 +21,27 @@ const publicRoutes = [
   '/favicon.ico',
   '/check-db',
   '/debug',
-  '/_next'
+  '/_next',
+  '/api/businesses'
 ];
 
 export async function middleware(request: NextRequest) {
   // Get path
   const pathname = request.nextUrl.pathname;
+  console.log('Middleware executing for path:', pathname);
   
   // Check if the pathname starts with any of the public routes
   const isPublicRoute = publicRoutes.some((route) => 
     pathname === route || pathname.startsWith(`${route}/`)
   );
+  console.log(`Middleware: Pathname: ${pathname}, IsPublicRoute: ${isPublicRoute}`);
   
+  // Get session from iron-session
+  const session = await getIronSession<SessionData>(cookies(), sessionOptions);
+  console.log(`Middleware: Raw Cookie Header: ${request.headers.get('cookie')}`);
+  console.log(`Middleware: Session isLoggedIn: ${session.isLoggedIn}`);
+  console.log(`Middleware: Session ID: ${session.id}`);
+
   // Enhanced logging for session and protocol debugging
   const enableMiddlewareLogging = process.env.DEBUG_MIDDLEWARE === 'true' || process.env.DEBUG_SESSION === 'true';
   const timestamp = new Date().toISOString();
@@ -45,11 +57,8 @@ export async function middleware(request: NextRequest) {
     // Public route - no need to log
     response = NextResponse.next();
   } else {
-    // Get session cookie (check both 'session' and 'sessionId' for compatibility)
-    const sessionCookie = request.cookies.get('session')?.value || request.cookies.get('sessionId')?.value;
-    
-    // If there's no session cookie and it's not a public route, redirect to auth page
-    if (!sessionCookie) {
+    // If there's no session and it's not a public route, redirect to auth page
+    if (!session.isLoggedIn) {
       const url = new URL('/auth', request.url);
       url.searchParams.set('callbackUrl', pathname);
       url.searchParams.set('reason', 'no_session');

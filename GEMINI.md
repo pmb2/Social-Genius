@@ -35,3 +35,4 @@ To rebuild and restart the Social Genius application in development mode, simply
 *   **Port Changes**: If the script reassigns ports due to conflicts, it will inform you and update `docker-compose.override.yml`. You should use the reported URLs (e.g., `http://localhost:XXXX`) to access the application.
 *   **`.env` File**: If a `.env` file is created, remember to open it and fill in your actual API keys and secrets as required.
 *   **Troubleshooting**: If the application is not working after the script has finished, you can inspect container logs manually using `docker-compose logs <service_name>`. do not use -f or stream the logs output.
+*   **User Execution**: The user restarts the application via the `rebuild-dev.sh` script, so ensure that it is in sync with your `gemini-restart.sh` script and visa-versa.

@@ -219,8 +219,8 @@ export default function AuthPage() {
                         {isLogin ? (
                             /* Login View */
                             <>
-                                <h2 className="text-white text-4xl font-bold mb-14 text-center whitespace-nowrap">Member
-                                    Log In</h2>
+                                <h1 className="text-white text-4xl font-bold mb-14 text-center whitespace-nowrap">Member
+                                    Log In</h1>
 
                                 <form className="w-full max-w-md space-y-6" onSubmit={handleLogin}>
                                     <div className="mb-4">
@@ -298,7 +298,7 @@ export default function AuthPage() {
                                 <div className="mt-12 text-center w-full">
                                     <button
                                         onClick={() => handleXLogin('login')}
-                                        className="flex items-center justify-center gap-3 w-full max-w-md mx-auto bg-black hover:bg-gray-900 text-white font-medium py-4 px-8 rounded-full transition duration-200 text-lg focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
+                                        className="flex items-center justify-center w-full max-w-md mx-auto bg-black hover:bg-gray-900 text-white font-medium py-4 px-8 rounded-full transition duration-200 text-lg focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
                                     >
                                         <span>Sign in to</span>
                                         <XLogo className="w-6 h-6" />
@@ -320,9 +320,9 @@ export default function AuthPage() {
                         ) : (
                             /* Signup View */
                             <>
-                                <h2 className="text-white text-4xl font-bold tracking-wide mb-10 text-center whitespace-nowrap">
+                                <h1 className="text-white text-4xl font-bold tracking-wide mb-10 text-center whitespace-nowrap">
                                     Create Your Account
-                                </h2>
+                                </h1>
 
                                 <form className="w-full max-w-md flex flex-col gap-[5px]" onSubmit={handleSignup}>
                                     <div className="mb-4">
@@ -429,7 +429,7 @@ export default function AuthPage() {
                                     <p className="text-white text-lg mb-4">Or sign up with</p>
                                     <button
                                         onClick={() => handleXLogin('register')}
-                                        className="flex items-center justify-center gap-3 w-full max-w-md mx-auto bg-black hover:bg-gray-900 text-white font-medium py-4 px-8 rounded-full transition duration-200 text-lg focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
+                                        className="flex items-center justify-center w-full max-w-md mx-auto bg-black hover:bg-gray-900 text-white font-medium py-4 px-8 rounded-full transition duration-200 text-lg focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
                                     >
                                         <span>Sign up with</span>
                                         <XLogo className="w-6 h-6" />

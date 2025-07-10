@@ -188,6 +188,7 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
             if (typeof document !== 'undefined') {
                 // Check if session cookie exists
                 const hasCookie = document.cookie.includes('session=') || document.cookie.includes('sessionId=');
+                log(`Client-side document.cookie: ${document.cookie}`, 'info');
                 if (!hasCookie) {
                     log('Session cookie not found, refreshing session before API call', 'warn');
                     try {
@@ -488,15 +489,13 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
                                         </div>
                                     </TableHead>
                                     <TableHead
-                                        className="text-white font-normal text-base text-right py-4">Status</TableHead>
-                                    {/* ADDED NEW TABLE HEADERS FOR SOCIAL ACCOUNTS */}
-                                    <TableHead className="text-white font-normal text-base text-center py-4">Social Accounts</TableHead>
+                                        className="text-white font-normal text-base text-right py-4 pr-4">Status</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {isLoading ? (
                                     <TableRow>
-                                        <TableCell colSpan={3} className="text-center py-8"> {/* Adjusted colspan */}
+                                        <TableCell colSpan={2} className="text-center py-8">
                                             <div className="flex justify-center">
                                                 <div
                                                     className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
@@ -506,7 +505,7 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
                                 ) : error || businesses.length === 0 ? (
                                     <TableRow className="cursor-pointer hover:bg-gray-50"
                                               onClick={handleAddBusinessClick}>
-                                        <TableCell colSpan={3} className="text-center py-10"> {/* Adjusted colspan */}
+                                        <TableCell colSpan={2} className="text-center py-10">
                                             <div className="flex flex-col items-center">
                                                 <div
                                                     className="bg-gradient-to-r from-[#FFAB1A] via-[#FF1681] to-[#0080FF] p-[2px] rounded-lg mb-4">
@@ -553,26 +552,12 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
                                                     <StatusIndicator status={business.status}/>
                                                 </div>
                                             </TableCell>
-                                            {/* NEW TABLE CELL FOR SOCIAL ACCOUNTS */}
-                                            <TableCell className="text-center py-4">
-                                                <div className="flex justify-center space-x-2">
-                                                    {business.socialAccounts && business.socialAccounts.map(account => (
-                                                        <span key={account.id} className="text-gray-600" title={account.username || account.platform}>
-                                                            {account.platform === 'twitter' && <i className="fa-brands fa-x-twitter h-5 w-5 text-black"></i>}
-                                                            {/* Add other social icons here */}
-                                                        </span>
-                                                    ))}
-                                                    {(!business.socialAccounts || business.socialAccounts.length === 0) && (
-                                                        <span className="text-gray-400 text-sm">None</span>
-                                                    )}
-                                                </div>
-                                            </TableCell>
                                         </TableRow>
                                     ))
                                 )}
                                 {businesses.length > 10 && (
                                     <TableRow>
-                                        <TableCell colSpan={3} className="text-center py-4"> {/* Adjusted colspan */}
+                                        <TableCell colSpan={2} className="text-center py-4">
                                             <Button
                                                 variant="ghost"
                                                 className="text-sm text-gray-500 hover:text-black"

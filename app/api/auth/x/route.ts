@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { getIronSession } from 'iron-session';
-import { sessionOptions, SessionData } from '@/lib/auth/session';
-import { cookies } from 'next/headers';
+import { getSession, SessionData } from '@/lib/auth/session';
 import crypto from 'crypto';
 
 export async function GET(req: NextRequest) {
@@ -27,7 +25,7 @@ export async function GET(req: NextRequest) {
     });
 
     // Store code verifier in session
-    const session = await getIronSession<SessionData>(cookies(), sessionOptions);
+    const session = await getSession();
     session.codeVerifier = codeVerifier;
     await session.save();
 

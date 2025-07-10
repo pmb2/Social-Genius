@@ -13,11 +13,14 @@ function generateRandomString(length: number) {
 }
 
 // Utility function to sha256 hash and base64url encode
-async function sha256(plain: string) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(plain);
-    const hash = await crypto.subtle.digest('SHA-256', data);
-    return Buffer.from(hash).toString('base64url');
+function sha256(plain: string) {
+    return crypto
+        .createHash('sha256')
+        .update(plain)
+        .digest('base64')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
 }
 
 export async function GET(req: NextRequest) {
@@ -52,7 +55,7 @@ export async function GET(req: NextRequest) {
         code_challenge_method: 'S256'
     });
 
-    const authUrl = `https://x.com/i/oauth2/authorize?${params.toString()}`;
+    const authUrl = `https://twitter.com/i/oauth2/authorize?${params.toString()}`;
 
     return NextResponse.redirect(authUrl);
 }
