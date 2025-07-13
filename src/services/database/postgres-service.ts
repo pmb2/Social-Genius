@@ -9,15 +9,15 @@ import { OpenAIEmbeddings } from '@langchain/openai';
  * Interface for a social media account linked to a user.
  */
 export interface SocialAccount {
-  id: number;
-  user_id: number;
+  id: string; // Changed to string for UUID
+  user_id: string; // Changed to string for UUID
   platform: 'twitter' | 'facebook' | 'instagram' | 'linkedin';
   platform_user_id: string;
   username: string;
   access_token: string;
   refresh_token?: string;
   expires_at?: Date;
-  business_id?: string; // Optional, links to businesses table
+  business_id?: string; // Optional, links to businesses table (UUID)
   created_at: Date;
   updated_at: Date;
 }
@@ -350,7 +350,9 @@ class PostgresService {
       await client.query('BEGIN');
       await client.query(`
         CREATE TABLE IF NOT EXISTS users (
-          id SERIAL PRIMARY KEY,
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          email TEXT UNIQUE NOT NULL,
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           email TEXT UNIQUE NOT NULL,
           name TEXT,
           password_hash TEXT NOT NULL,
@@ -374,7 +376,7 @@ class PostgresService {
       await client.query(`
         CREATE TABLE IF NOT EXISTS sessions (
           id SERIAL PRIMARY KEY,
-          user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          user_id UUID REFERENCES users(id) ON DELETE CASCADE,
           session_id TEXT UNIQUE NOT NULL,
           created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
           expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -393,9 +395,9 @@ class PostgresService {
       await client.query('BEGIN');
       await client.query(`
         CREATE TABLE IF NOT EXISTS businesses (
-          id SERIAL PRIMARY KEY,
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           business_id TEXT UNIQUE NOT NULL,
-          user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          user_id UUID REFERENCES users(id) ON DELETE CASCADE,
           name TEXT NOT NULL,
           status TEXT DEFAULT 'active',
           google_auth_status VARCHAR(50) DEFAULT 'not_connected',
@@ -418,7 +420,7 @@ class PostgresService {
       await client.query('BEGIN');
       await client.query(`
         CREATE TABLE IF NOT EXISTS social_accounts (
-          id SERIAL PRIMARY KEY,
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
           platform VARCHAR(50) NOT NULL,
           platform_user_id TEXT UNIQUE NOT NULL,
@@ -444,11 +446,11 @@ class PostgresService {
       await client.query('BEGIN');
       await client.query(`
         CREATE TABLE IF NOT EXISTS documents (
-          id SERIAL PRIMARY KEY,
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           document_id TEXT UNIQUE NOT NULL,
           title TEXT,
           content TEXT,
-          user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          user_id UUID REFERENCES users(id) ON DELETE CASCADE,
           business_id TEXT REFERENCES businesses(business_id) ON DELETE CASCADE,
           metadata JSONB,
           created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -467,8 +469,8 @@ class PostgresService {
       await client.query('BEGIN');
       await client.query(`
         CREATE TABLE IF NOT EXISTS document_chunks (
-          id SERIAL PRIMARY KEY,
-          document_id TEXT,
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          document_id UUID,
           chunk_index INTEGER,
           content TEXT,
           embedding VECTOR(1536),
@@ -522,9 +524,9 @@ class PostgresService {
       await client.query('BEGIN');
       await client.query(`
         CREATE TABLE IF NOT EXISTS task_logs (
-          id SERIAL PRIMARY KEY,
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           task_id VARCHAR(255) NOT NULL,
-          business_id VARCHAR(255) NOT NULL,
+          business_id UUID NOT NULL,
           task_type VARCHAR(50) NOT NULL,
           status VARCHAR(50) NOT NULL DEFAULT 'in_progress',
           result TEXT,
@@ -546,8 +548,8 @@ class PostgresService {
       await client.query('BEGIN');
       await client.query(`
         CREATE TABLE IF NOT EXISTS notifications (
-          id SERIAL PRIMARY KEY,
-          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
           title TEXT NOT NULL,
           message TEXT NOT NULL,
           notification_type TEXT NOT NULL CHECK (notification_type IN ('info', 'success', 'warning', 'alert')),
@@ -615,7 +617,7 @@ class PostgresService {
   /**
    * Get a user by ID
    */
-  public async getUserById(userId: number): Promise<any | null> {
+  public async getUserById(userId: string): Promise<any | null> {
     try {
       const result = await this.pool.query(
         'SELECT * FROM users WHERE id = $1',
@@ -632,7 +634,7 @@ class PostgresService {
   /**
    * Register a new user
    */
-  public async registerUser(email: string, passwordHash: string, name?: string): Promise<number> {
+  public async registerUser(email: string, passwordHash: string, name?: string): Promise<string> {
     const client = await this.pool.connect();
     try {
       console.log('Database registerUser called with:', { email, hasHash: !!passwordHash, name });
@@ -665,7 +667,7 @@ class PostgresService {
       );
       
       console.log('User registered with ID:', result.rows[0].id);
-      return result.rows[0].id;
+      return result.rows[0].id as string;
     } catch (error) {
       console.error('Error registering user:', error);
       throw error;
@@ -677,7 +679,7 @@ class PostgresService {
   /**
    * Update user profile information
    */
-  public async updateUserProfile(userId: number, updates: { name?: string, email?: string, profilePicture?: string, phoneNumber?: string }): Promise<boolean> {
+  public async updateUserProfile(userId: string, updates: { name?: string, email?: string, profilePicture?: string, phoneNumber?: string }): Promise<boolean> {
     try {
       // Build the SET clause dynamically based on provided updates
       const setClause = [];
@@ -733,7 +735,7 @@ class PostgresService {
   /**
    * Create a new session for a user
    */
-  public async createSession(userId: number, sessionId: string, expiresAt: Date): Promise<boolean> {
+  public async createSession(userId: string, sessionId: string, expiresAt: Date): Promise<boolean> {
     try {
       // First check if the session already exists
       const existingSession = await this.pool.query(
@@ -823,7 +825,7 @@ class PostgresService {
   /**
    * Update the last login timestamp for a user
    */
-  public async updateLastLogin(userId: number): Promise<boolean> {
+  public async updateLastLogin(userId: string): Promise<boolean> {
     try {
       const result = await this.pool.query(
         'UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = $1 RETURNING id',
@@ -855,7 +857,8 @@ class PostgresService {
   /**
    * Add a business for a user
    */
-  public async addBusinessForUser(userId: number, businessName: string, businessId?: string, client?: any): Promise<string> {
+  public async addBusinessForUser(userId: string, businessName: string, businessId?: string, client?: any): Promise<{ success: boolean; businessId?: string; error?: string }> {
+    console.log(`[BUSINESS] Adding business "${businessName}" for user ID: ${userId}`);
     const dbClient = client || await this.pool.connect();
     try {
       // Use provided business ID or generate a unique one
@@ -864,7 +867,7 @@ class PostgresService {
       const result = await dbClient.query(
         `INSERT INTO businesses (business_id, user_id, name, status, created_at, updated_at)
          VALUES ($1, $2, $3, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-         RETURNING id`,
+         RETURNING business_id`,
         [finalBusinessId, userId, businessName]
       );
       
@@ -872,9 +875,10 @@ class PostgresService {
         throw new Error('Failed to create business record');
       }
       
-      return finalBusinessId;
+      console.log(`[BUSINESS] Successfully added business with ID: ${finalBusinessId}`);
+      return { success: true, businessId: finalBusinessId };
     } catch (error) {
-      console.error('Error adding business for user:', error);
+      console.error('[BUSINESS] Error adding business for user:', error);
       throw error;
     } finally {
       if (!client) {
@@ -886,7 +890,8 @@ class PostgresService {
   /**
    * Get businesses for a user
    */
-  public async getBusinessesForUser(userId: number): Promise<any[]> {
+  public async getBusinessesForUser(userId: string): Promise<any[]> {
+    console.log(`[BUSINESS] Fetching businesses for user ID: ${userId}`);
     try {
       const result = await this.pool.query(
         `SELECT id, business_id as "businessId", name, status, created_at as "createdAt"
@@ -896,9 +901,10 @@ class PostgresService {
         [userId]
       );
       
+      console.log(`[BUSINESS] Found ${result.rows.length} businesses for user ID: ${userId}`);
       return result.rows;
     } catch (error) {
-      console.error('Error getting businesses for user:', error);
+      console.error('[BUSINESS] Error getting businesses for user:', error);
       return [];
     }
   }
@@ -1020,7 +1026,7 @@ class PostgresService {
    * @returns The notification ID
    */
   public async createNotification(
-    userId: number,
+    userId: string,
     title: string,
     message: string,
     type: 'info' | 'success' | 'warning' | 'alert'
@@ -1041,8 +1047,8 @@ class PostgresService {
       if (!tableExists) {
         await this.pool.query(`
           CREATE TABLE IF NOT EXISTS notifications (
-            id SERIAL PRIMARY KEY,
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             title TEXT NOT NULL,
             message TEXT NOT NULL,
             notification_type TEXT NOT NULL CHECK (notification_type IN ('info', 'success', 'warning', 'alert')),
@@ -1075,7 +1081,7 @@ class PostgresService {
    * Get all user IDs from the database
    * @returns Array of user IDs
    */
-  public async getAllUserIds(): Promise<number[]> {
+  public async getAllUserIds(): Promise<string[]> {
     try {
       const result = await this.pool.query(
         'SELECT id FROM users'
@@ -1096,7 +1102,7 @@ class PostgresService {
    * @returns Array of notifications
    */
   public async getNotifications(
-    userId: number,
+    userId: string,
     limit: number = 50,
     unreadOnly: boolean = false
   ): Promise<any[]> {
@@ -1134,7 +1140,7 @@ class PostgresService {
    * @param userId The user ID
    * @returns The count of unread notifications
    */
-  public async getUnreadNotificationCount(userId: number): Promise<number> {
+  public async getUnreadNotificationCount(userId: string): Promise<number> {
     try {
       // Check if notifications table exists
       const tableCheckResult = await this.pool.query(
@@ -1170,7 +1176,7 @@ class PostgresService {
    * @param userId The user ID (for security)
    * @returns Whether the operation was successful
    */
-  public async markNotificationAsRead(notificationId: number, userId: number): Promise<boolean> {
+  public async markNotificationAsRead(notificationId: number, userId: string): Promise<boolean> {
     try {
       const result = await this.pool.query(
         `UPDATE notifications 
@@ -1192,7 +1198,7 @@ class PostgresService {
    * @param userId The user ID
    * @returns The number of notifications marked as read
    */
-  public async markAllNotificationsAsRead(userId: number): Promise<number> {
+  public async markAllNotificationsAsRead(userId: string): Promise<number> {
     try {
       const result = await this.pool.query(
         `UPDATE notifications 
@@ -1215,7 +1221,7 @@ class PostgresService {
    * @param userId The user ID (for security)
    * @returns Whether the operation was successful
    */
-  public async deleteNotification(notificationId: number, userId: number): Promise<boolean> {
+  public async deleteNotification(notificationId: number, userId: string): Promise<boolean> {
     try {
       const result = await this.pool.query(
         `DELETE FROM notifications 
@@ -1237,7 +1243,7 @@ class PostgresService {
    * Otherwise, it inserts a new one.
    */
   public async upsertSocialAccount(
-    userId: number,
+    userId: string,
     platform: SocialAccount['platform'],
     platformUserId: string,
     username: string,
@@ -1271,7 +1277,7 @@ class PostgresService {
   /**
    * Get all social accounts for a given user ID.
    */
-  public async getSocialAccountsByUserId(userId: number): Promise<SocialAccount[]> {
+  public async getSocialAccountsByUserId(userId: string): Promise<SocialAccount[]> {
     try {
       const result = await this.pool.query(
         `SELECT * FROM social_accounts WHERE user_id = $1`,
@@ -1303,7 +1309,7 @@ class PostgresService {
   /**
    * Update the business_id for a specific social account.
    */
-  public async updateSocialAccountBusinessId(socialAccountId: number, businessId: string | null): Promise<boolean> {
+  public async updateSocialAccountBusinessId(socialAccountId: string, businessId: string | null): Promise<boolean> {
     try {
       const result = await this.pool.query(
         `UPDATE social_accounts SET business_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
@@ -1319,7 +1325,7 @@ class PostgresService {
   /**
    * Delete a social account by its ID.
    */
-  public async deleteSocialAccount(socialAccountId: number): Promise<boolean> {
+  public async deleteSocialAccount(socialAccountId: string): Promise<boolean> {
     try {
       const result = await this.pool.query(
         `DELETE FROM social_accounts WHERE id = $1 RETURNING id`,
@@ -1372,7 +1378,7 @@ class PostgresService {
    * Add a linked account for X (Twitter)
    */
   public async addLinkedAccount(accountData: {
-    userId: string | number;
+    userId: string;
     businessId: string;
     xAccountId: string;
     xUsername: string;

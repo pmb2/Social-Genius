@@ -41,16 +41,15 @@ fi
 
 # Stop existing containers but preserve volumes for database persistence
 echo -e "${YELLOW}Stopping all existing containers but preserving database volumes...${NC}"
-# Stop existing containers and remove volumes for a clean database state
 docker-compose -f docker-compose.dev.yml down --remove-orphans
 
 # Ensure named volumes exist (Docker will reuse if they already exist)
 docker volume create ${PROJECT_NAME}_postgres_data 2>/dev/null || true
 docker volume create ${PROJECT_NAME}_redis_data 2>/dev/null || true
 
-# # Explicitly remove named volumes to ensure a clean state
+# Explicitly remove named volumes to ensure a clean state
 # echo -e "${YELLOW}Removing Docker volumes to ensure a clean database state...${NC}"
-# docker volume rm -f ${PROJECT_NAME}_postgres_data ${PROJECT_NAME}_redis_data 2>/dev/null || true
+# # docker volume rm -f ${PROJECT_NAME}_postgres_data ${PROJECT_NAME}_redis_data 2>/dev/null || true
 
 # Remove any stale networks
 echo -e "${YELLOW}Removing any stale Docker networks...${NC}"
@@ -72,7 +71,7 @@ extract_ports_from_compose() {
   if [ -f "$compose_file" ]; then
     # Use grep and awk to find port mappings
     while IFS= read -r line; do
-      if [[ $line =~ ^[[:space:]]*-[[:space:]]*\"?([0-9]+):([0-9]+)\"?[[:space:]]*$ ]]; then
+      if [[ $line =~ ^[[:space:]]*-[[:space:]]*"?([0-9]+):([0-9]+)"?\s*$ ]]; then
         local host_port="${BASH_REMATCH[1]}"
         local container_port="${BASH_REMATCH[2]}"
         echo "$host_port"
@@ -111,7 +110,7 @@ for compose_file in "docker-compose.dev.yml" "docker-compose.yml" "docker-compos
         in_ports_section=true
         echo -e "${YELLOW}Found ports section for service: $current_service${NC}"
       # Detect port mappings within ports section
-      elif [[ $line =~ ^[[:space:]]{4,8}-[[:space:]]*\"?([0-9]+):([0-9]+)\"?[[:space:]]*$ ]] && [ "$in_ports_section" = true ] && [ -n "$current_service" ]; then
+      elif [[ $line =~ ^[[:space:]]{4,8}-[[:space:]]*"?([0-9]+):([0-9]+)"?\s*$ ]] && [ "$in_ports_section" = true ] && [ -n "$current_service" ]; then
         host_port="${BASH_REMATCH[1]}"
         container_port="${BASH_REMATCH[2]}"
         SERVICE_PORTS["$current_service"]="$host_port"
@@ -441,7 +440,7 @@ fi
 
 # Clean up any previous builds
 echo -e "${YELLOW}Cleaning up previous builds...${NC}"
-rm -rf dist/ node_modules/.cache
+rm -rf dist/ .next node_modules/.cache
 
 # Check if .env file exists
 if [ ! -f .env ]; then
@@ -456,6 +455,9 @@ if [ ! -f .env ]; then
 fi
 
 # Rebuild the images
+echo -e "${YELLOW}Clearing Docker build cache...${NC}"
+docker builder prune -f
+
 echo -e "${YELLOW}Rebuilding all containers with no cache...${NC}"
 if [ -f docker-compose.override.yml ]; then
   echo -e "${YELLOW}Using custom port configuration for build...${NC}"
@@ -609,7 +611,7 @@ if [ "$RUNNING_CONTAINERS" -gt 0 ]; then
   
   # Check if the tables are created successfully
   echo -e "${YELLOW}Checking if database tables are initialized...${NC}"
-  docker exec ${PROJECT_NAME}_app_1 node -e "
+docker exec ${PROJECT_NAME}_app_1 node -e "
   const { Pool } = require('pg');
   const pool = new Pool({
     connectionString: 'postgresql://postgres:postgres@172.18.0.2:5432/socialgenius',
@@ -637,10 +639,12 @@ if [ "$RUNNING_CONTAINERS" -gt 0 ]; then
   " || echo -e "${RED}Failed to check database connectivity${NC}"
   
   # Always show logs
+  echo -e "${YELLOW}Waiting 2 minutes before showing logs...${NC}"
+  sleep 120
   echo -e "${YELLOW}Showing logs...${NC}"
-  
-else
-  echo -e "${RED}Containers may have started but aren't running. Check docker ps for status.${NC}"
-  docker ps -a
-  exit 1
-fi
+  if [ -f docker-compose.override.yml ]; then
+    docker-compose -f docker-compose.dev.yml -f docker-compose.override.yml logs app
+  else
+    docker-compose -f docker-compose.dev.yml logs app
+  fi
+}

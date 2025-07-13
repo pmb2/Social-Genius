@@ -3,10 +3,12 @@
 
 -- Ensure pgvector extension is available first
 CREATE EXTENSION IF NOT EXISTS vector;
+-- Enable pgcrypto for encryption
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Create users table if it doesn't exist
 CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     name TEXT,
@@ -18,23 +20,11 @@ CREATE TABLE IF NOT EXISTS users (
     last_login TIMESTAMP WITH TIME ZONE
 );
 
-CREATE TABLE IF NOT EXISTS linked_accounts (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    business_id VARCHAR(255) NOT NULL UNIQUE,
-    x_account_id VARCHAR(255) NOT NULL UNIQUE,
-    x_username VARCHAR(255),
-    access_token TEXT NOT NULL,
-    refresh_token TEXT,
-    token_expires_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
 -- Create businesses table if it doesn't exist
 CREATE TABLE IF NOT EXISTS businesses (
-    id SERIAL PRIMARY KEY,
-    business_id VARCHAR(255) UNIQUE NOT NULL,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    businessId UUID UNIQUE NOT NULL,
+    userId UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     status VARCHAR(50) DEFAULT 'pending',
     auth_status VARCHAR(50) DEFAULT 'pending',
@@ -43,34 +33,36 @@ CREATE TABLE IF NOT EXISTS businesses (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create social_accounts table if it doesn't exist
-CREATE TABLE IF NOT EXISTS social_accounts (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    business_id VARCHAR(255) REFERENCES businesses(business_id) ON DELETE SET NULL,
-    platform VARCHAR(50) NOT NULL,
-    platform_user_id VARCHAR(255) NOT NULL,
-    username VARCHAR(255),
-    profile_picture_url TEXT,
-    access_token TEXT NOT NULL,
-    refresh_token TEXT,
-    expires_at TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(user_id, platform, platform_user_id)
+CREATE TABLE socialAccounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  userId UUID REFERENCES users(id) ON DELETE CASCADE,
+  businessId UUID NOT NULL UNIQUE,
+  platform VARCHAR(32) NOT NULL CHECK (platform IN ('x', 'google', 'facebook', 'instagram', 'linkedin')),
+  providerAccountId VARCHAR(128) NOT NULL,
+  accessToken TEXT NOT NULL,
+  refreshToken TEXT,
+  expiresAt TIMESTAMP,
+  metadata JSONB,
+  createdAt TIMESTAMP DEFAULT NOW(),
+  updatedAt TIMESTAMP DEFAULT NOW()
 );
+
+-- Indexes for performance
+CREATE UNIQUE INDEX ON socialAccounts (platform, providerAccountId, userId);
+CREATE INDEX ON socialAccounts (userId);
+CREATE INDEX ON socialAccounts (businessId);
 
 -- Create or replace the function to update the updated_at column
 CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER AS $
 BEGIN
     NEW.updated_at = CURRENT_TIMESTAMP;
     RETURN NEW;
 END;
-$$ language 'plpgsql';
+$ language 'plpgsql';
 
 -- Create triggers for all tables (only if tables exist)
-DO $$
+DO $
 BEGIN
     -- Create trigger for users table
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users') THEN
@@ -91,26 +83,41 @@ BEGIN
     END IF;
 
     -- Create trigger for social_accounts table
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'social_accounts') THEN
-        DROP TRIGGER IF EXISTS update_social_accounts_updated_at ON social_accounts;
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'socialAccounts') THEN
+        DROP TRIGGER IF EXISTS update_social_accounts_updated_at ON socialAccounts;
         CREATE TRIGGER update_social_accounts_updated_at
-            BEFORE UPDATE ON social_accounts
+            BEFORE UPDATE ON socialAccounts
             FOR EACH ROW
             EXECUTE FUNCTION update_updated_at_column();
     END IF;
-END $$;
+END $;
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_created_at ON users(created_at);
 CREATE INDEX IF NOT EXISTS idx_users_updated_at ON users(updated_at);
 
-CREATE INDEX IF NOT EXISTS idx_businesses_user_id ON businesses(user_id);
-CREATE INDEX IF NOT EXISTS idx_businesses_business_id ON businesses(business_id);
+CREATE INDEX IF NOT EXISTS idx_businesses_user_id ON businesses(userId);
+CREATE INDEX IF NOT EXISTS idx_businesses_business_id ON businesses(businessId);
 CREATE INDEX IF NOT EXISTS idx_businesses_status ON businesses(status);
 CREATE INDEX IF NOT EXISTS idx_businesses_created_at ON businesses(created_at);
 
-CREATE INDEX IF NOT EXISTS idx_social_accounts_user_id ON social_accounts(user_id);
-CREATE INDEX IF NOT EXISTS idx_social_accounts_business_id ON social_accounts(business_id);
-CREATE INDEX IF NOT EXISTS idx_social_accounts_platform ON social_accounts(platform);
-CREATE INDEX IF NOT EXISTS idx_social_accounts_platform_user_id ON social_accounts(platform_user_id);
+CREATE INDEX IF NOT EXISTS idx_social_accounts_user_id ON socialAccounts(userId);
+CREATE INDEX IF NOT EXISTS idx_social_accounts_business_id ON socialAccounts(businessId);
+CREATE INDEX IF NOT EXISTS idx_social_accounts_platform ON socialAccounts(platform);
+CREATE INDEX IF NOT EXISTS idx_social_accounts_provider_account_id ON socialAccounts(providerAccountId);
+
+-- Encrypt sensitive tokens
+CREATE OR REPLACE FUNCTION encryptToken(token TEXT) RETURNS TEXT AS $
+BEGIN
+  RETURN encode(encrypt(token::bytea, 'your-encryption-key', 'aes'), 'base64');
+END;
+$ LANGUAGE plpgsql;
+
+-- Decrypt tokens
+CREATE OR REPLACE FUNCTION decryptToken(encryptedToken TEXT) RETURNS TEXT AS $
+BEGIN
+  RETURN convert_from(decrypt(decode(encryptedToken, 'base64'), 'your-encryption-key', 'aes'), 'UTF8');
+END;
+$ LANGUAGE plpgsql;
+

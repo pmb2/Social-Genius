@@ -7,6 +7,7 @@ import {Linkedin, Instagram, Facebook, ChevronRight} from "lucide-react";
 import {useRouter} from 'next/navigation';
 import {useAuth} from '@/lib/auth/context';
 import { getXOAuthUrl } from '@/lib/auth/x-oauth';
+import SignInModal from '@/components/SignInModal';
 
 // X (Twitter) Logo Component
 const XLogo = ({ className = "w-5 h-5" }) => (
@@ -24,6 +25,7 @@ export default function AuthPage() {
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isHttpWarning, setIsHttpWarning] = useState(false);
+    const [isModalOpen, setIsModalOpen] = useState(false);
 
     const router = useRouter();
     const {user, loading} = useAuth();
@@ -131,13 +133,41 @@ export default function AuthPage() {
         }
     };
 
-    const handleXLogin = async (flow: 'login' | 'register') => {
+    const handleOAuthLogin = (platform: string, email?: string, password?: string, businessName?: string) => {
+        let url = `/api/auth/${platform}/login?mode=${isLogin ? 'login' : 'register'}`;
+        if (businessName) {
+            url += `&businessName=${encodeURIComponent(businessName)}`;
+        }
+        if (email) {
+            url += `&email=${encodeURIComponent(email)}`;
+        }
+        if (password) {
+            url += `&password=${encodeURIComponent(password)}`;
+        }
+        window.location.href = url;
+    };
+
+    const handleSkip = async (businessName: string) => {
+        setIsLoading(true);
+        setError('');
         try {
-            const url = await getXOAuthUrl(flow);
-            window.location.href = url;
-        } catch (error) {
-            console.error('Failed to initiate X OAuth:', error);
-            setError('Could not sign in with X. Please try again later.');
+            const response = await fetch('/api/businesses/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: businessName }),
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to create business');
+            }
+            alert('Business created successfully!');
+            router.push('/dashboard');
+        } catch (err) {
+            console.error('Error creating business:', err);
+            setError(err instanceof Error ? err.message : 'Failed to create business.');
+        } finally {
+            setIsLoading(false);
+            setIsModalOpen(false);
         }
     };
 
@@ -268,40 +298,12 @@ export default function AuthPage() {
                                     Forgot Username / Password?
                                 </Link>
 
-                                {/* Commented out original social login section */}
-                                {/*
-                                <div className="mt-12 text-center w-full">
-                                    <h3 className="text-white text-lg mb-6"> Choose your Accounts</h3>
-                                    <div className="flex justify-center space-x-4">
-                                        <Link
-                                            href="#"
-                                            className="w-10 h-10 flex items-center justify-center rounded-full bg-[#0077B5] focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
-                                        >
-                                            <Linkedin className="w-5 h-5 text-white"/>
-                                        </Link>
-                                        <Link
-                                            href="#"
-                                            className="w-10 h-10 flex items-center justify-center rounded-full bg-gradient-to-tr from-[#F58529] via-[#DD2A7B] to-[#8134AF] focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
-                                        >
-                                            <Instagram className="w-5 h-5 text-white"/>
-                                        </Link>
-                                        <Link
-                                            href="#"
-                                            className="w-10 h-10 flex items-center justify-center rounded-full bg-[#1877F2] focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
-                                        >
-                                            <Facebook className="w-5 h-5 text-white"/>
-                                        </Link>
-                                    </div>
-                                </div>
-                                */}
-
                                 <div className="mt-12 text-center w-full">
                                     <button
-                                        onClick={() => handleXLogin('login')}
+                                        onClick={() => setIsModalOpen(true)}
                                         className="flex items-center justify-center w-full max-w-md mx-auto bg-black hover:bg-gray-900 text-white font-medium py-4 px-8 rounded-full transition duration-200 text-lg focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
                                     >
-                                        <span>Sign in to</span>
-                                        <XLogo className="w-6 h-6" />
+                                        <span>Sign in with Social</span>
                                     </button>
                                 </div>
 
@@ -398,41 +400,13 @@ export default function AuthPage() {
                                     </div>
                                 </form>
 
-                                {/* Commented out original social signup section */}
-                                {/*
-                                <div className="mt-8 text-center w-full">
-                                    <p className="text-white text-lg mb-4">Or sign up with</p>
-                                    <div className="flex justify-center items-center space-x-4">
-                                        <Link
-                                            href="#"
-                                            className="w-10 h-10 flex items-center justify-center rounded-full bg-[#0077B5] focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
-                                        >
-                                            <Linkedin className="w-5 h-5 text-white"/>
-                                        </Link>
-                                        <Link
-                                            href="#"
-                                            className="w-10 h-10 flex items-center justify-center rounded-full bg-gradient-to-r from-[#F58529] to-[#DD2A7B] focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
-                                        >
-                                            <Instagram className="w-5 h-5 text-white"/>
-                                        </Link>
-                                        <Link
-                                            href="#"
-                                            className="w-10 h-10 flex items-center justify-center rounded-full bg-[#1877F2] focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
-                                        >
-                                            <Facebook className="w-5 h-5 text-white"/>
-                                        </Link>
-                                    </div>
-                                </div>
-                                */}
-
                                 <div className="mt-8 text-center w-full">
                                     <p className="text-white text-lg mb-4">Or sign up with</p>
                                     <button
-                                        onClick={() => handleXLogin('register')}
+                                        onClick={() => setIsModalOpen(true)}
                                         className="flex items-center justify-center w-full max-w-md mx-auto bg-black hover:bg-gray-900 text-white font-medium py-4 px-8 rounded-full transition duration-200 text-lg focus:border-[3px] focus:border-[#FFAB19] active:border-[3px] active:border-[#FFAB19] outline-none"
                                     >
-                                        <span>Sign up with</span>
-                                        <XLogo className="w-6 h-6" />
+                                        <span>Sign up with Social</span>
                                     </button>
                                 </div>
 
@@ -452,6 +426,7 @@ export default function AuthPage() {
                     </div>
                 </div>
             </main>
+            <SignInModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onLogin={handleOAuthLogin} onSkip={handleSkip} mode={isLogin ? 'login' : 'register'} />
         </div>
     );
 }

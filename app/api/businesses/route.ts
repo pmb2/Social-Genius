@@ -1,22 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
+import { getIronSession } from 'iron-session';
+import { sessionOptions } from '@/lib/auth/session';
+import { cookies } from 'next/headers';
 import PostgresService from '@/services/database/postgres-service';
 
 export async function GET(req: NextRequest) {
     try {
-        const session = await auth();
+        const session = await getIronSession(cookies(), sessionOptions);
 
-        console.log('[BUSINESSES] Server-side request headers cookie:', req.headers.get('cookie'));
-
-        if (!session || !session.user || !session.user.id) {
+        console.log('[BUSINESS] /api/businesses: Session:', session);
+        if (!session || !session.id) {
             return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
         }
 
-    const userId = parseInt(session.user.id);
+        const userId = session.id;
+        console.log(`[BUSINESS] /api/businesses: Fetching businesses for user ID: ${userId}`);
         const dbService = PostgresService.getInstance();
-        const businesses = await dbService.getBusinessesForUser(userId);
+        const businesses = await dbService.getBusinessesForUser(userId as string);
 
-        console.log('[BUSINESSES] Fetched businesses:', JSON.stringify(businesses, null, 2));
+        console.log('[BUSINESS] /api/businesses: Fetched businesses:', JSON.stringify(businesses, null, 2));
 
         return NextResponse.json({ success: true, businesses });
     } catch (error) {
@@ -27,9 +29,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await auth();
+    const session = await getIronSession(cookies(), sessionOptions);
 
-    if (!session || !session.user || !session.user.id) {
+    if (!session || !session.id) {
       console.error('Unauthorized attempt to create business: No session or user ID found.');
       return NextResponse.json({
         success: false,
@@ -37,7 +39,7 @@ export async function POST(req: NextRequest) {
       }, { status: 401 });
     }
 
-    const userId = parseInt(session.user.id);
+    const userId = session.id;
     const body = await req.json();
     const { name } = body;
 
@@ -46,13 +48,17 @@ export async function POST(req: NextRequest) {
     }
 
     const dbService = PostgresService.getInstance();
-    const businessId = await dbService.addBusinessForUser(userId, name);
+    const result = await dbService.addBusinessForUser(userId as string, name);
 
-    return NextResponse.json({
-      success: true,
-      message: 'Business created successfully',
-      businessId,
-    }, { status: 201 });
+    if (result.success) {
+        return NextResponse.json({
+          success: true,
+          message: 'Business created successfully',
+          businessId: result.businessId,
+        }, { status: 201 });
+    } else {
+        return NextResponse.json({ success: false, error: result.error || 'Failed to create business' }, { status: 500 });
+    }
 
   } catch (error) {
     console.error('[BUSINESSES] Error creating business:', error);

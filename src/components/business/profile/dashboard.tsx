@@ -3,7 +3,8 @@
 import {useState, useEffect, useMemo, useCallback, useRef, Suspense} from "react"
 import {useRouter} from "next/navigation"
 import {Table, TableBody, TableCell, TableHead, TableHeader, TableRow} from "@/components/ui/table"
-import {Dialog, DialogContent, DialogTitle, DialogDescription} from "@/components/ui/dialog"
+import {Dialog, DialogContent, DialogTitle} from "@/components/ui/dialog"
+
 import {Button} from "@/components/ui/button"
 import {ProgressCircle} from "@/components/ui/progress-circle"
 import {StatusIndicator} from "@/components/ui/status-indicator"
@@ -18,6 +19,7 @@ import PlusIcon from "lucide-react/dist/esm/icons/plus"
 import Image from "next/image"
 import dynamic from "next/dynamic"
 import Link from "next/link"; // ADDED: For the X account connect button
+import SignInModal from "@/components/SignInModal";
 
 // Dynamically import heavy components to reduce initial load time
 const BusinessProfileModal = dynamic(() => import("./modal"), {
@@ -30,7 +32,7 @@ const initialBusinessAccounts: Business[] = []
 
 // Define Business type - ADD socialAccounts array
 type Business = {
-    id: number;
+    id: string;
     businessId: string;
     name: string;
     status: string;
@@ -43,8 +45,8 @@ type Business = {
 
 // Define SocialAccount type (should match the interface in postgres-service.ts)
 interface SocialAccount {
-    id: number;
-    user_id: number; // Changed to user_id to match DB
+    id: string;
+    user_id: string; // Changed to user_id to match DB
     business_id?: string | null; // Changed to business_id to match DB
     platform: string;
     platform_user_id: string; // Changed to platform_user_id to match DB
@@ -117,6 +119,7 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
 
     // Function to fetch businesses from API with caching - memoized to avoid dependency issues
     const fetchBusinesses = useCallback(async (skipCache = false) => {
+        log('[BUSINESS] Fetching businesses...');
         try {
             setIsLoading(true);
             setError(null);
@@ -241,7 +244,7 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
 
                 throw new Error(`Failed to fetch businesses: ${response.status} ${response.statusText}`);
             }
-            log(`Fetched ${data.businesses?.length || 0} businesses from API`, 'info');
+            log(`Fetched ${data.businesses?.length || 0} businesses from API. Data: ${JSON.stringify(data.businesses)}`, 'info');
 
             // Save to session storage cache
             if (typeof window !== 'undefined') {
@@ -327,13 +330,52 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
         setLimitError(null);
     };
 
-    const handleConnectXAccount = () => {
-    if (user && user.id) {
-      window.location.href = `/api/auth/x/login?flow=link&user_id=${user.id}`;
-    } else {
-      log('User ID not found, cannot initiate link flow.', 'error');
-    }
-  };
+    const handleSkip = async (businessName: string) => {
+        log(`Attempting to skip social login for business: ${businessName}`, 'info');
+        if (!user || !user.id) {
+            log('User ID not found or user not authenticated, cannot create business.', 'error');
+            setModalError('User not authenticated. Please log in.');
+            return;
+        }
+        log(`User ID: ${user.id}`, 'info');
+
+        setIsSubmittingBusiness(true); // Use this state for loading
+        setModalError(null); // Clear previous errors
+
+        try {
+            log('Making API call to /api/businesses/create', 'info');
+            const response = await fetch('/api/businesses/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: businessName, userId: user.id }), // Pass userId
+            });
+            const data = await response.json();
+            log(`API response for business creation: ${JSON.stringify(data)}`, 'info');
+            if (!response.ok) {
+                log(`API error: ${data.error || response.statusText}`, 'error');
+                throw new Error(data.error || 'Failed to create business');
+            }
+                        log(`Business "${businessName}" created successfully.`, 'info');
+            
+            // Explicitly remove cache and then await the fetch
+            if (typeof window !== 'undefined') {
+                sessionStorage.removeItem('user_businesses_cache');
+                log('Cache cleared for user_businesses_cache.', 'info');
+            }
+
+            // Add a small delay to allow the session to update
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            await fetchBusinesses(true); // Refresh the list of businesses, ensuring it completes
+
+            setIsAddBusinessModalOpen(false); // Close the modal only after refresh
+        } catch (err) {
+            log(`Error creating business: ${err instanceof Error ? err.message : String(err)}`, 'error');
+            setModalError(err instanceof Error ? err.message : 'Failed to create business.');
+        } finally {
+            setIsSubmittingBusiness(false);
+        }
+    };
 
     // Helper to reset the form
     const resetForm = () => {
@@ -621,53 +663,15 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
                 </DialogContent>
             </Dialog>
 
-            {/* Sign in with X.com Modal */}
-            <Dialog
-                open={isAddBusinessModalOpen}
-                onOpenChange={(open) => {
-                    if (open) {
-                        resetForm(); // Reset form when opening the modal
-                    }
-                    setIsAddBusinessModalOpen(open);
+            <SignInModal 
+                isOpen={isAddBusinessModalOpen} 
+                onClose={() => setIsAddBusinessModalOpen(false)} 
+                onLogin={(platform, email, password, businessName) => {
+                    window.location.href = `/api/auth/${platform}/login?mode=link&userId=${user.id}&businessName=${encodeURIComponent(businessName)}&email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`;
                 }}
-            >
-                <DialogContent className="max-w-sm p-6" aria-describedby="add-x-account-description">
-                    <div className="absolute top-4 right-4">
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setIsAddBusinessModalOpen(false)}
-                            className="rounded-full"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-x"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                        </Button>
-                    </div>
-                    <DialogTitle className="text-xl font-semibold mb-2">Connect X Account</DialogTitle>
-                    <DialogDescription id="add-x-account-description">
-                        You will be redirected to X.com to sign in and authorize access to your account.
-                    </DialogDescription>
-
-                    <div className="py-6 space-y-4">
-                        <Button
-                            onClick={handleConnectXAccount}
-                            disabled={isSubmittingBusiness}
-                            className="w-full flex items-center justify-center px-6 py-3 rounded-full bg-black hover:bg-gray-800 transition-colors duration-200 text-base font-medium"
-                        >
-                            <i className="fa-brands fa-x-twitter w-5 h-5 text-white mr-3"></i>
-                            <span className="text-white">
-                                {isSubmittingBusiness ? 'Preparing...' : 'Sign in with X'}
-                            </span>
-                        </Button>
-                    </div>
-
-                    {modalError && (
-                        <div className="p-3 bg-red-100 border border-red-400 text-red-700 rounded-md text-sm">
-                            <p className="font-bold">Connection Failed</p>
-                            <p>{modalError}</p>
-                        </div>
-                    )}
-                </DialogContent>
-            </Dialog>
+                onSkip={handleSkip}
+                mode="add"
+            />
 
             {/* REMOVED: Authentication Screenshots Modal - this was for Google Business Profile */}
             {/* <Dialog open={isScreenshotModalOpen} onOpenChange={setIsScreenshotModalOpen}> ... </Dialog> */}
