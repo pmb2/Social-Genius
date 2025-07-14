@@ -458,12 +458,20 @@ fi
 echo -e "${YELLOW}Clearing Docker build cache...${NC}"
 docker builder prune -f
 
-echo -e "${YELLOW}Rebuilding all containers with no cache...${NC}"
+echo "Rebuilding all containers with no cache..."
+BUILD_SUCCESS=0
 if [ -f docker-compose.override.yml ]; then
-  echo -e "${YELLOW}Using custom port configuration for build...${NC}"
-  docker-compose -f docker-compose.dev.yml -f docker-compose.override.yml build --no-cache
+    echo "Using custom port configuration for build..."
+    timeout 120 docker-compose -f docker-compose.dev.yml -f docker-compose.override.yml build --no-cache
+    BUILD_SUCCESS=$?
 else
-  docker-compose -f docker-compose.dev.yml build --no-cache
+    timeout 120 docker-compose -f docker-compose.dev.yml build --no-cache
+    BUILD_SUCCESS=$?
+fi
+
+if [ $BUILD_SUCCESS -ne 0 ]; then
+    echo "Docker image build failed or timed out (exit code: $BUILD_SUCCESS). Please check Docker logs for details."
+    exit 1
 fi
 
 # Start the containers with enhanced error handling and retry logic

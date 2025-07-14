@@ -1,118 +1,103 @@
 ## tasks.md
 
-### 🎯 Objective
+### 🎯 Objective:
 
-Enable seamless integration of **X.com OAuth login** for connecting and managing multiple business accounts within our application's dashboard. Each OAuth login should:
+- We need to update tab our Brand Alignment tab in our business profile modal and we will be adding functionality from our old app (found C:\Users\TBA\Documents\github\Social-Genius\old )adding all of it’s postcard post generation functionality, included but not limited to the functionality listed below). We are going to use the groq model and tool calling that we have set up but we need to add this tool calling functionality into our Brand Alignment chat by incorporating our prompts from our old app (found C:\Users\TBA\Documents\github\Social-Genius\old\prompts)
 
-* Retrieve all relevant business data from X.com upon successful redirect.
-* Store the data in our database.
-* Associate each business account with the correct user in our system.
-* Display all connected accounts in the user's dashboard table.
-* Allow users to repeat the process to connect multiple X.com accounts.
 
----
+### Functionalities required:
 
-### ✅ What’s Working
+- Everything within the Home_chatContainer.
+- Complete chat interface dashboard with the postcard generation for each of the socials
+- UI to be cleanly transferred and sized up correctly to fit seamlessly
 
-* OAuth flow with X.com is successfully initiating and completing.
-* Redirect after login is functioning correctly and lands user on the dashboard.
-* User session remains authenticated in our app after redirect.
-* "Add a Business" button triggers the OAuth flow properly.
+- Ask clarify questions as we go if needed.
 
 ---
 
-### ❌ Current Problems
+### ✅ Integration Checklist:
 
-* Data from X.com (via OAuth and API) is not being saved into the database.
-* Business account records are not showing on the user dashboard.
-* 401 Unauthorized errors occurring when attempting to hit X.com API endpoints.
-* No businessId-userId associations being formed.
+This checklist details the steps to integrate the postcard generation functionality into the Brand Alignment tab.
 
----
+**Phase 1: Understanding and Setup**
 
-### 🧪 Things We've Tried
+1.  **Review Current Project Structure:**
+    *   **Objective:** Understand how the existing "Brand Alignment" tab is structured and rendered.
+    *   **Files to Examine:**
+        *   `/mnt/c/Users/TBA/Documents/github/Social-Genius/app/(protected)/dashboard/page.tsx`: Entry point for the dashboard.
+        *   `/mnt/c/Users/TBA/Documents/github/Social-Genius/src/components/business/profile/dashboard.tsx`: Likely renders the `BusinessProfileModal`.
+        *   `/mnt/c/Users/TBA/Documents/github/Social-Genius/src/components/business/profile/modal.tsx`: Contains the `BrandAlignmentTab` component.
+        *   `/mnt/c/Users/TBA/Documents/github/Social-Genius/src/components/business/brand-alignment-tab.tsx`: The target component for integrating the new functionality.
 
-* Verified OAuth redirect URIs are correct and match X.com dev settings.
-* Confirmed OAuth code is being received and redirect works.
-* Attempted to access X.com APIs after redirect, received 401s.
-* Verified basic token retrieval logic.
+2.  **Analyze Old Application's Core Logic:**
+    *   **Objective:** Identify and understand the key components and logic for postcard generation in the old app.
+    *   **Files to Examine:**
+        *   `/mnt/c/Users/TBA/Documents/github/Social-Genius/old/pages/index.js`: Contains the `Home_chatContainer` with chat interface, post generation logic (`handleGeneratePosts`), file upload (`handleFileUpload`), and settings.
+        *   `/mnt/c/Users/TBA/Documents/github/Social-Genius/old/components/groqService.js`: Contains `getGroqChatCompletion` for interacting with the Groq model.
+        *   `/mnt/c/Users/TBA/Documents/github/Social-Genius/old/prompts/pre-prompt.js`: Defines the initial context/instructions for the AI.
+        *   `/mnt/c/Users/TBA/Documents/github/Social-Genius/old/prompts/prompt-template.js`: Constructs the dynamic prompt based on user input and settings.
+        *   `/mnt/c/Users/TBA/Documents/github/Social-Genius/old/components/PostCard.js`: Renders individual generated posts.
+        *   `/mnt/c/Users/TBA/Documents/github/Social-Genius/old/styles/Home.module.css`: Contains styling for the chat interface.
 
----
+**Phase 2: Migration and Integration**
 
-### 🧩 Assumptions
+3.  **Migrate Groq Service:**
+    *   **Action:** Copy `old/components/groqService.js` to `src/services/groq-service.ts`.
+    *   **Notes:**
+        *   Rename to `.ts` and adapt to TypeScript syntax (add types, `export` statements).
+        *   Ensure `getGroqChatCompletion` is correctly exported and callable.
 
-* API endpoint like `GET /v1/businesses/me` is available and token-scoped.
-* OAuth flow includes access to a valid `access_token` for authenticated API calls.
-* Each X.com account is unique and should be represented by a distinct business ID.
-* A single user can add and manage multiple X.com accounts.
+4.  **Migrate Prompts:**
+    *   **Action:** Copy `old/prompts/pre-prompt.js` to `src/prompts/pre-prompt.ts`.
+    *   **Action:** Copy `old/prompts/prompt-template.js` to `src/prompts/prompt-template.ts`.
+    *   **Notes:**
+        *   Rename to `.ts` and adapt to TypeScript.
+        *   Ensure `prePrompt` and `promptTemplate` are correctly exported.
 
----
+5.  **Integrate Post Generation UI into `BrandAlignmentTab`:**
+    *   **Action:** Modify `/mnt/c/Users/TBA/Documents/github/Social-Genius/src/components/business/brand-alignment-tab.tsx`.
+    *   **Notes:**
+        *   Port the chat input, settings, and platform selection UI elements from `old/pages/index.js`.
+        *   Utilize existing UI components from the current project's `src/components/ui` directory (e.g., `Button`, `Input`, `Select`, `RadioGroup`, `Checkbox`) to maintain design consistency.
+        *   Implement state management (`useState`, `useEffect`) for `messages`, `posts`, `settings`, `userInput`, `uploadedContent`, `loading`, `error`, `showSettings`, `dragging`, etc., similar to `old/pages/index.js`.
 
-### 🛠️ Step-by-Step Implementation Checklist
+6.  **Port Post Generation Logic:**
+    *   **Action:** Integrate the functions `handleGeneratePosts`, `handleFileUpload`, `handleDragOver`, `handleDrop`, `handleDragLeave`, `handleUploadClick`, `toggleSettings`, `handleSettingChange`, `handlePlatformToggle` from `old/pages/index.js` into `src/components/business/brand-alignment-tab.tsx`.
+    *   **Notes:**
+        *   Ensure all function dependencies (e.g., `getGroqChatCompletion`, `prePrompt`, `promptTemplate`, `axios` for file upload) are correctly imported and used.
+        *   Verify the file upload API endpoint (`/api/upload`). If it doesn't exist in the new project, it needs to be created (check `app/api` directory for existing patterns).
 
-#### OAuth Flow & Token Handling
+7.  **Migrate and Integrate `PostCard` Component:**
+    *   **Action:** Copy `old/components/PostCard.js` to `src/components/PostCard.tsx`.
+    *   **Notes:**
+        *   Rename to `.tsx` and adapt to TypeScript.
+        *   Integrate `PostCard` into `src/components/business/brand-alignment-tab.tsx` to display the `generatedPosts`.
 
-* [x] Ensure correct scopes are requested (e.g., `read:business`, `read:account`).
-* [x] On redirect, capture `code` and exchange for `access_token` & `refresh_token`.
-* [x] Validate and securely store tokens in backend.
+8.  **Migrate Styling:**
+    *   **Action:** Review `old/styles/Home.module.css`.
+    *   **Notes:**
+        *   Extract relevant CSS rules for the chat interface, settings, and postcard display.
+        *   Translate these styles into Tailwind CSS classes directly within the JSX of `brand-alignment-tab.tsx` and `PostCard.tsx`, or add them to the global CSS if they are truly global styles. Avoid creating new CSS modules unless absolutely necessary.
 
-#### X.com API Data Fetch
+**Phase 3: Testing and Refinement**
 
-* [x] Use `access_token` to fetch business data.
+9.  **Thorough Testing:**
+    *   **Action:** Manually test the postcard generation functionality within the "Brand Alignment" tab.
+    *   **Notes:**
+        *   Test with various topics, tones, lengths, hashtags, and CTAs.
+        *   Test file upload functionality.
+        *   Verify that generated posts are displayed correctly.
+        *   Check for any console errors or warnings.
 
-    * [x] Example: `GET /v1/businesses/me`
-    * [x] Ensure Authorization header is set to `Bearer <token>`
-* [ ] Log and inspect full response for required fields.
+10. **UI/UX Refinement:**
+    *   **Action:** Adjust the layout and appearance to seamlessly integrate with the existing business profile modal's design.
+    *   **Notes:**
+        *   Ensure responsiveness and proper sizing across different screen sizes.
+        *   Address any remaining accessibility warnings.
 
-#### Database Integration
-
-* [x] Create schema/model for business accounts if not already present.
-
-    * Fields: `business_id`, `user_id`, `x_account_id`, `name`, `profile_img`, `followers`, etc.
-* [x] Insert or update business data on successful API response.
-* [x] Associate each business record with the current `user_id`.
-
-#### Dashboard & UI
-
-* [x] After login or redirect and DB insert, fetch all business accounts for the user.
-* [ ] Display business accounts in dashboard table.
-* [ ] Handle UI edge cases (duplicate accounts, failed inserts, etc).
-
-#### Multi-Account Support
-
-* [x] Allow repeated OAuth flows without overriding previous data.
-* [x] Each new connection should result in a new row in the business accounts table.
-
-#### Logging & Error Handling
-
-* [x] Enable logging for all API requests/responses.
-* [x] Capture and store 401 error payloads for debugging.
-* [ ] Refresh token if expired or handle invalid token scenarios.
-
----
-
-### 🧰 Next Steps
-
-* [ ] Collect trace logs showing 401s.
-* [ ] Validate OAuth `scope` and token exchange endpoint.
-* [ ] Confirm which X.com API endpoints you're attempting to call.try a
-* [ ] Ensure Authorization headers and token structure are correct.
-
----
-Use this as a guide and update it and mark things as they get completed. 
-
-### Summary of Findings:
-
-The X.com OAuth flow is initiated from the "Add a Business" button in the dashboard.
-
-*   **UI Entry Point:** `src/components/business/profile/dashboard-oauth.tsx` contains the `handleConnectXAccount` function which redirects the user to the backend.
-*   **OAuth URL Generation:** The frontend calls `getXOAuthUrl` in `src/lib/auth/x-oauth.ts`.
-*   **Authorization URL Construction:** The `getXOAuthUrl` function makes a request to `app/api/auth/x/login/route.ts`, which constructs the full authorization URL with PKCE parameters and redirects the user to X.com.
-*   **Callback Handling:** After authorization, the user is redirected to `app/api/auth/callback/x/route.ts` (as defined by `X_REDIRECT_URI` in the `.env` file).
-*   **Likely Point of Failure:** The callback handler at `app/api/auth/callback/x/route.ts` successfully exchanges the authorization `code` for an `access_token`. However, the database transaction that follows, which calls `db.addBusinessForUser()` and `db.addLinkedAccount()`, appears to be failing. This prevents the new business and the X.com account from being saved to the database, which is the root cause of the issues described. The 401 errors are a symptom of the tokens not being persisted correctly.
-
-### Next Steps:
-Focus on debugging the database transaction inside `app/api/auth/callback/x/route.ts`. Specifically, we need to:
-1.  Add detailed logging within the `try...catch` block to capture the exact error from `db.addBusinessForUser()` or `db.addLinkedAccount()`.
-2.  Inspect the `DatabaseService` methods (`addBusinessForUser` and `addLinkedAccount`) to ensure they are correctly implemented and match the database schema.
-3.  Verify the data being passed to these methods is in the correct format.
+11. **Code Review and Cleanup:**
+    *   **Action:** Review the integrated code for adherence to project conventions, code quality, and efficiency.
+    *   **Notes:**
+        *   Remove any unused imports or dead code.
+        *   Add comments only where necessary to explain complex logic.
+        *   Ensure all types are correctly defined and used.

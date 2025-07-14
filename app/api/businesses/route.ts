@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getIronSession } from 'iron-session';
 import { sessionOptions } from '@/lib/auth/session';
 import { cookies } from 'next/headers';
-import PostgresService from '@/services/database/postgres-service';
+import AuthService from '@/services/auth/auth-service';
 
 export async function GET(req: NextRequest) {
     try {
@@ -15,8 +15,8 @@ export async function GET(req: NextRequest) {
 
         const userId = session.id;
         console.log(`[BUSINESS] /api/businesses: Fetching businesses for user ID: ${userId}`);
-        const dbService = PostgresService.getInstance();
-        const businesses = await dbService.getBusinessesForUser(userId as string);
+        const authService = AuthService.getInstance();
+        const businesses = await authService.getBusinesses(userId as string);
 
         console.log('[BUSINESS] /api/businesses: Fetched businesses:', JSON.stringify(businesses, null, 2));
 
@@ -47,8 +47,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'Business name is required' }, { status: 400 });
     }
 
-    const dbService = PostgresService.getInstance();
-    const result = await dbService.addBusinessForUser(userId as string, name);
+    const authService = AuthService.getInstance();
+    const result = await authService.addBusiness(userId as string, name);
 
     if (result.success) {
         return NextResponse.json({
@@ -60,8 +60,38 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: result.error || 'Failed to create business' }, { status: 500 });
     }
 
-  } catch (error) {
+    } catch (error) {
     console.error('[BUSINESSES] Error creating business:', error);
     return NextResponse.json({ success: false, error: 'Failed to create business' }, { status: 500 });
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const session = await getIronSession(cookies(), sessionOptions);
+
+    if (!session || !session.id) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const userId = session.id;
+    const { searchParams } = new URL(req.url);
+    const businessId = searchParams.get('businessId');
+
+    if (!businessId) {
+      return NextResponse.json({ success: false, error: 'Business ID is required' }, { status: 400 });
+    }
+
+    const authService = AuthService.getInstance();
+    const result = await authService.deleteBusiness(userId, businessId);
+
+    if (result.success) {
+      return NextResponse.json({ success: true, message: 'Business soft-deleted successfully' });
+    } else {
+      return NextResponse.json({ success: false, error: result.error || 'Failed to soft-delete business' }, { status: 500 });
+    }
+  } catch (error) {
+    console.error('[BUSINESSES] Error deleting business:', error);
+    return NextResponse.json({ success: false, error: 'Failed to delete business' }, { status: 500 });
+  }
+}''

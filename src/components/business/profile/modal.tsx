@@ -220,9 +220,9 @@ export default function BusinessProfileModal({
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent className="max-w-md p-6 h-auto max-h-[90vh] w-full overflow-visible">
+        <DialogContent className="max-w-md p-6 h-auto max-h-[90vh] w-full overflow-visible" aria-describedby="dialog-description">
           <DialogTitle className="text-xl font-semibold mb-2 text-[#FF1681]">Delete Business</DialogTitle>
-          <DialogDescription className="text-gray-700 mb-4">
+          <DialogDescription id="dialog-description" className="text-gray-700 mb-4">
             Are you sure you want to delete <span className="font-semibold">{business?.name}</span>? This action cannot be undone and will remove all associated data.
           </DialogDescription>
           
