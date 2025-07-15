@@ -535,11 +535,7 @@ class AuthService {
 
         // First check if the business belongs to the user
         const userBusinesses = await this.getBusinesses(userId);
-        if (!userBusinesses.success) {
-          return { success: false, error: 'Failed to verify business ownership' };
-        }
-
-        const businessExists = userBusinesses.businesses?.some(b => b.businessId === businessId);
+        const businessExists = userBusinesses.some(b => b.businessId === businessId);
         if (!businessExists) {
           return { success: false, error: 'Business not found or not owned by this user' };
         }

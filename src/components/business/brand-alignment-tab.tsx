@@ -125,11 +125,21 @@ export function BrandAlignmentTab() {
     const [processedDocuments, setProcessedDocuments] = useState<ProcessedDocument[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [dragActive, setDragActive] = useState(false);
-    const [apiKeys] = useState({
-        databaseUrl: process.env.NEXT_PUBLIC_DATABASE_URL || "",
-        exaApiKey: process.env.NEXT_PUBLIC_EXA_API_KEY || "",
-        groqApiKey: process.env.NEXT_PUBLIC_GROQ_API_KEY || "",
+    const [apiKeys, setApiKeys] = useState({
+        databaseUrl: "",
+        exaApiKey: "",
+        groqApiKey: "",
     });
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            setApiKeys({
+                databaseUrl: localStorage.getItem('DATABASE_URL') || process.env.NEXT_PUBLIC_DATABASE_URL || "",
+                exaApiKey: localStorage.getItem('EXA_API_KEY') || process.env.NEXT_PUBLIC_EXA_API_KEY || "",
+                groqApiKey: localStorage.getItem('GROQ_API_KEY') || process.env.NEXT_PUBLIC_GROQ_API_KEY || "",
+            });
+        }
+    }, []);
     const [selectedDocuments, setSelectedDocuments] = useState<Set<string>>(new Set());
     const [settings, setSettings] = useState<RagSettings>({
         modelVersion: "deepseek-r1-distill-llama-70b",
@@ -744,7 +754,7 @@ export function BrandAlignmentTab() {
 
         if (missingKeys.length > 0) {
             const missingKeysLinks = missingKeys.map(key => 
-                `<a href="/settings?highlight=${key}" class="underline text-blue-500 hover:text-blue-700">${key}</a>`
+                <Link href={`/settings?highlight=${key}`} className="underline text-blue-500 hover:text-blue-700">{key}</Link>
             ).join(", ");
 
             setMessages([

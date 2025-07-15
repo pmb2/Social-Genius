@@ -670,7 +670,7 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
                         } : null} 
                         onClose={() => {
                             log("Business profile modal closed via explicit close button", 'info');
-                            // Just close the modal - refresh will be handled by onOpenChange if needed
+                            fetchBusinesses(true); // Force refresh on close
                             handleClose();
                         }}
                     />
