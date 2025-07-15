@@ -1275,6 +1275,95 @@ class PostgresService {
   }
 
   /**
+   * Get memories for a business
+   */
+  public async getMemories(businessId: string): Promise<any[]> {
+    try {
+      const result = await this.pool.query(
+        `SELECT * FROM memories WHERE business_id = $1 ORDER BY created_at DESC`,
+        [businessId]
+      );
+      return result.rows;
+    } catch (error) {
+      console.error('Error getting memories:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Store a memory for a business
+   */
+  public async storeMemory(memory: { id: string, businessId: string, content: string, type: string, isCompleted: boolean }): Promise<string> {
+    try {
+      const result = await this.pool.query(
+        `INSERT INTO memories (id, business_id, content, type, is_completed)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING id`,
+        [memory.id, memory.businessId, memory.content, memory.type, memory.isCompleted]
+      );
+      return result.rows[0].id;
+    } catch (error) {
+      console.error('Error storing memory:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update a memory for a business
+   */
+  public async updateMemory(memoryId: string, businessId: string, updates: { content?: string, isCompleted?: boolean }): Promise<boolean> {
+    try {
+      const setClause = [];
+      const values = [];
+      let paramIndex = 1;
+
+      if (updates.content !== undefined) {
+        setClause.push(`content = ${paramIndex}`);
+        values.push(updates.content);
+        paramIndex++;
+      }
+
+      if (updates.isCompleted !== undefined) {
+        setClause.push(`is_completed = ${paramIndex}`);
+        values.push(updates.isCompleted);
+        paramIndex++;
+      }
+
+      if (setClause.length === 0) {
+        return true; // No updates to perform
+      }
+
+      values.push(memoryId, businessId);
+
+      const result = await this.pool.query(
+        `UPDATE memories SET ${setClause.join(', ')} WHERE id = ${paramIndex} AND business_id = ${paramIndex + 1} RETURNING id`,
+        values
+      );
+
+      return result.rowCount > 0;
+    } catch (error) {
+      console.error('Error updating memory:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Delete a memory for a business
+   */
+  public async deleteMemory(memoryId: string, businessId: string): Promise<boolean> {
+    try {
+      const result = await this.pool.query(
+        `DELETE FROM memories WHERE id = $1 AND business_id = $2 RETURNING id`,
+        [memoryId, businessId]
+      );
+      return result.rowCount > 0;
+    } catch (error) {
+      console.error('Error deleting memory:', error);
+      return false;
+    }
+  }
+
+  /**
    * Get all social accounts for a given user ID.
    */
   public async getSocialAccountsByUserId(userId: string): Promise<SocialAccount[]> {

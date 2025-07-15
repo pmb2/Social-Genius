@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import NotificationService from '@/services/api/notification-service';
-import { AuthService } from '@/services/auth';
+import { getIronSession } from 'iron-session';
+import { sessionOptions, SessionData } from '@/lib/auth/session';
+import { cookies } from 'next/headers';
 
 // Specify that this route runs on the Node.js runtime, not Edge
 export const runtime = 'nodejs';
@@ -12,32 +14,18 @@ export const revalidate = 0; // Never cache this route
 // Get unread notification count for the authenticated user
 export async function GET(req: NextRequest) {
   try {
-    const authService = AuthService.getInstance();
+    const session = await getIronSession<SessionData>(cookies(), sessionOptions);
     const notificationService = NotificationService.getInstance();
-    
-    // Get session from cookies
-    const cookieHeader = req.headers.get('cookie');
-    const cookies = authService.parseCookies(cookieHeader);
-    const sessionId = cookies['session'];
-    
-    if (!sessionId) {
+
+    if (!session.isLoggedIn || !session.id) {
       return NextResponse.json(
         { error: 'Authentication required' },
         { status: 401 }
       );
     }
     
-    // Verify the session
-    const session = await authService.verifySession(sessionId);
-    if (!session || !session.user) {
-      return NextResponse.json(
-        { error: 'Invalid or expired session' },
-        { status: 401 }
-      );
-    }
-    
     // Get unread count
-    const unreadCount = await notificationService.getUnreadCount(session.user.id);
+    const unreadCount = await notificationService.getUnreadCount(session.id);
     
     return NextResponse.json({
       unreadCount

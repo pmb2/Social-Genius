@@ -153,17 +153,18 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
 
             // If we have valid cached data, use it
             if (!skipCache && cachedData) {
+                const businessesFromCache = cachedData.businesses || [];
                 // Only log when debug is enabled
-                if (cachedData.businesses?.length > 0) {
-                    log(`Using cached businesses data (${cachedData.businesses.length} items)`, 'info');
+                if (businessesFromCache?.length > 0) {
+                    log(`Using cached businesses data (${businessesFromCache.length} items)`, 'info');
                 }
 
-                if (cachedData.businesses) {
+                if (businessesFromCache) {
 
                     // Sort businesses with priority:
                     // 1. Failed auth status first (need attention)
                     // 2. Then by creation date (newest first)
-                    const sortedBusinesses = [...cachedData.businesses].sort((a, b) => {
+                    const sortedBusinesses = [...businessesFromCache].sort((a, b) => {
                         // First sort by auth status - failed auth businesses first
                         if (a.authStatus === 'failed' && b.authStatus !== 'failed') return -1;
                         if (a.authStatus !== 'failed' && b.authStatus === 'failed') return 1;
@@ -244,13 +245,14 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
 
                 throw new Error(`Failed to fetch businesses: ${response.status} ${response.statusText}`);
             }
-            log(`Fetched ${data.businesses?.length || 0} businesses from API. Data: ${JSON.stringify(data.businesses)}`, 'info');
+            log(`[BUSINESS] Fetched ${data.businesses?.length || 0} businesses from API.`, 'info');
+            console.log('[BUSINESS] Raw data from API:', data);
 
             // Save to session storage cache
             if (typeof window !== 'undefined') {
                 try {
                     sessionStorage.setItem(cacheKey, JSON.stringify({
-                        data,
+                        businesses: data.businesses, // Store the businesses array directly
                         timestamp: Date.now()
                     }));
                 } catch (e) {
@@ -258,11 +260,13 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
                 }
             }
 
-            if (data.businesses) {
+            const businesses = data.businesses || [];
+            console.log('[BUSINESS] Businesses from API:', businesses);
+            if (businesses) {
                 // Sort businesses with priority:
                 // 1. Failed auth status first (need attention)
                 // 2. Then by creation date (newest first)
-                const sortedBusinesses = [...data.businesses].sort((a, b) => {
+                const sortedBusinesses = [...businesses].sort((a, b) => {
                     // First sort by auth status - failed auth businesses first
                     if (a.authStatus === 'failed' && b.authStatus !== 'failed') return -1;
                     if (a.authStatus !== 'failed' && b.authStatus === 'failed') return 1;
@@ -272,6 +276,7 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
                 });
 
                 setBusinesses(sortedBusinesses);
+                console.log('[BUSINESS] Businesses state updated:', sortedBusinesses);
                 
                 // Notify parent component about the business count
                 if (onBusinessCountChange) {
@@ -279,6 +284,7 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
                 }
             } else {
                 setBusinesses([]);
+                console.log('[BUSINESS] Businesses state updated to empty array.');
                 
                 // Notify parent component about zero businesses
                 if (onBusinessCountChange) {

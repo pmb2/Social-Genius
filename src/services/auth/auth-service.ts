@@ -513,13 +513,15 @@ class AuthService {
   }
 
   // Get businesses for user
-  public async getBusinesses(userId: number): Promise<{ success: boolean, businesses?: any[], error?: string }> {
+  public async getBusinesses(userId: number): Promise<any[]> {
     try {
+      console.log(`[BUSINESS] AuthService: Fetching businesses for user ID ${userId}`);
       const businesses = await this.db.getBusinessesForUser(userId);
-      return { success: true, businesses };
+      console.log(`[BUSINESS] AuthService: Found ${businesses.length} businesses for user ID ${userId}`);
+      return businesses;
     } catch (error) {
       console.error('Get businesses error:', error);
-      return { success: false, error: 'Failed to get businesses' };
+      return [];
     }
   }
   

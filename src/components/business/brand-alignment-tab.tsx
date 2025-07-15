@@ -39,6 +39,10 @@ import {
 } from "@/components/ui/dropdown-menu"
 import axios from "axios"
 import Image from "next/image"
+import PostCard from "@/components/PostCard";
+import { getGroqChatCompletion } from "@/services/groq-service";
+import { prePrompt } from "@/prompts/pre-prompt";
+import { promptTemplate } from "@/prompts/prompt-template";
 
 // Define types
 type Message = {
@@ -67,6 +71,22 @@ type RagSettings = {
     similarityThreshold: number
     useWebSearch: boolean
     forceWebSearch: boolean
+}
+
+type Post = {
+    platform: string;
+    content: string;
+    hashtags: string[];
+    mediaType: string;
+    mediaDescription: string;
+    timeAgo?: string;
+    location?: string;
+}
+
+type PostSettings = {
+    tone: string;
+    type: string;
+    platforms: string[];
 }
 
 export function BrandAlignmentTab() {
@@ -137,6 +157,17 @@ export function BrandAlignmentTab() {
     const chatContainerRef = useRef<HTMLDivElement>(null)
 
     const COLLECTION_NAME = "brand-alignment-rag"
+
+    // State variables for postcard generation
+    const [posts, setPosts] = useState<Post[]>([]);
+    const [showWelcomeMessage, setShowWelcomeMessage] = useState(true);
+    const [showSettings, setShowSettings] = useState(false);
+    const [uploadedContent, setUploadedContent] = useState<any[]>([]);
+    const [postSettings, setPostSettings] = useState<PostSettings>({ // Renamed to avoid conflict
+        tone: 'Professional',
+        type: 'Property Listing',
+        platforms: []
+    });
 
     // Initial welcome message and API key validation
     useEffect(() => {
@@ -439,6 +470,96 @@ export function BrandAlignmentTab() {
         }
     }
 
+    const handleFileUpload = async (files: FileList | null) => {
+        if (!files || files.length === 0) return;
+
+        const newUploadedContent: any[] = [];
+        for (const file of Array.from(files)) {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await axios.post('/api/upload', formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data'
+                    }
+                });
+                newUploadedContent.push(response.data.file);
+            } catch (error) {
+                console.error('Error uploading file', error);
+                setAlertMessage(`❌ Error uploading file: ${file.name}`);
+                setTimeout(() => setAlertMessage(null), 3000);
+            }
+        }
+        setUploadedContent(prevContent => [...prevContent, ...newUploadedContent]);
+    };
+
+    const handleUploadClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const toggleSettings = () => {
+        setShowSettings(prev => !prev);
+    };
+
+    const handleSettingChange = (settingType: keyof PostSettings, value: string | string[]) => {
+        setPostSettings(prevSettings => ({
+            ...prevSettings,
+            [settingType]: value
+        }));
+    };
+
+    const handlePlatformToggle = (platform: string) => {
+        setPostSettings(prevSettings => ({
+            ...prevSettings,
+            platforms: prevSettings.platforms.includes(platform)
+                ? prevSettings.platforms.filter(p => p !== platform)
+                : [...prevSettings.platforms, platform]
+        }));
+    };
+
+    const handleGeneratePosts = async () => {
+        if (!userInput.trim() && uploadedContent.length === 0) {
+            return;
+        }
+
+        setShowSettings(false);
+        setIsLoading(true);
+        setPosts([]); // Clear previous posts
+
+        const prompt = promptTemplate(userInput, postSettings, JSON.stringify(uploadedContent));
+        const fullPrompt = `${prePrompt}\n\n${prompt}\n\nUploaded files: ${JSON.stringify(uploadedContent)}`;
+
+        setMessages([]); // Clear chat messages when generating posts
+        setShowWelcomeMessage(false);
+
+        try {
+            const groqResponse = await getGroqChatCompletion(fullPrompt);
+            const jsonMatch = groqResponse.match(/\{[\s\S]*\}/);
+            if (!jsonMatch) {
+                throw new Error('No valid JSON found in the response');
+            }
+
+            const generatedPosts = JSON.parse(jsonMatch[0]);
+
+            const filteredPosts = generatedPosts.posts.filter((post: Post) =>
+                postSettings.platforms.includes(post.platform)
+            );
+
+            setPosts(filteredPosts);
+            setAlertMessage('✅ Posts generated successfully!');
+            setTimeout(() => setAlertMessage(null), 3000);
+
+        } catch (error: any) {
+            console.error('Error generating posts:', error);
+            setAlertMessage(`❌ Error generating posts: ${error.message || 'Unknown error'}`);
+            setTimeout(() => setAlertMessage(null), 3000);
+        } finally {
+            setIsLoading(false);
+            setUserInput('');
+        }
+    };
+
     // Message handling
     const handleSendMessage = async () => {
         if (!userInput.trim()) return
@@ -448,6 +569,13 @@ export function BrandAlignmentTab() {
         setMessages((prev) => [...prev, userMessage])
         setUserInput("")
         setIsLoading(true)
+
+        // If the user input is related to post generation, call handleGeneratePosts
+        // This is a simple heuristic, you might want a more sophisticated way to detect intent
+        if (userInput.toLowerCase().includes("generate posts") || userInput.toLowerCase().includes("create posts")) {
+            await handleGeneratePosts();
+            return;
+        }
 
         try {
             let context = ""
@@ -695,560 +823,8 @@ export function BrandAlignmentTab() {
     }
 
     return (
-        <div
-            className="h-full min-h-[600px] flex flex-col m-0 p-4 overflow-hidden relative"
-            data-tab="brand"
-            onDragEnter={handleGlobalDrag}
-            onDragOver={handleGlobalDrag}
-            onDragLeave={handleGlobalDrag}
-            onDrop={handleGlobalDrop}
-        >
-            {/* File Drop Overlay */}
-            {dragActive && (
-                <div
-                    className="absolute inset-0 bg-[#FF1681]/10 backdrop-blur-sm z-30 border-4 border-[#FF1681] rounded-xl flex items-center justify-center">
-                    <div className="bg-white p-6 rounded-xl shadow-xl flex flex-col items-center max-w-md">
-                        <Upload className="h-10 w-10 text-[#FF1681] mb-4"/>
-                        <h3 className="text-xl font-medium text-gray-800 mb-2">Drop to Upload</h3>
-                        <p className="text-sm text-gray-500 text-center">Release your file to add it to your brand
-                            alignment context</p>
-                    </div>
-                </div>
-            )}
-            <div className="grid grid-cols-[250px_1fr] gap-6 h-full max-h-full min-h-0">
-                <div className="bg-[#F3F4F6] rounded-xl p-6 space-y-4 flex flex-col h-full max-h-full">
-                    <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-xl font-semibold">Brand Alignment</h3>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 rounded-full border border-gray-300 hover:bg-gray-100"
-                            onClick={() => {
-                                // Clear the user input and add a welcome message
-                                setUserInput("");
-                                setMessages([{
-                                    role: "assistant",
-                                    content: "👋 Welcome! I'm here to help you develop a strong, consistent brand voice. Let's work together to define your brand's personality and tone."
-                                }]);
-                            }}
-                            aria-label="Reset chat"
-                            title="Reset chat"
-                        >
-                            <RefreshCw className="h-3.5 w-3.5 text-gray-700"/>
-                        </Button>
-                    </div>
-
-                    {/* Settings Dropdown */}
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button
-                                className="w-full bg-white border-2 border-black text-black hover:bg-gray-50 flex justify-between items-center"
-                            >
-                <span className="flex items-center">
-                  <Settings className="w-4 h-4 mr-2"/>
-                  Agent Settings
-                </span>
-                                <ChevronDown className="w-4 h-4"/>
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent className="w-[280px]" align="start">
-                            <DropdownMenuLabel>Settings</DropdownMenuLabel>
-                            <DropdownMenuSeparator/>
-
-                            {/* Model Selection */}
-                            <div className="px-2 py-1.5 space-y-1.5">
-                                <Label htmlFor="model-selection" className="text-xs font-medium">Model Selection</Label>
-                                <Select
-                                    value={settings.modelVersion}
-                                    onValueChange={(value) => setSettings({...settings, modelVersion: value})}
-                                >
-                                    <SelectTrigger id="model-selection" className="w-full text-sm">
-                                        <SelectValue placeholder="Select model"/>
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem
-                                            value="deepseek-r1-distill-llama-70b">deepseek-r1-distill-llama-70b</SelectItem>
-                                        <SelectItem value="llama3-70b-8192">llama3-70b-8192</SelectItem>
-                                        <SelectItem value="mixtral-8x7b-32768">mixtral-8x7b-32768</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            <DropdownMenuSeparator/>
-
-                            {/* RAG Toggle */}
-                            <div className="px-2 py-1.5 flex items-center justify-between">
-                                <Label htmlFor="rag-toggle" className="text-sm">Enable RAG Mode</Label>
-                                <Switch
-                                    id="rag-toggle"
-                                    checked={settings.ragEnabled}
-                                    onCheckedChange={(checked) => setSettings({...settings, ragEnabled: checked})}
-                                    className="data-[state=checked]:bg-[#FF1681]"
-                                />
-                            </div>
-
-                            {/* Similarity Threshold (Only visible when RAG is enabled) */}
-                            {settings.ragEnabled && (
-                                <div className="px-2 py-1.5 space-y-1.5">
-                                    <div className="flex justify-between items-center">
-                                        <Label htmlFor="similarity-threshold" className="text-xs font-medium">Similarity
-                                            Threshold</Label>
-                                        <span
-                                            className="text-xs text-gray-500">{settings.similarityThreshold.toFixed(1)}</span>
-                                    </div>
-                                    <Slider
-                                        id="similarity-threshold"
-                                        min={0}
-                                        max={1}
-                                        step={0.1}
-                                        value={[settings.similarityThreshold]}
-                                        onValueChange={(value) => setSettings({
-                                            ...settings,
-                                            similarityThreshold: value[0]
-                                        })}
-                                        className="w-full"
-                                    />
-                                    <p className="text-[10px] text-gray-500 mt-1">
-                                        Lower values will return more documents but might be less relevant.
-                                    </p>
-                                </div>
-                            )}
-
-                            <DropdownMenuSeparator/>
-
-                            {/* Web Search Toggle */}
-                            <div className="px-2 py-1.5 flex items-center justify-between">
-                                <Label htmlFor="web-search-toggle" className="text-sm">Web Search Fallback</Label>
-                                <Switch
-                                    id="web-search-toggle"
-                                    checked={settings.useWebSearch}
-                                    onCheckedChange={(checked) => setSettings({...settings, useWebSearch: checked})}
-                                    className="data-[state=checked]:bg-[#FF1681]"
-                                />
-                            </div>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-
-                    {/* Memories Dialog (Document Manager) */}
-                    <Dialog open={isMemoriesOpen} onOpenChange={setIsMemoriesOpen}>
-                        <DialogTrigger asChild>
-                            <Button
-                                className="w-full bg-white border-2 border-black text-black hover:bg-gray-50"
-                                onClick={() => setIsMemoriesOpen(true)}
-                            >
-                                Memories
-                            </Button>
-                        </DialogTrigger>
-                        <DialogContent
-                            className="max-w-md p-0 overflow-visible h-auto"
-                            onInteractOutside={() => setIsMemoriesOpen(false)}
-                            aria-describedby="memories-description"
-                        >
-                            <DialogTitle className="sr-only">AI Memories</DialogTitle>
-                            <DialogDescription id="memories-description" className="sr-only">Manage your brand memories
-                                and chat context</DialogDescription>
-                            <div className="flex flex-col h-full bg-white rounded-xl">
-                                <div className="px-6 py-4 flex justify-between items-center border-b relative">
-                                    <h2 className="text-lg font-medium">Memories & Context</h2>
-                                    <DialogClose asChild>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-8 w-8 rounded-full absolute right-2 top-2 bg-white border shadow-md hover:bg-gray-50 z-50"
-                                            onClick={() => setIsMemoriesOpen(false)}
-                                        >
-                                            <X className="h-4 w-4"/>
-                                        </Button>
-                                    </DialogClose>
-                                </div>
-
-                                <Tabs defaultValue="memories" className="w-full">
-                                    <TabsList className="grid grid-cols-2 mx-6 mt-2">
-                                        <TabsTrigger value="memories">Memories</TabsTrigger>
-                                        <TabsTrigger value="documents">Documents</TabsTrigger>
-                                    </TabsList>
-
-                                    {/* Memories Tab Content */}
-                                    <TabsContent value="memories" className="p-0">
-                                        <div className="p-6 space-y-4 overflow-y-auto max-h-[50vh]">
-                                            {memories.length === 0 ? (
-                                                <p className="text-center text-gray-500 py-4">
-                                                    No memories yet. Add context or tasks to get started.
-                                                </p>
-                                            ) : (
-                                                memories.map((memory) => (
-                                                    <div
-                                                        key={memory.id}
-                                                        className={`group flex items-start gap-3 p-3 rounded-lg border ${
-                                                            memory.type === 'task'
-                                                                ? memory.isCompleted
-                                                                    ? 'bg-gray-50 border-gray-200'
-                                                                    : 'bg-white border-gray-200'
-                                                                : memory.type === 'summary'
-                                                                    ? 'bg-blue-50 border-blue-100'
-                                                                    : 'bg-amber-50 border-amber-100'
-                                                        } transition-all hover:shadow-md hover:scale-[1.01]`}
-                                                    >
-                                                        {memory.type === 'task' && (
-                                                            <button
-                                                                onClick={() => toggleMemoryCompletion(memory.id)}
-                                                                className="mt-1"
-                                                            >
-                                                                {memory.isCompleted ? (
-                                                                    <Check className="h-4 w-4 text-green-500"/>
-                                                                ) : (
-                                                                    <div
-                                                                        className="h-4 w-4 border border-gray-300 rounded-sm"/>
-                                                                )}
-                                                            </button>
-                                                        )}
-
-                                                        <div className="flex-1">
-                                                            {editingMemoryId === memory.id ? (
-                                                                <Textarea
-                                                                    value={memory.content}
-                                                                    onChange={(e) => {
-                                                                        const newContent = e.target.value
-                                                                        setMemories(prev =>
-                                                                            prev.map(mem => mem.id === memory.id ? {
-                                                                                ...mem,
-                                                                                content: newContent
-                                                                            } : mem)
-                                                                        )
-                                                                    }}
-                                                                    className="min-h-[60px] text-sm focus:border-[#FF1681] focus:ring-[#FF1681]/20 transition-shadow focus:shadow-[0_0_0_3px_rgba(255,22,129,0.1)]"
-                                                                    autoFocus
-                                                                    onBlur={() => updateMemory(memory.id, memory.content)}
-                                                                    onKeyDown={(e) => {
-                                                                        if (e.key === 'Enter' && !e.shiftKey) {
-                                                                            e.preventDefault()
-                                                                            updateMemory(memory.id, memory.content)
-                                                                        }
-                                                                    }}
-                                                                />
-                                                            ) : (
-                                                                <div
-                                                                    className={`text-sm ${memory.type === 'task' && memory.isCompleted ? 'line-through text-gray-500' : ''}`}
-                                                                >
-                                                                    {memory.content}
-                                                                </div>
-                                                            )}
-                                                            <div className="flex items-center justify-between mt-2">
-                                <span className="text-xs text-gray-500">
-                                  {memory.type === 'custom' ? 'Custom' :
-                                      memory.type === 'summary' ? 'Context Summary' : 'Task'}
-                                </span>
-                                                                <div className="flex gap-1">
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="icon"
-                                                                        className="h-6 w-6 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-100"
-                                                                        onClick={() => setEditingMemoryId(memory.id)}
-                                                                    >
-                                                                        <Edit className="h-3 w-3 text-blue-500"/>
-                                                                    </Button>
-                                                                    <Button
-                                                                        variant="ghost"
-                                                                        size="icon"
-                                                                        className="h-6 w-6 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[#FF1681]/10"
-                                                                        onClick={() => deleteMemory(memory.id)}
-                                                                    >
-                                                                        <Trash className="h-3 w-3 text-[#FF1681]"/>
-                                                                    </Button>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ))
-                                            )}
-                                        </div>
-
-                                        <div className="p-6 border-t bg-gray-50">
-                                            <div className="flex flex-col gap-2">
-                                                <Textarea
-                                                    placeholder="Add a new memory or task..."
-                                                    value={newMemoryContent}
-                                                    onChange={(e) => setNewMemoryContent(e.target.value)}
-                                                    className="min-h-[60px] text-sm focus:border-[#FF1681] focus:ring-[#FF1681]/20 transition-shadow focus:shadow-[0_0_0_3px_rgba(255,22,129,0.1)]"
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter' && !e.shiftKey && newMemoryContent.trim()) {
-                                                            e.preventDefault()
-                                                            const isTask = newMemoryContent.toLowerCase().includes('task:') ||
-                                                                newMemoryContent.toLowerCase().includes('to-do:') ||
-                                                                newMemoryContent.toLowerCase().includes('todo:')
-                                                            addMemory(newMemoryContent, isTask ? 'task' : 'custom')
-                                                        }
-                                                    }}
-                                                />
-                                                <div className="flex gap-2 justify-end">
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className="transition-all hover:border-blue-500 hover:text-blue-600"
-                                                        onClick={() => newMemoryContent.trim() && addMemory(newMemoryContent, 'task')}
-                                                    >
-                                                        Add as Task
-                                                    </Button>
-                                                    <Button
-                                                        className="bg-gradient-to-r from-[#FFAB1A] via-[#FF1681] to-[#0080FF] text-white hover:opacity-90 shadow-md hover:shadow-lg transition-shadow"
-                                                        size="sm"
-                                                        onClick={() => newMemoryContent.trim() && addMemory(newMemoryContent, 'custom')}
-                                                    >
-                                                        <Plus className="h-4 w-4 mr-1"/>
-                                                        Add Memory
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </TabsContent>
-
-                                    {/* Documents Tab Content */}
-                                    <TabsContent value="documents" className="p-0">
-                                        <div className="p-6 space-y-4 overflow-y-auto max-h-[50vh]">
-                                            {processedDocuments.length === 0 ? (
-                                                <p className="text-center text-gray-500 py-4">
-                                                    No documents added yet. Upload files to get started.
-                                                </p>
-                                            ) : (
-                                                processedDocuments.map((doc) => (
-                                                    <div
-                                                        key={doc.id}
-                                                        className="group flex items-center gap-3 p-3 rounded-lg border bg-white hover:bg-gray-50 transition-all hover:shadow-md hover:scale-[1.01]"
-                                                    >
-                                                        <input
-                                                            type="checkbox"
-                                                            className="h-5 w-5 rounded-md border-gray-300 text-[#FF1681] focus:ring-[#FF1681] transition-shadow focus:shadow-[0_0_0_3px_rgba(255,22,129,0.1)]"
-                                                            checked={selectedDocuments.has(doc.id)}
-                                                            onChange={() => toggleDocumentSelection(doc.id)}
-                                                        />
-                                                        <span className="flex-1 text-sm truncate">
-                              {getDocumentIcon(doc.type)} {doc.name}
-                            </span>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            className="h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation()
-                                                                handleDeleteDocument(doc.id)
-                                                            }}
-                                                        >
-                                                            <X className="h-4 w-4 text-red-500"/>
-                                                        </Button>
-                                                    </div>
-                                                ))
-                                            )}
-                                        </div>
-
-                                        <div className="p-6 border-t bg-gray-50">
-                                            <div className="flex gap-2">
-                                                <input
-                                                    type="text"
-                                                    placeholder="Enter URL to process..."
-                                                    className="flex-1 px-3 py-2 border rounded-lg text-sm focus:border-[#FF1681] focus:ring-[#FF1681]/20 transition-shadow focus:shadow-[0_0_0_3px_rgba(255,22,129,0.1)] focus:outline-none"
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === "Enter") {
-                                                            const target = e.target as HTMLInputElement
-                                                            processWebUrl(target.value)
-                                                            target.value = ""
-                                                        }
-                                                    }}
-                                                />
-                                                <Button
-                                                    className="bg-gradient-to-r from-[#FFAB1A] via-[#FF1681] to-[#0080FF] text-white hover:opacity-90 shadow-md hover:shadow-lg transition-shadow"
-                                                    onClick={() => fileInputRef.current?.click()}
-                                                >
-                                                    <Upload className="h-4 w-4 mr-2"/>
-                                                    Upload
-                                                </Button>
-                                                <input
-                                                    ref={fileInputRef}
-                                                    type="file"
-                                                    accept=".pdf,.txt,.md,.csv,.html,.json,.xml,.docx,text/plain,text/markdown,text/csv,text/html,application/json,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                                                    className="hidden"
-                                                    onChange={handleFileChange}
-                                                />
-                                            </div>
-                                        </div>
-                                    </TabsContent>
-                                </Tabs>
-                            </div>
-                        </DialogContent>
-                    </Dialog>
-
-                    {/*/!* Web Search Toggle *!/*/}
-                    {/*<div className="flex items-center justify-between">*/}
-                    {/*  <Label htmlFor="force-web-search">Force Web Search</Label>*/}
-                    {/*  <Switch*/}
-                    {/*    id="force-web-search"*/}
-                    {/*    checked={settings.forceWebSearch}*/}
-                    {/*    onCheckedChange={(checked) => setSettings({ ...settings, forceWebSearch: checked })}*/}
-                    {/*  />*/}
-                    {/*</div>*/}
-
-                    {/* Document list summary */}
-                    {processedDocuments.length > 0 && (
-                        <div className="mt-4 overflow-hidden">
-                            <h4 className="text-sm font-medium mb-2">Documents ({processedDocuments.length})</h4>
-                            <div className="space-y-1 max-h-[120px] overflow-y-auto">
-                                {processedDocuments.slice(0, 5).map((doc) => (
-                                    <div key={doc.id} className="text-xs text-gray-600 truncate">
-                                        {getDocumentIcon(doc.type)} {doc.name}
-                                    </div>
-                                ))}
-                                {processedDocuments.length > 5 && (
-                                    <div
-                                        className="text-xs text-gray-600">+{processedDocuments.length - 5} more...</div>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* File Upload Info - Bottom of Sidebar */}
-                    <div className="mt-auto">
-                        <div className="bg-white rounded-md border border-gray-200 px-3 py-2 flex items-center gap-2">
-                            <Upload className="h-3.5 w-3.5 text-[#FF1681]"/>
-                            <p className="text-xs text-gray-600">Drag files anywhere to upload</p>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Main Chat Area */}
-                <div className="border rounded-xl flex flex-col overflow-hidden h-full min-h-0 max-h-full">
-                    <div className="flex-1 p-4 overflow-y-auto min-h-0" ref={chatContainerRef}>
-                        {messages.map((message, index) => (
-                            <div key={index}
-                                 className={`flex gap-4 mb-6 ${message.role === "user" ? "flex-row-reverse justify-start" : ""} animate-in fade-in-10 slide-in-from-bottom-5 duration-300`}>
-                                <div
-                                    className={`flex-shrink-0 w-10 h-10 rounded-full ${message.role === "user" ? "bg-transparent" : "bg-black"} overflow-hidden flex items-center justify-center`}>
-                                    {message.role === "assistant" ? (
-                                        <Image
-                                            src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Dark%20Logo-qzFx0r77gWWhGLXSabVCOiJcKqbKzt.png"
-                                            alt="AI Assistant"
-                                            className="w-full h-full object-cover"
-                                            width={40}
-                                            height={40}
-                                        />
-                                    ) : (
-                                        <Image
-                                            src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Mask%20group%20(2)%201-5RMiT8g4J4BzlQiRnu7aemEcs324uL.png"
-                                            alt="User"
-                                            className="w-full h-full object-cover rounded-full"
-                                            width={40}
-                                            height={40}
-                                        />
-                                    )}
-                                </div>
-                                <div
-                                    className={`flex flex-col max-w-[80%] ${message.role === "user" ? "items-end" : ""}`}>
-                                    <div
-                                        className={`rounded-xl p-4 ${message.role === "assistant" ? "bg-[#F3F4F6]" : "bg-blue-50"}`}>
-                                        {message.role === "assistant" && message.content.includes("<think>") ? (
-                                            <div className="space-y-0">
-                                                {/* Thoughts toggle button */}
-                                                <button
-                                                    className="text-xs text-blue-600 hover:text-blue-800 font-medium -mb-1"
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
-                                                        const thoughtsElement = e.currentTarget.nextElementSibling;
-                                                        if (thoughtsElement) {
-                                                            const isVisible = thoughtsElement.classList.contains("block");
-                                                            thoughtsElement.classList.toggle("block", !isVisible);
-                                                            thoughtsElement.classList.toggle("hidden", isVisible);
-                                                            e.currentTarget.textContent = isVisible ? "Show thoughts" : "Hide thoughts";
-                                                        }
-                                                    }}
-                                                >
-                                                    Show thoughts
-                                                </button>
-
-                                                {/* Thoughts content (hidden by default) */}
-                                                <div className="hidden py-1 border-l-2 border-gray-200 pl-2 my-1">
-                                                    <p className="text-sm text-gray-500 italic m-0 leading-snug">
-                                                        {message.content
-                                                            .match(/<think>([\s\S]*?)<\/think>/)?.[1] || "No thoughts available"}
-                                                    </p>
-                                                </div>
-
-                                                {/* Main content without the think tags */}
-                                                <p className="text-black whitespace-pre-line m-0 text-left">
-                                                    {message.content.replace(/<think>[\s\S]*?<\/think>/g, "").trim()}
-                                                </p>
-                                            </div>
-                                        ) : (
-                                            <p className="text-black whitespace-pre-line">{message.content}</p>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                        {isLoading && (
-                            <div className="flex gap-4">
-                                <div
-                                    className="flex-shrink-0 w-10 h-10 rounded-full bg-black overflow-hidden flex items-center justify-center">
-                                    <Image
-                                        src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Dark%20Logo-qzFx0r77gWWhGLXSabVCOiJcKqbKzt.png"
-                                        alt="AI Assistant"
-                                        className="w-full h-full object-cover"
-                                        width={40}
-                                        height={40}
-                                    />
-                                </div>
-                                <div className="flex flex-col max-w-[80%]">
-                                    <div className="bg-[#F3F4F6] rounded-xl p-4">
-                                        <div className="flex items-center gap-2">
-                                            <div className="flex space-x-1">
-                                                <div className="h-2 w-2 bg-gray-500 rounded-full animate-bounce"
-                                                     style={{animationDelay: "0ms"}}></div>
-                                                <div className="h-2 w-2 bg-gray-500 rounded-full animate-bounce"
-                                                     style={{animationDelay: "150ms"}}></div>
-                                                <div className="h-2 w-2 bg-gray-500 rounded-full animate-bounce"
-                                                     style={{animationDelay: "300ms"}}></div>
-                                            </div>
-                                            <p className="text-black">Thinking...</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-
-                    {/* Input Area */}
-                    <div className="p-4 border-t shrink-0">
-                        <div className="flex gap-4 items-center">
-                            <Textarea
-                                placeholder="Describe your Brand tone..."
-                                className="flex-1 resize-none text-base rounded-xl border-gray-200 h-[56px] py-4 focus:border-[#FF1681] focus:ring-[#FF1681]/20 transition-shadow focus:shadow-[0_0_0_3px_rgba(255,22,129,0.1)]"
-                                value={userInput}
-                                onChange={(e) => setUserInput(e.target.value)}
-                                onKeyDown={handleKeyDown}
-                            />
-                            <Button
-                                className="px-8 h-[56px] bg-gradient-to-b from-[#FFAB1A] to-[#FF1681] hover:opacity-90 text-white rounded-full text-base font-medium shrink-0 shadow-md hover:shadow-lg transition-shadow"
-                                onClick={handleSendMessage}
-                                disabled={isLoading}
-                            >
-                                {isLoading ?
-                                    <div className="flex items-center">
-                                        <div className="h-2 w-2 bg-white rounded-full animate-pulse mr-2"></div>
-                                        <span>Sending...</span>
-                                    </div>
-                                    : "Send"}
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Alert message */}
-            {alertMessage && (
-                <div className="fixed bottom-4 right-4 z-50">
-                    <Alert className="max-w-md shadow-lg animate-in slide-in-from-bottom-5 fade-in-20 duration-300">
-                        <AlertDescription>{alertMessage}</AlertDescription>
-                    </Alert>
-                </div>
-            )}
+        <div>
+            <p>Brand Alignment Tab</p>
         </div>
     )
 }
