@@ -18,7 +18,6 @@ const publicRoutes = [
   '/api/env-check',
   '/api/db-status',
   '/api/direct-db-test',
-  '/favicon.ico',
   '/check-db',
   '/debug',
   '/_next',
@@ -114,9 +113,13 @@ export async function middleware(request: NextRequest) {
 // Paths to apply middleware to
 export const config = {
   matcher: [
-    // Skip all internal paths (_next) and other public paths
-    '/((?!_next|api/auth|api/compliance|favicon.ico).*)',
-    // Optional: Protect API routes except auth-related ones, compliance-related ones and utility routes
-    '/api/((?!auth|compliance|test-db|init-db|db-status|env-check|debug-auth|direct-db-test).*)',
+    /*
+     * Match all request paths except for the ones starting with:
+     * - api (API routes)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     */
+    '/((?!api|_next/static|_next/image|favicon.ico).*)',
   ],
-};
+}

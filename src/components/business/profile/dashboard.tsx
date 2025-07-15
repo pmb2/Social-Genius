@@ -40,7 +40,15 @@ type Business = {
     authStatus?: 'logged_in' | 'pending' | 'failed';
     browserInstance?: string;
     _modalOpenTime?: number; // Track when modal was opened to detect changes
-    socialAccounts?: SocialAccount[]; // ADDED THIS LINE
+    socialAccounts?: SocialAccount[];
+    website?: string;
+    address?: string;
+    city?: string;
+    state?: string;
+    zipCode?: string;
+    phone?: string;
+    email?: string;
+    description?: string;
 }
 
 // Define SocialAccount type (should match the interface in postgres-service.ts)

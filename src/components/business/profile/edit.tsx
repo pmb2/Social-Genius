@@ -23,23 +23,121 @@ interface BusinessProfileEditProps {
   onClose: () => void;
 }
 
+interface BusinessData {
+  name: string;
+  website: string;
+  address: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  phone: string;
+  email: string;
+  description: string;
+}
+
 export default function BusinessProfileEdit({ business, onClose }: BusinessProfileEditProps) {
-  // Use client-side only rendering to avoid hydration issues
-  const [isMounted, setIsMounted] = useState(false)
+  const [isMounted, setIsMounted] = useState(false);
+  const [formData, setFormData] = useState<BusinessData>({
+    name: business?.name || "",
+    website: "https://example.com", // Placeholder, replace with actual data if available
+    address: "123 Business St", // Placeholder
+    city: "San Francisco", // Placeholder
+    state: "CA", // Placeholder
+    zipCode: "94105", // Placeholder
+    phone: "(415) 555-1234", // Placeholder
+    email: "contact@business.com", // Placeholder
+    description: "We are a professional business providing high-quality services to our customers.", // Placeholder
+  });
 
   useEffect(() => {
-    setIsMounted(true)
-  }, [])
+    setIsMounted(true);
+    if (business) {
+      setFormData({
+        name: business.name || "",
+        website: "https://example.com", // Replace with actual data if available
+        address: "123 Business St", // Replace
+        city: "San Francisco", // Replace
+        state: "CA", // Replace
+        zipCode: "94105", // Replace
+        phone: "(415) 555-1234", // Replace
+        email: "contact@business.com", // Replace
+        description: "We are a professional business providing high-quality services to our customers.", // Replace
+      });
+    }
+  }, [business]);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    // Handle form submission
-    toast.success("Business profile updated successfully")
-    onClose()
-  }
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { id, value } = e.target;
+    setFormData((prevData) => ({
+      ...prevData,
+      [id]: value,
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!business) return;
+
+    const updatedFields: Partial<BusinessData> = {};
+    if (formData.name !== (business.name || "")) {
+      updatedFields.name = formData.name;
+    }
+    // Add similar checks for other fields
+    if (formData.website !== "https://example.com") { // Compare with initial placeholder or actual business.website
+      updatedFields.website = formData.website;
+    }
+    if (formData.address !== "123 Business St") {
+      updatedFields.address = formData.address;
+    }
+    if (formData.city !== "San Francisco") {
+      updatedFields.city = formData.city;
+    }
+    if (formData.state !== "CA") {
+      updatedFields.state = formData.state;
+    }
+    if (formData.zipCode !== "94105") {
+      updatedFields.zipCode = formData.zipCode;
+    }
+    if (formData.phone !== "(415) 555-1234") {
+      updatedFields.phone = formData.phone;
+    }
+    if (formData.email !== "contact@business.com") {
+      updatedFields.email = formData.email;
+    }
+    if (formData.description !== "We are a professional business providing high-quality services to our customers.") {
+      updatedFields.description = formData.description;
+    }
+
+    if (Object.keys(updatedFields).length === 0) {
+      toast.info("No changes to save.");
+      onClose();
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/businesses/${business.businessId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updatedFields),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to update business profile.");
+      }
+
+      toast.success("Business profile updated successfully");
+      onClose(); // Close modal and trigger refresh in parent
+    } catch (error: any) {
+      console.error("Error updating business profile:", error);
+      toast.error(`Error updating profile: ${error.message || "Unknown error"}`);
+    }
+  };
 
   if (!isMounted) {
-    return null // Return nothing during server-side rendering
+    return null;
   }
 
   return (
@@ -65,32 +163,32 @@ export default function BusinessProfileEdit({ business, onClose }: BusinessProfi
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="businessName">Business Name</Label>
-                  <Input id="businessName" placeholder="Enter business name" defaultValue={business?.name || "Business Profile Account"} />
+                  <Label htmlFor="name">Business Name</Label>
+                  <Input id="name" placeholder="Enter business name" value={formData.name} onChange={handleChange} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="website">Website</Label>
-                  <Input id="website" placeholder="https://example.com" type="url" defaultValue="https://example.com" />
+                  <Input id="website" placeholder="https://example.com" type="url" value={formData.website} onChange={handleChange} />
                 </div>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="address">Address</Label>
-                <Input id="address" placeholder="Enter business address" defaultValue="123 Business St" />
+                <Input id="address" placeholder="Enter business address" value={formData.address} onChange={handleChange} />
               </div>
 
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="city">City</Label>
-                  <Input id="city" placeholder="City" defaultValue="San Francisco" />
+                  <Input id="city" placeholder="City" value={formData.city} onChange={handleChange} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="state">State</Label>
-                  <Input id="state" placeholder="State" defaultValue="CA" />
+                  <Input id="state" placeholder="State" value={formData.state} onChange={handleChange} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="zipCode">ZIP Code</Label>
-                  <Input id="zipCode" placeholder="ZIP Code" defaultValue="94105" />
+                  <Input id="zipCode" placeholder="ZIP Code" value={formData.zipCode} onChange={handleChange} />
                 </div>
               </div>
             </div>
@@ -104,7 +202,7 @@ export default function BusinessProfileEdit({ business, onClose }: BusinessProfi
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="phone">Phone Number</Label>
-                  <Input id="phone" placeholder="(123) 456-7890" type="tel" defaultValue="(415) 555-1234" />
+                  <Input id="phone" placeholder="(123) 456-7890" type="tel" value={formData.phone} onChange={handleChange} />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
@@ -112,7 +210,8 @@ export default function BusinessProfileEdit({ business, onClose }: BusinessProfi
                     id="email"
                     placeholder="contact@business.com"
                     type="email"
-                    defaultValue="contact@business.com"
+                    value={formData.email}
+                    onChange={handleChange}
                   />
                 </div>
               </div>
@@ -148,7 +247,8 @@ export default function BusinessProfileEdit({ business, onClose }: BusinessProfi
                 id="description"
                 placeholder="Enter a description of your business..."
                 className="min-h-[100px]"
-                defaultValue="We are a professional business providing high-quality services to our customers."
+                value={formData.description}
+                onChange={handleChange}
               />
             </div>
           </div>
@@ -173,6 +273,6 @@ export default function BusinessProfileEdit({ business, onClose }: BusinessProfi
         </div>
       </form>
     </div>
-  )
+  );
 }
 
