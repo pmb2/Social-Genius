@@ -1,7 +1,7 @@
 "use client"
 
-import type React from "react"
-import { useState, useEffect, useRef } from "react"
+import React, { useState, useEffect, useRef } from "react"
+
 import Link from "next/link"
 import {
     Upload,
@@ -40,7 +40,7 @@ import { promptTemplate } from "@/prompts/prompt-template"
 // Define types
 type Message = {
     role: "user" | "assistant";
-    content: string;
+    content: React.ReactNode;
 }
 
 type ProcessedDocument = {
@@ -90,7 +90,7 @@ type UploadedFile = {
     content?: string;
 }
 
-export function BrandAlignmentTab() {
+export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: string, highlight: string) => void }) {
     // Constants
     const COLLECTION_NAME = "brand-alignment-rag";
     const businessId = "business-123"; // In a real app, this would come from context or props
@@ -760,7 +760,16 @@ export function BrandAlignmentTab() {
             setMessages([
                 {
                     role: "assistant",
-                    content: `⚠️ Some required API keys are missing: ${missingKeysLinks}. Please add them to your .env file to enable full functionality.\n\nYou can still use this interface, but some features might not work properly.`,
+                    content: <>
+                        ⚠️ Some required API keys are missing: {missingKeys.map((key, index) => (
+                            <React.Fragment key={key}>
+                                <a href="#" onClick={(e) => { e.preventDefault(); onOpenSettings("api-settings", key); }} className="underline text-blue-500 hover:text-blue-700">{key}</a>
+                                {index < missingKeys.length - 1 ? ", " : ""}
+                            </React.Fragment>
+                        ))}. Please add them to your .env file to enable full functionality.
+                        <br /><br />
+                        You can still use this interface, but some features might not work properly.
+                    </>,
                 },
             ]);
         } else {
@@ -821,7 +830,7 @@ export function BrandAlignmentTab() {
                                                 ? 'bg-blue-500 text-white'
                                                 : 'bg-gray-200 text-gray-800'
                                         }`}>
-                                            <span dangerouslySetInnerHTML={{ __html: message.content }} />
+                                            {message.content}
                                         </div>
                                     </div>
                                 ))}

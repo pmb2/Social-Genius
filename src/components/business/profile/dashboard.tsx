@@ -424,12 +424,17 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
     }, [businesses]);
 
     // Memoize event handlers
-    const handleRowClick = useCallback((business: Business) => {
+    const handleRowClick = useCallback((business: Business, tab?: string, highlight?: string) => {
         setSelectedBusiness(business);
         setIsModalOpen(true);
 
-        
-    }, []);
+        // Update URL with businessId, tab, and highlight for direct linking
+        const url = new URL(window.location.href);
+        url.searchParams.set('businessId', business.businessId);
+        if (tab) url.searchParams.set('tab', tab);
+        if (highlight) url.searchParams.set('highlight', highlight);
+        router.replace(url.pathname + url.search, undefined, { shallow: true });
+    }, [router]);
 
     const handleClose = useCallback(() => {
         setIsModalOpen(false);
@@ -672,6 +677,9 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
                             log("Business profile modal closed via explicit close button", 'info');
                             fetchBusinesses(true); // Force refresh on close
                             handleClose();
+                        }}
+                        onOpenSettings={(tab, highlight) => {
+                            handleRowClick(selectedBusiness!, tab, highlight);
                         }}
                     />
                 </DialogContent>

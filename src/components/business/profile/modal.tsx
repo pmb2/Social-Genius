@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogTitle, DialogContent, DialogDescription } from "@/components/ui/dialog"
 import BusinessProfileEdit from "./edit"
+import SettingsPage from "@/components/settings/SettingsPage"
+import { useSearchParams } from 'next/navigation'
 
 import { BrandAlignmentTab } from "@/components/business/brand-alignment-tab"
 import { CompetitorResearchTab } from "@/components/business/competitor/research-tab"
@@ -20,12 +22,14 @@ interface Business {
   createdAt: string;
 }
 
-export default function BusinessProfileModal({ 
-  business, 
-  onClose 
-}: { 
-  business: Business | null; 
-  onClose: () => void 
+export default function BusinessProfileModal({
+  business,
+  onClose,
+  onOpenSettings
+}: {
+  business: Business | null;
+  onClose: () => void;
+  onOpenSettings: (tab: string, highlight: string) => void;
 }) {
   // Use client-side only rendering to avoid hydration issues
   const [isMounted, setIsMounted] = useState(false)
@@ -37,7 +41,9 @@ export default function BusinessProfileModal({
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   // State to track the active tab
-  const [activeTab, setActiveTab] = useState("compliance")
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get('tab') || "compliance";
+  const [activeTab, setActiveTab] = useState(initialTab);
 
   useEffect(() => {
     setIsMounted(true)
@@ -185,7 +191,10 @@ export default function BusinessProfileModal({
                 className="h-full data-[state=active]:flex data-[state=active]:flex-col"
                 forceMount={activeTab === "brand"}
               >
-                <BrandAlignmentTab />
+                <BrandAlignmentTab onOpenSettings={(tab, highlight) => {
+                  onClose(); // Close the current modal
+                  onOpenSettings(tab, highlight); // Trigger parent's open settings
+                }} />
               </TabsContent>
 
               <TabsContent 
@@ -194,6 +203,14 @@ export default function BusinessProfileModal({
                 forceMount={activeTab === "competitor"}
               >
                 <CompetitorResearchTab />
+              </TabsContent>
+
+              <TabsContent 
+                value="api-settings" 
+                className="h-full data-[state=active]:flex data-[state=active]:flex-col"
+                forceMount={activeTab === "api-settings"}
+              >
+                <SettingsPage />
               </TabsContent>
             </div>
           </div>
@@ -212,6 +229,12 @@ export default function BusinessProfileModal({
                 className="flex-1 h-full rounded-5 text-black data-[state=active]:bg-white data-[state=active]:text-black data-[state=inactive]:text-black/77"
               >
                 Competitor Research
+              </TabsTrigger>
+              <TabsTrigger
+                value="api-settings"
+                className="flex-1 h-full rounded-5 text-black data-[state=active]:bg-white data-[state=active]:text-black data-[state=inactive]:text-black/77"
+              >
+                API Settings
               </TabsTrigger>
             </TabsList>
           </div>
