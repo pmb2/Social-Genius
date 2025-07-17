@@ -360,7 +360,8 @@ class PostgresService {
           phone_number TEXT,
           created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          last_login TIMESTAMP WITH TIME ZONE
+          last_login TIMESTAMP WITH TIME ZONE,
+          plan_id TEXT NOT NULL DEFAULT 'basic'
         );
       `);
       await client.query('COMMIT');

@@ -547,6 +547,7 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
                                                 <PlusIcon className="h-4 w-4 text-black"/>
                                             </Button>
                                             <span>Account Name</span>
+                                            <span className="text-sm text-gray-500 ml-2">({businesses.length}/{locationLimit === -1 ? 'Unlimited' : locationLimit})</span>
                                         </div>
                                     </TableHead>
                                     <TableHead

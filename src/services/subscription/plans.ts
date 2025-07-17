@@ -17,6 +17,7 @@ export interface SubscriptionPlan {
     min: number;
     max: number | null;
   };
+  businessLimit: number; // Added this line
   isPopular?: boolean;
 }
 
@@ -40,7 +41,8 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     locationRange: {
       min: 1,
       max: 10
-    }
+    },
+    businessLimit: 10
   },
   {
     id: 'professional',
@@ -62,6 +64,7 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
       min: 11,
       max: 50
     },
+    businessLimit: 50,
     isPopular: true
   },
   {
@@ -83,7 +86,8 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     locationRange: {
       min: 51,
       max: 250
-    }
+    },
+    businessLimit: 250
   },
   {
     id: 'enterprise',
@@ -107,7 +111,8 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
     locationRange: {
       min: 251,
       max: null // Essentially unlimited
-    }
+    },
+    businessLimit: -1 // -1 for unlimited
   }
 ];
 

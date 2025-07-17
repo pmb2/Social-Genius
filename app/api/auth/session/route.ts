@@ -63,11 +63,14 @@ export async function GET(request: NextRequest) {
             responseData = {
               ...responseData,
               user: {
+                user: {
                 id: user.id,
                 email: user.email,
                 name: user.name || "",
                 profilePicture: user.profile_picture,
-                phoneNumber: user.phone_number
+                phoneNumber: user.phone_number,
+                planId: user.planId || "basic"
+            }
               }
             };
           }

@@ -308,7 +308,8 @@ class AuthService {
       const userObj = {
         id: user.id,
         email: user.email,
-        name: user.name || ""
+        name: user.name || "",
+        planId: user.plan_id || "basic"
       };
       
       // Only add profile_picture if it exists

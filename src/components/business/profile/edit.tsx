@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { X } from "lucide-react"
 import { toast } from "@/lib/ui/toast"
+import { useAuth } from "@/lib/auth/context"
 
 interface Business {
   id: number;
@@ -54,14 +55,14 @@ export default function BusinessProfileEdit({ business, onClose }: BusinessProfi
     if (business) {
       setFormData({
         name: business.name || "",
-        website: "https://example.com", // Replace with actual data if available
-        address: "123 Business St", // Replace
-        city: "San Francisco", // Replace
-        state: "CA", // Replace
-        zipCode: "94105", // Replace
-        phone: "(415) 555-1234", // Replace
-        email: "contact@business.com", // Replace
-        description: "We are a professional business providing high-quality services to our customers.", // Replace
+        website: business.website || "",
+        address: business.address || "",
+        city: business.city || "",
+        state: business.state || "",
+        zipCode: business.zipCode || "",
+        phone: business.phone || "",
+        email: business.email || "",
+        description: business.description || "",
       });
     }
   }, [business]);
@@ -74,37 +75,38 @@ export default function BusinessProfileEdit({ business, onClose }: BusinessProfi
     }));
   };
 
+  const { user } = useAuth();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!business) return;
+    if (!business || !user) return;
 
     const updatedFields: Partial<BusinessData> = {};
     if (formData.name !== (business.name || "")) {
       updatedFields.name = formData.name;
     }
-    // Add similar checks for other fields
-    if (formData.website !== "https://example.com") { // Compare with initial placeholder or actual business.website
+    if (formData.website !== (business.website || "")) {
       updatedFields.website = formData.website;
     }
-    if (formData.address !== "123 Business St") {
+    if (formData.address !== (business.address || "")) {
       updatedFields.address = formData.address;
     }
-    if (formData.city !== "San Francisco") {
+    if (formData.city !== (business.city || "")) {
       updatedFields.city = formData.city;
     }
-    if (formData.state !== "CA") {
+    if (formData.state !== (business.state || "")) {
       updatedFields.state = formData.state;
     }
-    if (formData.zipCode !== "94105") {
+    if (formData.zipCode !== (business.zipCode || "")) {
       updatedFields.zipCode = formData.zipCode;
     }
-    if (formData.phone !== "(415) 555-1234") {
+    if (formData.phone !== (business.phone || "")) {
       updatedFields.phone = formData.phone;
     }
-    if (formData.email !== "contact@business.com") {
+    if (formData.email !== (business.email || "")) {
       updatedFields.email = formData.email;
     }
-    if (formData.description !== "We are a professional business providing high-quality services to our customers.") {
+    if (formData.description !== (business.description || "")) {
       updatedFields.description = formData.description;
     }
 
@@ -115,6 +117,19 @@ export default function BusinessProfileEdit({ business, onClose }: BusinessProfi
     }
 
     try {
+      // Update user profile if name or email changed
+      if (updatedFields.name || updatedFields.email) {
+        const userUpdates: { name?: string, email?: string } = {};
+        if (updatedFields.name) userUpdates.name = updatedFields.name;
+        if (updatedFields.email) userUpdates.email = updatedFields.email;
+
+        const userUpdateSuccess = await updateUser(userUpdates);
+
+        if (!userUpdateSuccess) {
+          throw new Error("Failed to update user profile.");
+        }
+      }
+
       const response = await fetch(`/api/businesses/${business.businessId}`, {
         method: "PATCH",
         headers: {
@@ -128,10 +143,10 @@ export default function BusinessProfileEdit({ business, onClose }: BusinessProfi
         throw new Error(errorData.error || "Failed to update business profile.");
       }
 
-      toast.success("Business profile updated successfully");
+      toast.success("Profile updated successfully");
       onClose(); // Close modal and trigger refresh in parent
     } catch (error: any) {
-      console.error("Error updating business profile:", error);
+      console.error("Error updating profile:", error);
       toast.error(`Error updating profile: ${error.message || "Unknown error"}`);
     }
   };
