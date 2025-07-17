@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogTitle, DialogContent, DialogDescription } from "@/components/ui/dialog"
 import BusinessProfileEdit from "./edit"
-import SettingsPage from "@/components/settings/SettingsPage"
+
 import { useSearchParams } from 'next/navigation'
 
 import { BrandAlignmentTab } from "@/components/business/brand-alignment-tab"
@@ -205,13 +205,7 @@ export default function BusinessProfileModal({
                 <CompetitorResearchTab />
               </TabsContent>
 
-              <TabsContent 
-                value="api-settings" 
-                className="h-full data-[state=active]:flex data-[state=active]:flex-col"
-                forceMount={activeTab === "api-settings"}
-              >
-                <SettingsPage />
-              </TabsContent>
+              
             </div>
           </div>
           
@@ -230,12 +224,7 @@ export default function BusinessProfileModal({
               >
                 Competitor Research
               </TabsTrigger>
-              <TabsTrigger
-                value="api-settings"
-                className="flex-1 h-full rounded-5 text-black data-[state=active]:bg-white data-[state=active]:text-black data-[state=inactive]:text-black/77"
-              >
-                API Settings
-              </TabsTrigger>
+              
             </TabsList>
           </div>
         </Tabs>

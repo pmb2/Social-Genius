@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import NotificationService from '@/services/api/notification-service';
 import { AuthService } from '@/services/auth';
+import { getIronSession } from 'iron-session';
+import { sessionOptions, SessionData } from '@/lib/auth/session';
+import { cookies } from 'next/headers';
 
 // Get notifications for the authenticated user
 export async function GET(req: NextRequest) {
@@ -8,21 +11,18 @@ export async function GET(req: NextRequest) {
     const authService = AuthService.getInstance();
     const notificationService = NotificationService.getInstance();
     
-    // Get session from cookies
-    const cookieHeader = req.headers.get('cookie');
-    const cookies = authService.parseCookies(cookieHeader);
-    const sessionId = cookies['session'];
+    const session = await getIronSession<SessionData>(cookies(), sessionOptions);
     
-    if (!sessionId) {
+    if (!session || !session.id) {
       return NextResponse.json(
         { error: 'Authentication required' },
         { status: 401 }
       );
     }
     
-    // Verify the session
-    const session = await authService.verifySession(sessionId);
-    if (!session || !session.user) {
+    const user = await authService.verifySession(session.id);
+    
+    if (!user || !user.id) {
       return NextResponse.json(
         { error: 'Invalid or expired session' },
         { status: 401 }
@@ -36,13 +36,13 @@ export async function GET(req: NextRequest) {
     
     // Get notifications for the user
     const notifications = await notificationService.getNotifications(
-      session.user.id, 
+      user.id, 
       limit,
       unreadOnly
     );
     
     // Get unread count
-    const unreadCount = await notificationService.getUnreadCount(session.user.id);
+    const unreadCount = await notificationService.getUnreadCount(user.id);
     
     return NextResponse.json({
       notifications,
@@ -63,21 +63,18 @@ export async function PUT(req: NextRequest) {
     const authService = AuthService.getInstance();
     const notificationService = NotificationService.getInstance();
     
-    // Get session from cookies
-    const cookieHeader = req.headers.get('cookie');
-    const cookies = authService.parseCookies(cookieHeader);
-    const sessionId = cookies['session'];
+    const session = await getIronSession<SessionData>(cookies(), sessionOptions);
     
-    if (!sessionId) {
+    if (!session || !session.id) {
       return NextResponse.json(
         { error: 'Authentication required' },
         { status: 401 }
       );
     }
     
-    // Verify the session
-    const session = await authService.verifySession(sessionId);
-    if (!session || !session.user) {
+    const user = await authService.verifySession(session.id);
+    
+    if (!user || !user.id) {
       return NextResponse.json(
         { error: 'Invalid or expired session' },
         { status: 401 }
@@ -89,13 +86,13 @@ export async function PUT(req: NextRequest) {
     
     if (body.markAll) {
       // Mark all notifications as read
-      const count = await notificationService.markAllAsRead(session.user.id);
+      const count = await notificationService.markAllAsRead(user.id);
       return NextResponse.json({ success: true, count });
     } else if (body.notificationId) {
       // Mark a specific notification as read
       const success = await notificationService.markAsRead(
         parseInt(body.notificationId, 10),
-        session.user.id
+        user.id
       );
       
       if (success) {
@@ -127,21 +124,18 @@ export async function DELETE(req: NextRequest) {
     const authService = AuthService.getInstance();
     const notificationService = NotificationService.getInstance();
     
-    // Get session from cookies
-    const cookieHeader = req.headers.get('cookie');
-    const cookies = authService.parseCookies(cookieHeader);
-    const sessionId = cookies['session'];
+    const session = await getIronSession<SessionData>(cookies(), sessionOptions);
     
-    if (!sessionId) {
+    if (!session || !session.id) {
       return NextResponse.json(
         { error: 'Authentication required' },
         { status: 401 }
       );
     }
     
-    // Verify the session
-    const session = await authService.verifySession(sessionId);
-    if (!session || !session.user) {
+    const user = await authService.verifySession(session.id);
+    
+    if (!user || !user.id) {
       return NextResponse.json(
         { error: 'Invalid or expired session' },
         { status: 401 }
@@ -162,7 +156,7 @@ export async function DELETE(req: NextRequest) {
     // Delete the notification
     const success = await notificationService.deleteNotification(
       parseInt(notificationId, 10),
-      session.user.id
+      user.id
     );
     
     if (success) {

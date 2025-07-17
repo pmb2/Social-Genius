@@ -753,10 +753,6 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
         if (!apiKeys.exaApiKey) missingKeys.push("EXA_API_KEY");
 
         if (missingKeys.length > 0) {
-            const missingKeysLinks = missingKeys.map(key => 
-                <Link href={`/settings?highlight=${key}`} className="underline text-blue-500 hover:text-blue-700">{key}</Link>
-            ).join(", ");
-
             setMessages([
                 {
                     role: "assistant",
@@ -766,7 +762,7 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
                                 <a href="#" onClick={(e) => { e.preventDefault(); onOpenSettings("api-settings", key); }} className="underline text-blue-500 hover:text-blue-700">{key}</a>
                                 {index < missingKeys.length - 1 ? ", " : ""}
                             </React.Fragment>
-                        ))}. Please add them to your .env file to enable full functionality.
+                        ))}. Please add them in the settings to enable full functionality.
                         <br /><br />
                         You can still use this interface, but some features might not work properly.
                     </>,

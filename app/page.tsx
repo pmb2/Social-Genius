@@ -47,7 +47,7 @@ export default function HomePage() {
                 <h1 className="text-4xl font-bold text-center">Welcome to Social Genius</h1>
                 <p className="text-center text-gray-600 mt-2">Loading your experience...</p>
             </div>
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+            <p>Loading...</p>
         </div>
     );
 }

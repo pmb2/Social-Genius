@@ -9,6 +9,8 @@ import { UserRound, Mail, Phone, MapPin, Building, Camera, Check, X } from 'luci
 import Image from 'next/image';
 import { useAuth } from '@/lib/auth/context';
 import { Dialog, DialogContent, DialogTitle, DialogClose } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import SettingsPage from '@/components/settings/SettingsPage';
 
 interface ProfileSettingsTileProps {
   isStandalone?: boolean;
@@ -27,6 +29,7 @@ export default function ProfileSettingsTile({ isStandalone = false, onClose }: P
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [activeTab, setActiveTab] = useState("profile");
 
   // Update form data when user changes
   useEffect(() => {
@@ -169,113 +172,123 @@ export default function ProfileSettingsTile({ isStandalone = false, onClose }: P
         </div>
         
         <div className="flex flex-col md:flex-row gap-6">
-          <div className="flex-shrink-0 flex flex-col items-center">
-            <div className="relative mb-4">
-              <div className="rounded-full w-32 h-32 relative overflow-hidden">
-                <Image
-                  src={formData.profilePicture}
-                  alt="Profile"
-                  className={`rounded-full object-cover ${uploadingImage ? 'opacity-50' : ''}`}
-                  width={128}
-                  height={128}
-                  style={{ width: "128px", height: "128px" }}
-                />
-                {uploadingImage && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList>
+              <TabsTrigger value="profile">Profile</TabsTrigger>
+              <TabsTrigger value="api-settings">API Settings</TabsTrigger>
+            </TabsList>
+            <TabsContent value="profile">
+              <div className="flex-shrink-0 flex flex-col items-center">
+                <div className="relative mb-4">
+                  <div className="rounded-full w-32 h-32 relative overflow-hidden">
+                    <Image
+                      src={formData.profilePicture}
+                      alt="Profile"
+                      className={`rounded-full object-cover ${uploadingImage ? 'opacity-50' : ''}`}
+                      width={128}
+                      height={128}
+                      style={{ width: "128px", height: "128px" }}
+                    />
+                    {uploadingImage && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-              <input 
-                type="file" 
-                id="profile-picture-upload" 
-                accept="image/*"
-                className="hidden"
-                onChange={handleProfilePictureUpload}
-              />
-              <Button 
-                size="sm"
-                variant="outline"
-                className="absolute bottom-0 right-0 rounded-full w-8 h-8 p-0 flex items-center justify-center bg-white"
-                onClick={() => document.getElementById('profile-picture-upload')?.click()}
-                disabled={uploadingImage}
-              >
-                <Camera className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          
-          <div className="flex-1 space-y-6">
-            {error && (
-              <div className="p-3 mb-3 bg-red-50 border border-red-200 text-red-600 rounded-md text-sm">
-                {error}
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name-standalone" className="flex items-center gap-1">
-                  <UserRound className="h-3.5 w-3.5" />
-                  Full Name
-                </Label>
-                <Input
-                  id="name-standalone"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleChange}
-                  placeholder="Your full name"
-                />
+                  <input 
+                    type="file" 
+                    id="profile-picture-upload" 
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleProfilePictureUpload}
+                  />
+                  <Button 
+                    size="sm"
+                    variant="outline"
+                    className="absolute bottom-0 right-0 rounded-full w-8 h-8 p-0 flex items-center justify-center bg-white"
+                    onClick={() => document.getElementById('profile-picture-upload')?.click()}
+                    disabled={uploadingImage}
+                  >
+                    <Camera className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
               
-              <div className="space-y-2">
-                <Label htmlFor="email-standalone" className="flex items-center gap-1">
-                  <Mail className="h-3.5 w-3.5" />
-                  Email
-                </Label>
-                <Input
-                  id="email-standalone"
-                  name="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  placeholder="your.email@example.com"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="phoneNumber-standalone" className="flex items-center gap-1">
-                  <Phone className="h-3.5 w-3.5" />
-                  Phone
-                </Label>
-                <Input
-                  id="phoneNumber-standalone"
-                  name="phoneNumber"
-                  value={formData.phoneNumber}
-                  onChange={handleChange}
-                  placeholder="+1 (555) 123-4567"
-                />
-              </div>
-            </div>
-            
-            <div className="flex justify-end space-x-2 pt-4">
-              {onClose && (
-                <Button variant="outline" onClick={onClose}>
-                  Cancel
-                </Button>
-              )}
-              <Button onClick={handleSave} disabled={saving} className="bg-gradient-to-r from-blue-500 to-purple-600">
-                {saving ? (
-                  <>
-                    <span className="animate-spin mr-2">⟳</span> Saving...
-                  </>
-                ) : (
-                  <>
-                    <Check className="mr-2 h-4 w-4" /> Save Changes
-                  </>
+              <div className="flex-1 space-y-6">
+                {error && (
+                  <div className="p-3 mb-3 bg-red-50 border border-red-200 text-red-600 rounded-md text-sm">
+                    {error}
+                  </div>
                 )}
-              </Button>
-            </div>
-          </div>
+    
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="name-standalone" className="flex items-center gap-1">
+                      <UserRound className="h-3.5 w-3.5" />
+                      Full Name
+                    </Label>
+                    <Input
+                      id="name-standalone"
+                      name="name"
+                      value={formData.name}
+                      onChange={handleChange}
+                      placeholder="Your full name"
+                    />
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="email-standalone" className="flex items-center gap-1">
+                      <Mail className="h-3.5 w-3.5" />
+                      Email
+                    </Label>
+                    <Input
+                      id="email-standalone"
+                      name="email"
+                      type="email"
+                      value={formData.email}
+                      onChange={handleChange}
+                      placeholder="your.email@example.com"
+                    />
+                  </div>
+    
+                  <div className="space-y-2">
+                    <Label htmlFor="phoneNumber-standalone" className="flex items-center gap-1">
+                      <Phone className="h-3.5 w-3.5" />
+                      Phone
+                    </Label>
+                    <Input
+                      id="phoneNumber-standalone"
+                      name="phoneNumber"
+                      value={formData.phoneNumber}
+                      onChange={handleChange}
+                      placeholder="+1 (555) 123-4567"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end space-x-2 pt-4">
+                  {onClose && (
+                    <Button variant="outline" onClick={onClose}>
+                      Cancel
+                    </Button>
+                  )}
+                  <Button onClick={handleSave} disabled={saving} className="bg-gradient-to-r from-blue-500 to-purple-600">
+                    {saving ? (
+                      <>
+                        <span className="animate-spin mr-2">⟳</span> Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Check className="mr-2 h-4 w-4" /> Save Changes
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </TabsContent>
+            <TabsContent value="api-settings">
+              <SettingsPage />
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
     );
