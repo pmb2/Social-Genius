@@ -15,7 +15,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogClose, DialogContent, DialogTrigger, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
@@ -90,7 +90,7 @@ type UploadedFile = {
     content?: string;
 }
 
-export function BrandAlignmentTab({ onOpenSettings, userProfilePicture }: { onOpenSettings: (tab: string, highlight: string) => void, userProfilePicture?: string }) {
+export function GenerateTab({ onOpenSettings, userProfilePicture }: { onOpenSettings: (tab: string, highlight: string) => void, userProfilePicture?: string }) {
     // Constants
     const COLLECTION_NAME = "brand-alignment-rag";
     const businessId = "business-123"; // In a real app, this would come from context or props

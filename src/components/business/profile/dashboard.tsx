@@ -20,6 +20,7 @@ import Image from "next/image"
 import dynamic from "next/dynamic"
 import Link from "next/link"; // ADDED: For the X account connect button
 import SignInModal from "@/components/SignInModal";
+import ProfileSettingsTile from "@/components/user/profile-settings-tile";
 
 // Dynamically import heavy components to reduce initial load time
 const BusinessProfileModal = dynamic(() => import("./modal"), {
@@ -83,6 +84,9 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
     const [error, setError] = useState<string | null>(null)
     const [modalError, setModalError] = useState<string | null>(null) // New state for modal-specific errors
     const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null)
+    const [isProfileSettingsModalOpen, setIsProfileSettingsModalOpen] = useState(false);
+    const [profileSettingsTab, setProfileSettingsTab] = useState<string | undefined>(undefined);
+    const [profileSettingsHighlight, setProfileSettingsHighlight] = useState<string | undefined>(undefined);
     const [limitError, setLimitError] = useState<{
         currentSubscription: string;
         requiredSubscription: string;
@@ -425,7 +429,10 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
 
     // Memoize event handlers
     const handleRowClick = useCallback((business: Business, tab?: string, highlight?: string) => {
-        setSelectedBusiness(business);
+        setSelectedBusiness({
+            ...business,
+            _modalOpenTime: Date.now() // Set timestamp when modal is opened
+        });
         setIsModalOpen(true);
 
         // Update URL with businessId, tab, and highlight for direct linking
@@ -443,6 +450,14 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
 
     const handleClose = useCallback(() => {
         setIsModalOpen(false);
+        console.log("BusinessProfileModal closed. isModalOpen: ", false);
+    }, []);
+
+    const handleOpenProfileSettings = useCallback((tab: string, highlight?: string) => {
+        setProfileSettingsTab(tab);
+        setProfileSettingsHighlight(highlight);
+        setIsProfileSettingsModalOpen(true);
+        console.log("ProfileSettingsTile modal opened. Tab: ", tab, ", Highlight: ", highlight);
     }, []);
 
     const handleAddBusinessClick = useCallback(() => {
@@ -668,24 +683,24 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
                     }
                 }
             }}>
-                <DialogContent className="p-0 max-w-[1200px] w-[95vw] h-[95vh] max-h-[92vh] overflow-hidden"
+                <DialogContent className="p-0 max-w-[2500px] w-[90vw] h-[90vh] max-h-[92vh] overflow-hidden"
                                aria-describedby="profile-modal-description">
                     <DialogTitle className="sr-only">Business Profile Details</DialogTitle>
                     <div id="profile-modal-description" className="sr-only">
                         Business profile details and management interface
                     </div>
                     <BusinessProfileModal 
-                                business={selectedBusiness ? {
-                                    ...selectedBusiness,
-                                    _modalOpenTime: Date.now() // Add timestamp when modal was opened
-                                } : null} 
+                                business={selectedBusiness} 
                                 onClose={() => {
                                     log("Business profile modal closed via explicit close button", 'info');
                                     fetchBusinesses(true); // Force refresh on close
                                     handleClose();
                                 }}
                                 onOpenSettings={(tab, highlight) => {
-                                    handleRowClick(selectedBusiness!, tab, highlight);
+                                    handleClose(); // Close the BusinessProfileModal
+                                    setTimeout(() => {
+                                        handleOpenProfileSettings(tab, highlight);
+                                    }, 100); // Add a small delay
                                 }}
                                 currentUser={user}
                             />
@@ -716,6 +731,19 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
                     currentCount={limitError.currentCount}
                 />
             )}
+
+            {/* Profile Settings Modal */}
+            <Dialog open={isProfileSettingsModalOpen} onOpenChange={setIsProfileSettingsModalOpen}>
+                <DialogContent className="max-w-md p-0 overflow-visible">
+                    <DialogTitle className="sr-only">Profile Settings</DialogTitle>
+                    <ProfileSettingsTile
+                        isStandalone={true}
+                        onClose={() => setIsProfileSettingsModalOpen(false)}
+                        initialTab={profileSettingsTab || "profile"}
+                        initialHighlight={profileSettingsHighlight}
+                    />
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }

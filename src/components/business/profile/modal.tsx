@@ -9,7 +9,7 @@ import BusinessProfileEdit from "./edit"
 
 import { useSearchParams } from 'next/navigation'
 
-import { BrandAlignmentTab } from "@/components/business/brand-alignment-tab"
+import { GenerateTab } from "@/components/business/generate-tab"
 import { CompetitorResearchTab } from "@/components/business/competitor/research-tab"
 import { toast } from "@/lib/ui/toast"
 import Image from "next/image"
@@ -44,7 +44,7 @@ export default function BusinessProfileModal({
   const [deleteError, setDeleteError] = useState<string | null>(null)
   // State to track the active tab
   const searchParams = useSearchParams();
-  const initialTab = searchParams.get('tab') || "brand";
+  const initialTab = searchParams.get('tab') || "investigate";
   const [activeTab, setActiveTab] = useState(initialTab);
 
   useEffect(() => {
@@ -209,25 +209,23 @@ export default function BusinessProfileModal({
           <div className="h-[calc(100%-64px)] overflow-hidden flex-1">
             <div className="h-full overflow-y-auto scrollbar-hide">
               <TabsContent 
-                value="brand" 
+                value="investigate" 
                 className="h-full data-[state=active]:flex data-[state=active]:flex-col"
-                forceMount={activeTab === "brand"}
-              >
-                <BrandAlignmentTab onOpenSettings={(tab, highlight) => {
-                  onClose(); // Close the current modal
-                  onOpenSettings(tab, highlight); // Trigger parent's open settings
-                }} userProfilePicture={currentUser?.profilePicture} />
-              </TabsContent>
-
-              <TabsContent 
-                value="competitor" 
-                className="h-full data-[state=active]:flex data-[state=active]:flex-col"
-                forceMount={activeTab === "competitor"}
+                forceMount={activeTab === "investigate"}
               >
                 <CompetitorResearchTab />
               </TabsContent>
 
-              
+              <TabsContent 
+                value="generate" 
+                className="h-full data-[state=active]:flex data-[state=active]:flex-col"
+                forceMount={activeTab === "generate"}
+              >
+                <GenerateTab onOpenSettings={(tab, highlight) => {
+                  setActiveTab(tab); // Change the tab within the current modal
+                  // If highlight needs to be handled, it would be done here or passed further down
+                }} userProfilePicture={currentUser?.profilePicture} />
+              </TabsContent>
             </div>
           </div>
           
@@ -235,18 +233,17 @@ export default function BusinessProfileModal({
           <div className="h-[64px] shrink-0 flex items-center px-2 py-2 border-t mt-auto bg-white">
             <TabsList className="w-full h-12 p-0.5 rounded-5 bg-[url('https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Rectangle%2059-OqgO1gTt9VhosZRulWgSNvGYu6KkRA.png')] bg-cover">
               <TabsTrigger
-                value="brand"
+                value="investigate"
                 className="flex-1 h-full rounded-5 text-black data-[state=active]:bg-white data-[state=active]:text-black data-[state=inactive]:text-black/77"
               >
-                Brand Alignment
+                Investigate
               </TabsTrigger>
               <TabsTrigger
-                value="competitor"
+                value="generate"
                 className="flex-1 h-full rounded-5 text-black data-[state=active]:bg-white data-[state=active]:text-black data-[state=inactive]:text-black/77"
               >
-                Competitor Research
+                Generate
               </TabsTrigger>
-              
             </TabsList>
           </div>
         </Tabs>

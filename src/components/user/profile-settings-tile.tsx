@@ -10,16 +10,18 @@ import Image from 'next/image';
 import { useAuth } from '@/lib/auth/context';
 import { Dialog, DialogContent, DialogTitle, DialogClose } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+
 import { toast } from 'sonner'; // Assuming sonner is installed for toasts
 import axios from 'axios'; // Import axios for API calls
 
 interface ProfileSettingsTileProps {
   isStandalone?: boolean;
   onClose?: () => void;
+  initialTab?: string;
+  initialHighlight?: string;
 }
 
-export default function ProfileSettingsTile({ isStandalone = false, onClose }: ProfileSettingsTileProps) {
+export default function ProfileSettingsTile({ isStandalone = false, onClose, initialTab, initialHighlight }: ProfileSettingsTileProps) {
   const { user, updateUser } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -31,7 +33,7 @@ export default function ProfileSettingsTile({ isStandalone = false, onClose }: P
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
-  const [activeTab, setActiveTab] = useState("profile");
+  const [activeTab, setActiveTab] = useState(initialTab || "profile");
   const [modelSettings, setModelSettings] = useState({ // Renamed from apiKeys to modelSettings
     groqApiKey: "",
     openrouterApiKey: "",
@@ -51,6 +53,15 @@ export default function ProfileSettingsTile({ isStandalone = false, onClose }: P
       fetchModelSettings();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (initialHighlight) {
+      const element = document.getElementById(initialHighlight);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }
+  }, [initialHighlight]);
 
   const fetchModelSettings = async () => {
     try {
@@ -329,147 +340,54 @@ export default function ProfileSettingsTile({ isStandalone = false, onClose }: P
             <TabsContent value="api-settings">
               <div className="space-y-4 py-4">
                 <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="provider" className="text-right">
-                    Provider
+                  <Label htmlFor="modelVersion" className="text-right">
+                    Model Version
                   </Label>
-                  <Select value={modelSettings.modelVersion.includes("groq") ? "groq" : modelSettings.modelVersion.includes("openrouter") ? "openrouter" : "ollama"} onValueChange={(value) => {
-                    if (value === "groq") {
-                      setModelSettings(prev => ({ ...prev, modelVersion: "groq/llama3-8b-8192" }));
-                    } else if (value === "openrouter") {
-                      setModelSettings(prev => ({ ...prev, modelVersion: "openrouter/openai/gpt-3.5-turbo" }));
-                    } else if (value === "ollama") {
-                      setModelSettings(prev => ({ ...prev, modelVersion: "ollama/llama3" }));
-                    }
-                  }}>
-                    <SelectTrigger className="col-span-3">
-                      <SelectValue placeholder="Select a provider" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="groq">Groq</SelectItem>
-                      <SelectItem value="openrouter">OpenRouter</SelectItem>
-                      <SelectItem value="ollama">Ollama (Local)</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Input
+                    id="modelVersion"
+                    value={modelSettings.modelVersion}
+                    onChange={(e) => setModelSettings(prev => ({ ...prev, modelVersion: e.target.value }))}
+                    className="col-span-3"
+                    placeholder="e.g., groq/llama3-8b-8192 or openrouter/openai/gpt-4-turbo"
+                  />
                 </div>
 
-                {modelSettings.modelVersion.includes("groq") && (
-                  <>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="groq-api-key" className="text-right">
-                        API Key
-                      </Label>
-                      <Input
-                        id="groq-api-key"
-                        value={modelSettings.groqApiKey}
-                        onChange={(e) => setModelSettings(prev => ({ ...prev, groqApiKey: e.target.value }))}
-                        className="col-span-3"
-                        placeholder="Enter your Groq API Key"
-                      />
-                    </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="groq-model" className="text-right">
-                        Model
-                      </Label>
-                      <Select value={modelSettings.modelVersion} onValueChange={(value) => setModelSettings(prev => ({ ...prev, modelVersion: value }))}>
-                        <SelectTrigger className="col-span-3">
-                          <SelectValue placeholder="Select a Groq model" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="groq/llama3-8b-8192">Llama 3 8B</SelectItem>
-                          <SelectItem value="groq/llama3-70b-8192">Llama 3 70B</SelectItem>
-                          <SelectItem value="groq/mixtral-8x7b-32768">Mixtral 8x7B</SelectItem>
-                          <SelectItem value="groq/gemma-7b-it">Gemma 7B</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="groq-endpoint" className="text-right">
-                        Endpoint
-                      </Label>
-                      <Input
-                        id="groq-endpoint"
-                        value="https://api.groq.com/openai/v1/chat/completions"
-                        readOnly
-                        className="col-span-3"
-                      />
-                    </div>
-                  </>
-                )}
-
-                {modelSettings.modelVersion.includes("openrouter") && (
-                  <>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="openrouter-api-key" className="text-right">
-                        API Key
-                      </Label>
-                      <Input
-                        id="openrouter-api-key"
-                        value={modelSettings.openrouterApiKey}
-                        onChange={(e) => setModelSettings(prev => ({ ...prev, openrouterApiKey: e.target.value }))}
-                        className="col-span-3"
-                        placeholder="Enter your OpenRouter API Key"
-                      />
-                    </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="openrouter-model" className="text-right">
-                        Model
-                      </Label>
-                      <Select value={modelSettings.modelVersion} onValueChange={(value) => setModelSettings(prev => ({ ...prev, modelVersion: value }))}>
-                        <SelectTrigger className="col-span-3">
-                          <SelectValue placeholder="Select an OpenRouter model" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="openrouter/openai/gpt-3.5-turbo">OpenAI GPT-3.5 Turbo</SelectItem>
-                          <SelectItem value="openrouter/openai/gpt-4-turbo">OpenAI GPT-4 Turbo</SelectItem>
-                          <SelectItem value="openrouter/anthropic/claude-3-opus">Anthropic Claude 3 Opus</SelectItem>
-                          <SelectItem value="openrouter/mistralai/mistral-7b-instruct">Mistral 7B Instruct</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="openrouter-endpoint" className="text-right">
-                        Endpoint
-                      </Label>
-                      <Input
-                        id="openrouter-endpoint"
-                        value="https://openrouter.ai/api/v1/chat/completions"
-                        readOnly
-                        className="col-span-3"
-                      />
-                    </div>
-                  </>
-                )}
-
-                {modelSettings.modelVersion.includes("ollama") && (
-                  <>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="ollama-model" className="text-right">
-                        Model
-                      </Label>
-                      <Select value={modelSettings.modelVersion} onValueChange={(value) => setModelSettings(prev => ({ ...prev, modelVersion: value }))}>
-                        <SelectTrigger className="col-span-3">
-                          <SelectValue placeholder="Select an Ollama model" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="ollama/llama3">Llama 3</SelectItem>
-                          <SelectItem value="ollama/mistral">Mistral</SelectItem>
-                          <SelectItem value="ollama/llama2">Llama 2</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="ollama-endpoint" className="text-right">
-                        Endpoint
-                      </Label>
-                      <Input
-                        id="ollama-endpoint"
-                        value="http://localhost:11434/api/chat"
-                        readOnly
-                        className="col-span-3"
-                      />
-                    </div>
-                  </>
-                )}
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="groq-api-key" className="text-right">
+                    Groq API Key
+                  </Label>
+                  <Input
+                    id="groq-api-key"
+                    value={modelSettings.groqApiKey}
+                    onChange={(e) => setModelSettings(prev => ({ ...prev, groqApiKey: e.target.value }))}
+                    className="col-span-3"
+                    placeholder="Enter your Groq API Key"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="openrouter-api-key" className="text-right">
+                    OpenRouter API Key
+                  </Label>
+                  <Input
+                    id="openrouter-api-key"
+                    value={modelSettings.openrouterApiKey}
+                    onChange={(e) => setModelSettings(prev => ({ ...prev, openrouterApiKey: e.target.value }))}
+                    className="col-span-3"
+                    placeholder="Enter your OpenRouter API Key"
+                  />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="ollama-api-key" className="text-right">
+                    Ollama API Key (Optional)
+                  </Label>
+                  <Input
+                    id="ollama-api-key"
+                    value={modelSettings.ollamaApiKey}
+                    onChange={(e) => setModelSettings(prev => ({ ...prev, ollamaApiKey: e.target.value }))}
+                    className="col-span-3"
+                    placeholder="Enter your Ollama API Key (if applicable)"
+                  />
+                </div>
               </div>
               <div className="flex justify-end space-x-2 pt-4">
                 <Button onClick={handleSaveModelSettings} disabled={saving} className="bg-gradient-to-r from-blue-500 to-purple-600">
