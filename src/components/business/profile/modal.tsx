@@ -25,11 +25,13 @@ interface Business {
 export default function BusinessProfileModal({
   business,
   onClose,
-  onOpenSettings
+  onOpenSettings,
+  currentUser
 }: {
   business: Business | null;
   onClose: () => void;
-  onOpenSettings: (tab: string, highlight: string) => void;
+  onOpenSettings: (tab: string, highlight?: string) => void;
+  currentUser: any; // Define a proper type for user later
 }) {
   // Use client-side only rendering to avoid hydration issues
   const [isMounted, setIsMounted] = useState(false)
@@ -42,8 +44,28 @@ export default function BusinessProfileModal({
   const [deleteError, setDeleteError] = useState<string | null>(null)
   // State to track the active tab
   const searchParams = useSearchParams();
-  const initialTab = searchParams.get('tab') || "compliance";
+  const initialTab = searchParams.get('tab') || "brand";
   const [activeTab, setActiveTab] = useState(initialTab);
+
+  useEffect(() => {
+    const highlight = searchParams.get('highlight');
+    if (highlight) {
+      // You can use this highlight value to scroll to a specific element
+      // or highlight a section within the active tab.
+      // For now, we'll just log it.
+      console.log("Highlighting section:", highlight);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    const highlight = searchParams.get('highlight');
+    if (highlight) {
+      // You can use this highlight value to scroll to a specific element
+      // or highlight a section within the active tab.
+      // For now, we'll just log it.
+      console.log("Highlighting section:", highlight);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     setIsMounted(true)
@@ -194,7 +216,7 @@ export default function BusinessProfileModal({
                 <BrandAlignmentTab onOpenSettings={(tab, highlight) => {
                   onClose(); // Close the current modal
                   onOpenSettings(tab, highlight); // Trigger parent's open settings
-                }} />
+                }} userProfilePicture={currentUser?.profilePicture} />
               </TabsContent>
 
               <TabsContent 
@@ -232,7 +254,7 @@ export default function BusinessProfileModal({
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent className="max-w-md p-6 h-auto max-h-[90vh] w-full overflow-visible" aria-describedby="dialog-description">
+        <DialogContent className="max-w-5xl p-6 h-auto max-h-[90vh] w-full overflow-visible" aria-describedby="dialog-description">
           <DialogTitle className="text-xl font-semibold mb-2 text-[#FF1681]">Delete Business</DialogTitle>
           <DialogDescription id="dialog-description" className="text-gray-700 mb-4">
             Are you sure you want to delete <span className="font-semibold">{business?.name}</span>? This action cannot be undone and will remove all associated data.

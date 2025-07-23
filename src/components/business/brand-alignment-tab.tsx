@@ -90,7 +90,7 @@ type UploadedFile = {
     content?: string;
 }
 
-export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: string, highlight: string) => void }) {
+export function BrandAlignmentTab({ onOpenSettings, userProfilePicture }: { onOpenSettings: (tab: string, highlight: string) => void, userProfilePicture?: string }) {
     // Constants
     const COLLECTION_NAME = "brand-alignment-rag";
     const businessId = "business-123"; // In a real app, this would come from context or props
@@ -125,21 +125,6 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
     const [processedDocuments, setProcessedDocuments] = useState<ProcessedDocument[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [dragActive, setDragActive] = useState(false);
-    const [apiKeys, setApiKeys] = useState({
-        databaseUrl: "",
-        exaApiKey: "",
-        groqApiKey: "",
-    });
-
-    useEffect(() => {
-        if (typeof window !== 'undefined') {
-            setApiKeys({
-                databaseUrl: localStorage.getItem('DATABASE_URL') || process.env.NEXT_PUBLIC_DATABASE_URL || "",
-                exaApiKey: localStorage.getItem('EXA_API_KEY') || process.env.NEXT_PUBLIC_EXA_API_KEY || "",
-                groqApiKey: localStorage.getItem('GROQ_API_KEY') || process.env.NEXT_PUBLIC_GROQ_API_KEY || "",
-            });
-        }
-    }, []);
     const [selectedDocuments, setSelectedDocuments] = useState<Set<string>>(new Set());
     const [settings, setSettings] = useState<RagSettings>({
         modelVersion: "deepseek-r1-distill-llama-70b",
@@ -261,7 +246,7 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
                     documents: documents,
                     collectionName: COLLECTION_NAME,
                     businessId: businessId,
-                });
+                }, { withCredentials: true });
 
                 if (vectorizeResponse.data.success) {
                     const newDoc: ProcessedDocument = {
@@ -310,6 +295,7 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
                     headers: {
                         "Content-Type": "multipart/form-data",
                     },
+                    withCredentials: true
                 });
 
                 if (response.data.success) {
@@ -317,7 +303,7 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
                         documents: response.data.documents,
                         collectionName: COLLECTION_NAME,
                         businessId: businessId,
-                    });
+                    }, { withCredentials: true });
 
                     if (vectorizeResponse.data.success) {
                         const newDoc: ProcessedDocument = {
@@ -370,7 +356,7 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
                 url,
                 collectionName: COLLECTION_NAME,
                 businessId: businessId,
-            });
+            }, { withCredentials: true });
 
             if (response.data.success) {
                 const newDoc: ProcessedDocument = {
@@ -411,7 +397,8 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
                 const response = await axios.post('/api/upload', formData, {
                     headers: {
                         'Content-Type': 'multipart/form-data'
-                    }
+                    },
+                    withCredentials: true
                 });
                 newUploadedContent.push(response.data.file);
             } catch (error) {
@@ -536,12 +523,25 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
             let context = "";
             let docsRetrieved = false;
 
-            if (!apiKeys.groqApiKey) {
-                console.warn("GROQ API key missing in client, will try to use server-side key");
+            let groqApiKey = "";
+            let openrouterApiKey = "";
+            let modelVersion = "groq/llama3-8b-8192";
+
+            // Fetch model settings from the database
+            try {
+                const userSettingsResponse = await axios.get('/api/user-settings', { withCredentials: true });
+                if (userSettingsResponse.data.success) {
+                    const settings = userSettingsResponse.data.settings;
+                    groqApiKey = settings.groqApiKey || "";
+                    openrouterApiKey = settings.openrouterApiKey || "";
+                    modelVersion = settings.modelVersion || "groq/llama3-8b-8192";
+                }
+            } catch (err) {
+                console.error("Error fetching user settings:", err);
             }
 
             if (settings.ragEnabled && !settings.forceWebSearch) {
-                if (!apiKeys.databaseUrl) {
+                if (!localStorage.getItem('DATABASE_URL')) {
                     console.warn("Database URL missing in client, will try to use server-side connection");
                 }
 
@@ -552,7 +552,7 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
                         similarityThreshold: settings.similarityThreshold,
                         documentIds: Array.from(selectedDocuments),
                         businessId: businessId
-                    });
+                    }, { withCredentials: true });
 
                     if (retrieveResponse.data.docs && retrieveResponse.data.docs.length > 0) {
                         context = retrieveResponse.data.docs.map((doc: {
@@ -566,15 +566,15 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
             }
 
             if ((settings.useWebSearch && !docsRetrieved) || settings.forceWebSearch) {
-                if (!apiKeys.exaApiKey) {
-                    console.warn("Exa API key missing in client, will try to use server-side key");
+                if (!openrouterApiKey) {
+                    console.warn("OpenRouter API key missing in client, will try to use server-side key");
                 }
 
                 try {
                     const webSearchResponse = await axios.post("/api/web-search", {
-                        query: userInput,
-                        exaApiKey: apiKeys.exaApiKey,
-                    });
+                    query: userInput,
+                    exaApiKey: openrouterApiKey,
+                }, { withCredentials: true });
 
                     if (webSearchResponse.data.results) {
                         context = `Web Search Results:\n${webSearchResponse.data.results}`;
@@ -587,11 +587,11 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
             let memoryContext = "";
             try {
                 const memorySearchResponse = await axios.post('/api/memories-search', {
-                    query: userInput,
-                    businessId,
-                    limit: 3,
-                    similarityThreshold: 0.6
-                });
+                query: userInput,
+                businessId,
+                limit: 3,
+                similarityThreshold: 0.6
+            }, { withCredentials: true });
 
                 if (memorySearchResponse.data.success && memorySearchResponse.data.memories.length > 0) {
                     memoryContext = "Relevant memories:\n" + memorySearchResponse.data.memories
@@ -610,12 +610,12 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
                 ? `Context: ${combinedContext}\n\nQuestion: ${userInput}\n\nPlease provide a comprehensive answer based on the available information.`
                 : userInput;
 
-            console.log("Sending request to Groq with model:", settings.modelVersion);
+            console.log("Sending request to Groq with model:", modelVersion);
             const groqResponse = await axios.post("/api/groq", {
                 prompt: promptWithContext,
-                model: settings.modelVersion,
-                groqApiKey: apiKeys.groqApiKey,
-            });
+                model: modelVersion,
+                groqApiKey: groqApiKey,
+            }, { withCredentials: true });
 
             if (groqResponse.data.text) {
                 const assistantMessage: Message = {
@@ -675,7 +675,7 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
             const response = await axios.post('/api/memories', {
                 ...newMemory,
                 businessId
-            });
+            }, { withCredentials: true });
 
             if (response.data.success) {
                 setMemories(prev => [newMemory, ...prev]);
@@ -692,7 +692,7 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
 
     const updateMemory = async (id: string, content: string) => {
         try {
-            const response = await axios.patch(`/api/memories?id=${id}&businessId=${businessId}`, { content });
+            const response = await axios.patch(`/api/memories?id=${id}&businessId=${businessId}`, { content }, { withCredentials: true });
             if (response.data.success) {
                 setMemories(prev =>
                     prev.map(mem => mem.id === id ? { ...mem, content } : mem)
@@ -708,7 +708,7 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
 
     const deleteMemory = async (id: string) => {
         try {
-            const response = await axios.delete(`/api/memories?id=${id}&businessId=${businessId}`);
+            const response = await axios.delete(`/api/memories?id=${id}&businessId=${businessId}`, { withCredentials: true });
             if (response.data.success) {
                 setMemories(prev => prev.filter(mem => mem.id !== id));
                 setAlertMessage(`✅ Memory deleted`);
@@ -728,7 +728,7 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
         try {
             const response = await axios.patch(`/api/memories?id=${id}&businessId=${businessId}`, {
                 isCompleted: !memory.isCompleted
-            });
+            }, { withCredentials: true });
 
             if (response.data.success) {
                 setMemories(prev =>
@@ -748,23 +748,28 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
     // Effects
     useEffect(() => {
         const missingKeys = [];
-        if (!apiKeys.groqApiKey) missingKeys.push("GROQ_API_KEY");
-        if (!apiKeys.databaseUrl) missingKeys.push("DATABASE_URL");
-        if (!apiKeys.exaApiKey) missingKeys.push("EXA_API_KEY");
+        const modelVersion = localStorage.getItem('MODEL_VERSION') || "groq/llama3-8b-8192";
+
+        if (modelVersion.includes("groq")) {
+            if (!localStorage.getItem('OPENROUTER_API_KEY')) missingKeys.push("OpenRouter API Key");
+        } else if (modelVersion.includes("openrouter")) {
+            if (!localStorage.getItem('OPENROUTER_API_KEY')) missingKeys.push("OpenRouter API Key");
+        } else if (modelVersion.includes("ollama")) {
+            // Ollama typically runs locally and doesn't require an API key
+            // but if a custom endpoint is configured that requires auth, this would be checked here.
+        }
 
         if (missingKeys.length > 0) {
             setMessages([
                 {
                     role: "assistant",
                     content: <>
-                        ⚠️ Some required API keys are missing: {missingKeys.map((key, index) => (
-                            <React.Fragment key={key}>
-                                <a href="#" onClick={(e) => { e.preventDefault(); onOpenSettings("api-settings", key); }} className="underline text-blue-500 hover:text-blue-700">{key}</a>
-                                {index < missingKeys.length - 1 ? ", " : ""}
-                            </React.Fragment>
-                        ))}. Please add them in the settings to enable full functionality.
+                        ⚠️ To use the selected model, the following API keys are missing: {missingKeys.join(", ")}.
+                        Please configure them in your <a href="#" onClick={(e) => { e.preventDefault(); onOpenSettings("api-settings", "model-settings"); }} className="underline text-blue-500 hover:text-blue-700">Profile Settings &gt; API Settings</a>.
                         <br /><br />
                         You can still use this interface, but some features might not work properly.
+                        <br /><br />
+                        <Button onClick={() => onOpenSettings("api-settings", "model-settings")}>Choose a Model & Provide Details</Button>
                     </>,
                 },
             ]);
@@ -776,7 +781,7 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
                 },
             ]);
         }
-    }, [apiKeys.groqApiKey, apiKeys.databaseUrl, apiKeys.exaApiKey]);
+    }, [onOpenSettings]);
 
     useEffect(() => {
         if (chatContainerRef.current) {
@@ -800,184 +805,188 @@ export function BrandAlignmentTab({ onOpenSettings }: { onOpenSettings: (tab: st
     }, [businessId]);
 
     return (
-        <div className="w-full h-full p-4">
-            <div className="max-w-4xl mx-auto">
-                <h1 className="text-2xl font-bold mb-4">Brand Alignment Dashboard</h1>
-
-                {alertMessage && (
-                    <Alert className="mb-4">
-                        <AlertDescription>{alertMessage}</AlertDescription>
-                    </Alert>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Chat Section */}
-                    <div className="space-y-4">
-                        <div className="bg-white rounded-lg shadow-md p-4">
-                            <h2 className="text-lg font-semibold mb-4">Brand Voice Assistant</h2>
-                            <div
-                                ref={chatContainerRef}
-                                className="h-96 overflow-y-auto mb-4 p-4 bg-gray-50 rounded-lg"
-                            >
-                                {messages.map((message, index) => (
-                                    <div key={index} className={`mb-4 ${message.role === 'user' ? 'text-right' : 'text-left'}`}>
-                                        <div className={`inline-block p-2 rounded-lg ${
-                                            message.role === 'user'
-                                                ? 'bg-blue-500 text-white'
-                                                : 'bg-gray-200 text-gray-800'
-                                        }`}>
-                                            {message.content}
-                                        </div>
+        <div className="flex flex-col h-full">
+            <main className="flex-1 flex flex-col">
+                <div className="card messaging-area flex-1">
+                    <div className="chat-area">
+                        <div className="chat-messages" ref={chatContainerRef}>
+                            {messages.map((message, index) => (
+                                <div className={`message-container ${message.role === 'user' ? 'sent' : 'received'}`}>
+                                    <div className="avatar">
+                                        <Image 
+                                            src={message.role === 'user' ? (userProfilePicture || '/default-avatar.png') : '/favicon.ico'}
+                                            alt={`${message.role} avatar`}
+                                            width={40}
+                                            height={40}
+                                            className="rounded-full"
+                                        />
                                     </div>
-                                ))}
-                                {isLoading && (
-                                    <div className="text-center">
-                                        <RefreshCw className="animate-spin h-5 w-5 mx-auto" />
+                                    <div className={`message ${message.role === 'user' ? 'sent' : 'received'}`} key={index}>
+                                        {message.content}
                                     </div>
-                                )}
-                            </div>
-                            <div className="flex space-x-2">
-                                <Textarea
-                                    value={userInput}
-                                    onChange={(e) => setUserInput(e.target.value)}
-                                    onKeyDown={handleKeyDown}
-                                    placeholder="Describe your brand voice or ask questions..."
-                                    className="flex-1"
-                                />
-                                <Button onClick={handleSendMessage} disabled={!userInput.trim() || isLoading}>
-                                    Send
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Controls and Settings */}
-                    <div className="space-y-4">
-                        <div className="bg-white rounded-lg shadow-md p-4">
-                            <h2 className="text-lg font-semibold mb-4">Document Management</h2>
-                            <div
-                                className={`border-2 border-dashed rounded-lg p-4 text-center ${
-                                    dragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
-                                }`}
-                                onDragEnter={handleDrag}
-                                onDragLeave={handleDrag}
-                                onDragOver={handleDrag}
-                                onDrop={handleDrop}
-                            >
-                                <Upload className="mx-auto h-12 w-12 text-gray-400" />
-                                <p className="mt-2 text-sm text-gray-600">
-                                    Drag and drop files here or click to upload
-                                </p>
-                                <Input
-                                    ref={fileInputRef}
-                                    type="file"
-                                    onChange={handleFileChange}
-                                    accept=".pdf,.docx,.txt,.md,.csv,.html,.json,.xml"
-                                    className="hidden"
-                                />
-                                <Button
-                                    onClick={handleUploadClick}
-                                    variant="outline"
-                                    className="mt-2"
-                                >
-                                    Choose Files
-                                </Button>
-                            </div>
-
-                            {processedDocuments.length > 0 && (
-                                <div className="mt-4">
-                                    <h3 className="font-medium mb-2">Processed Documents</h3>
-                                    <div className="space-y-2">
-                                        {processedDocuments.map((doc) => (
-                                            <div key={doc.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                                                <span className="flex items-center">
-                                                    <span className="mr-2">{getDocumentIcon(doc.type)}</span>
-                                                    <span className="text-sm truncate">{doc.name}</span>
-                                                </span>
-                                                <Button
-                                                    onClick={() => handleDeleteDocument(doc.id)}
-                                                    variant="ghost"
-                                                    size="sm"
-                                                >
-                                                    <Trash className="h-4 w-4" />
-                                                </Button>
-                                            </div>
-                                        ))}
-                                    </div>
+                                </div>
+                            ))}
+                            {isLoading && (
+                                <div className="text-center p-4">
+                                    <RefreshCw className="animate-spin h-5 w-5 mx-auto" />
                                 </div>
                             )}
                         </div>
-
-                        <div className="bg-white rounded-lg shadow-md p-4">
-                            <h2 className="text-lg font-semibold mb-4">Memory & Tasks</h2>
-                            <div className="space-y-2">
-                                {memories.slice(0, 3).map((memory) => (
-                                    <div key={memory.id} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                                        <div className="flex items-center flex-1">
-                                            {memory.type === 'task' && (
-                                                <Button
-                                                    onClick={() => toggleMemoryCompletion(memory.id)}
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="mr-2"
-                                                >
-                                                    {memory.isCompleted ? <Check className="h-4 w-4" /> : <div className="h-4 w-4 border border-gray-400 rounded" />}
-                                                </Button>
-                                            )}
-                                            <span className={`text-sm ${memory.type === 'task' && memory.isCompleted ? 'line-through text-gray-500' : ''}`}>
-                                                {memory.content}
-                                            </span>
-                                        </div>
-                                        <div className="flex space-x-1">
-                                            <Button
-                                                onClick={() => setEditingMemoryId(memory.id)}
-                                                variant="ghost"
-                                                size="sm"
-                                            >
-                                                <Edit className="h-4 w-4" />
-                                            </Button>
-                                            <Button
-                                                onClick={() => deleteMemory(memory.id)}
-                                                variant="ghost"
-                                                size="sm"
-                                            >
-                                                <Trash className="h-4 w-4" />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="mt-4 flex space-x-2">
-                                <Input
-                                    value={newMemoryContent}
-                                    onChange={(e) => setNewMemoryContent(e.target.value)}
-                                    placeholder="Add a new memory or task..."
-                                    className="flex-1"
+                        <div className="message-input">
+                            <button className="upload-btn" onClick={handleUploadClick}>
+                                <Upload size={20} />
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    onChange={handleFileChange}
+                                    style={{ display: 'none' }}
                                 />
-                                <Button
-                                    onClick={() => addMemory(newMemoryContent)}
-                                    disabled={!newMemoryContent.trim()}
-                                    size="sm"
-                                >
-                                    <Plus className="h-4 w-4" />
-                                </Button>
-                            </div>
+                            </button>
+                            <button className="settings-btn" onClick={() => onOpenSettings("api-settings", "model-settings")}>
+                                <Settings size={20} />
+                            </button>
+                            <input
+                                type="text"
+                                placeholder="Type your message..."
+                                value={userInput}
+                                onChange={(e) => setUserInput(e.target.value)}
+                                onKeyDown={handleKeyDown}
+                            />
+                            <button onClick={handleSendMessage}>Send</button>
                         </div>
                     </div>
                 </div>
+            </main>
+            <style jsx>{`
+                .card {
+                    background-color: white;
+                    border-radius: 8px;
+                    padding: 20px;
+                    margin-bottom: 20px;
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                }
 
-                {/* Generated Posts */}
-                {posts.length > 0 && (
-                    <div className="mt-6 bg-white rounded-lg shadow-md p-4">
-                        <h2 className="text-lg font-semibold mb-4">Generated Posts</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {posts.map((post, index) => (
-                                <PostCard key={index} post={post} />
-                            ))}
-                        </div>
-                    </div>
-                )}
-            </div>
+                .messaging-area {
+                    display: flex;
+                    height: 100%;
+                }
+
+                .contacts-list {
+                    width: 25%;
+                    border-right: 1px solid #e0e0e0;
+                    overflow-y: auto;
+                }
+
+                .contact-item {
+                    padding: 10px;
+                    cursor: pointer;
+                    border-bottom: 1px solid #e0e0e0;
+                }
+
+                .contact-item:hover {
+                    background-color: #f5f5f5;
+                }
+
+                .chat-area {
+                    display: flex;
+                    flex-direction: column;
+                }
+
+                .chat-messages {
+                    flex-grow: 1;
+                    overflow-y: auto;
+                    padding: 10px;
+                    display: flex;
+                    flex-direction: column;
+                }
+
+                .message-container {
+                    display: flex;
+                    align-items: flex-start;
+                    margin-bottom: 10px;
+                }
+
+                .message-container.sent {
+                    flex-direction: row-reverse;
+                }
+
+                .avatar {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 50%;
+                    margin: 0 10px;
+                }
+
+                .message {
+                    padding: 8px 12px;
+                    border-radius: 18px;
+                    max-width: 70%;
+                }
+
+                .message.received {
+                    background-color: #e0e0e0;
+                }
+
+                .message.sent {
+                    background-color: #0a66c2;
+                    color: white;
+                }
+
+                .message-input {
+                    display: flex;
+                    align-items: center; 
+                    padding: 10px;
+                    border-top: 1px solid #e0e0e0;
+                }
+
+                .upload-btn {
+                    background: none;
+                    border: none;
+                    cursor: pointer;
+                    padding: 8px;
+                    margin-right: 8px;
+                }
+
+                .settings-btn {
+                    background: none;
+                    border: none;
+                    cursor: pointer;
+                    padding: 8px;
+                    margin-right: 8px;
+                }
+
+                .message-input input {
+                    flex-grow: 1;
+                    padding: 10px;
+                    border: 1px solid #e0e0e0;
+                    border-radius: 20px;
+                }
+
+                .message-input button {
+                    margin-left: 10px;
+                    padding: 10px 20px;
+                    border: none;
+                    background-color: #0a66c2;
+                    color: white;
+                    border-radius: 20px;
+                    cursor: pointer;
+                }
+
+                .ai-suggestions {
+                    padding: 10px;
+                    background-color: #f9f9f9;
+                    border-top: 1px solid #e0e0e0;
+                }
+
+                .ai-suggestion {
+                    display: inline-block;
+                    margin: 5px;
+                    padding: 5px 10px;
+                    background-color: #e0e0e0;
+                    border-radius: 15px;
+                    cursor: pointer;
+                }
+            `}</style>
         </div>
     );
 }

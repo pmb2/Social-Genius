@@ -431,8 +431,13 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
         // Update URL with businessId, tab, and highlight for direct linking
         const url = new URL(window.location.href);
         url.searchParams.set('businessId', business.businessId);
-        if (tab) url.searchParams.set('tab', tab);
-        if (highlight) url.searchParams.set('highlight', highlight);
+        if (tab) {
+            url.searchParams.set('tab', tab);
+        }
+        if (highlight) {
+            url.searchParams.set('highlight', highlight);
+        }
+        
         router.replace(url.pathname + url.search, undefined, { shallow: true });
     }, [router]);
 
@@ -670,19 +675,20 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
                         Business profile details and management interface
                     </div>
                     <BusinessProfileModal 
-                        business={selectedBusiness ? {
-                            ...selectedBusiness,
-                            _modalOpenTime: Date.now() // Add timestamp when modal was opened
-                        } : null} 
-                        onClose={() => {
-                            log("Business profile modal closed via explicit close button", 'info');
-                            fetchBusinesses(true); // Force refresh on close
-                            handleClose();
-                        }}
-                        onOpenSettings={(tab, highlight) => {
-                            handleRowClick(selectedBusiness!, tab, highlight);
-                        }}
-                    />
+                                business={selectedBusiness ? {
+                                    ...selectedBusiness,
+                                    _modalOpenTime: Date.now() // Add timestamp when modal was opened
+                                } : null} 
+                                onClose={() => {
+                                    log("Business profile modal closed via explicit close button", 'info');
+                                    fetchBusinesses(true); // Force refresh on close
+                                    handleClose();
+                                }}
+                                onOpenSettings={(tab, highlight) => {
+                                    handleRowClick(selectedBusiness!, tab, highlight);
+                                }}
+                                currentUser={user}
+                            />
                 </DialogContent>
             </Dialog>
 

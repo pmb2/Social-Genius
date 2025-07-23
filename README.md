@@ -167,7 +167,7 @@ For database-related troubleshooting, refer to the detailed guides in the `/docs
 
 ### License & Ownership
 
-All source code, designs, and logic in this repository are the exclusive intellectual property of Paul Backus. This software has not been assigned or transferred to any entity, including Social Genius LLC.
+All source code, designs, and logic in this repository are the exclusive intellectual property of Paul Backus. This software has not been assigned or transferred to any entity.
 
 Any use, deployment, duplication, or licensing must be approved in writing by the author.
 

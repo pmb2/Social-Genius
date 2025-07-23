@@ -174,7 +174,7 @@ export function Header({ businessCount = 0 }: HeaderProps) {
                   }}
                 />
                 <div className="flex flex-col">
-                  <span className="font-medium text-sm">{user?.name || "User"}</span>
+                  <span className="font-medium text-sm">{user?.name || user?.email || "User"}</span>
                   <span className="text-xs text-gray-500 truncate">{user?.email || ""}</span>
                 </div>
               </div>
