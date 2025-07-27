@@ -54,15 +54,15 @@ CREATE INDEX ON socialAccounts (businessId);
 
 -- Create or replace the function to update the updated_at column
 CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $
+RETURNS TRIGGER AS $$
 BEGIN
     NEW.updated_at = CURRENT_TIMESTAMP;
     RETURN NEW;
 END;
-$ language 'plpgsql';
+$$ language 'plpgsql';
 
 -- Create triggers for all tables (only if tables exist)
-DO $
+DO $$
 BEGIN
     -- Create trigger for users table
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users') THEN
@@ -90,7 +90,7 @@ BEGIN
             FOR EACH ROW
             EXECUTE FUNCTION update_updated_at_column();
     END IF;
-END $;
+END $$;
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
@@ -108,16 +108,15 @@ CREATE INDEX IF NOT EXISTS idx_social_accounts_platform ON socialAccounts(platfo
 CREATE INDEX IF NOT EXISTS idx_social_accounts_provider_account_id ON socialAccounts(providerAccountId);
 
 -- Encrypt sensitive tokens
-CREATE OR REPLACE FUNCTION encryptToken(token TEXT) RETURNS TEXT AS $
+CREATE OR REPLACE FUNCTION encryptToken(token TEXT) RETURNS TEXT AS $$
 BEGIN
   RETURN encode(encrypt(token::bytea, 'your-encryption-key', 'aes'), 'base64');
 END;
-$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql;
 
 -- Decrypt tokens
-CREATE OR REPLACE FUNCTION decryptToken(encryptedToken TEXT) RETURNS TEXT AS $
+CREATE OR REPLACE FUNCTION decryptToken(encryptedToken TEXT) RETURNS TEXT AS $$
 BEGIN
   RETURN convert_from(decrypt(decode(encryptedToken, 'base64'), 'your-encryption-key', 'aes'), 'UTF8');
 END;
-$ LANGUAGE plpgsql;
-
+$$ LANGUAGE plpgsql;

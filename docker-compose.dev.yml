@@ -24,11 +24,12 @@ services:
       - .:/app
       - /app/node_modules
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     command: >
       sh -c "echo 'Waiting for database to be ready...' &&
-             sleep 5 &&
              echo 'Starting application...' &&
              cd /app &&
              npm run dev -- -H 0.0.0.0"
