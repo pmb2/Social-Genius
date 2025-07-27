@@ -1,6 +1,7 @@
 "use client"
 
-import React, { useState, useEffect, useRef } from "react"
+import React, { useState, useEffect, useRef, useCallback } from "react"
+import { useAuth } from "@/lib/auth/context"
 
 import Link from "next/link"
 import {
@@ -23,6 +24,13 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
+import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
@@ -30,6 +38,8 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu"
+
+type SaveStatus = "unsaved" | "saving" | "saved" | "error";
 import axios from "axios"
 import Image from "next/image"
 import PostCard from "@/components/PostCard"
@@ -39,6 +49,7 @@ import { promptTemplate } from "@/prompts/prompt-template"
 
 // Define types
 type Message = {
+    id: string;
     role: "user" | "assistant";
     content: React.ReactNode;
 }
@@ -91,6 +102,8 @@ type UploadedFile = {
 }
 
 export function GenerateTab({ onOpenSettings, userProfilePicture }: { onOpenSettings: (tab: string, highlight: string) => void, userProfilePicture?: string }) {
+    const { user, updateUser } = useAuth();
+
     // Constants
     const COLLECTION_NAME = "brand-alignment-rag";
     const businessId = "business-123"; // In a real app, this would come from context or props
@@ -133,16 +146,35 @@ export function GenerateTab({ onOpenSettings, userProfilePicture }: { onOpenSett
         useWebSearch: false,
         forceWebSearch: false,
     });
-    const [alertMessage, setAlertMessage] = useState<string | null>(null);
-    const [posts, setPosts] = useState<Post[]>([]);
-    const [showWelcomeMessage, setShowWelcomeMessage] = useState(true);
-    const [showSettings, setShowSettings] = useState(false);
-    const [uploadedContent, setUploadedContent] = useState<UploadedFile[]>([]);
-    const [postSettings, setPostSettings] = useState<PostSettings>({
-        tone: 'Professional',
-        type: 'Property Listing',
-        platforms: []
+
+    const [apiSettings, setApiSettings] = useState({
+        provider: "",
+        apiEndpoint: "",
+        apiKey: "",
+        modelVersion: "",
     });
+
+    const [saveStatus, setSaveStatus] = useState<Record<string, SaveStatus>>({
+        provider: "unsaved",
+        apiEndpoint: "unsaved",
+        apiKey: "unsaved",
+        modelVersion: "unsaved",
+    });
+
+    const [showCustomProviderInput, setShowCustomProviderInput] = useState(false);
+
+    const handleFieldUpdate = useCallback(async (field: keyof typeof apiSettings, value: string) => {
+        setApiSettings(prev => ({ ...prev, [field]: value }));
+        setSaveStatus(prev => ({ ...prev, [field]: "saving" }));
+
+        const result = await updateUser({ [field]: value });
+
+        if (result) {
+            setSaveStatus(prev => ({ ...prev, [field]: "saved" }));
+        } else {
+            setSaveStatus(prev => ({ ...prev, [field]: "error" }));
+        }
+    }, [updateUser]);
 
     // Refs
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -509,7 +541,7 @@ export function GenerateTab({ onOpenSettings, userProfilePicture }: { onOpenSett
     const handleSendMessage = async () => {
         if (!userInput.trim()) return;
 
-        const userMessage: Message = { role: "user", content: userInput };
+        const userMessage: Message = { id: `msg-${Date.now()}`, role: "user", content: userInput };
         setMessages((prev) => [...prev, userMessage]);
         setUserInput("");
         setIsLoading(true);
@@ -523,22 +555,7 @@ export function GenerateTab({ onOpenSettings, userProfilePicture }: { onOpenSett
             let context = "";
             let docsRetrieved = false;
 
-            let groqApiKey = "";
-            let openrouterApiKey = "";
-            let modelVersion = "groq/llama3-8b-8192";
-
-            // Fetch model settings from the database
-            try {
-                const userSettingsResponse = await axios.get('/api/user-settings', { withCredentials: true });
-                if (userSettingsResponse.data.success) {
-                    const settings = userSettingsResponse.data.settings;
-                    groqApiKey = settings.groqApiKey || "";
-                    openrouterApiKey = settings.openrouterApiKey || "";
-                    modelVersion = settings.modelVersion || "groq/llama3-8b-8192";
-                }
-            } catch (err) {
-                console.error("Error fetching user settings:", err);
-            }
+            const { provider, apiEndpoint, apiKey, modelVersion } = apiSettings;
 
             if (settings.ragEnabled && !settings.forceWebSearch) {
                 if (!localStorage.getItem('DATABASE_URL')) {
@@ -566,14 +583,14 @@ export function GenerateTab({ onOpenSettings, userProfilePicture }: { onOpenSett
             }
 
             if ((settings.useWebSearch && !docsRetrieved) || settings.forceWebSearch) {
-                if (!openrouterApiKey) {
-                    console.warn("OpenRouter API key missing in client, will try to use server-side key");
+                if (!apiKey) {
+                    console.warn("API key missing for web search, will try to use server-side key");
                 }
 
                 try {
                     const webSearchResponse = await axios.post("/api/web-search", {
                     query: userInput,
-                    exaApiKey: openrouterApiKey,
+                    exaApiKey: apiKey,
                 }, { withCredentials: true });
 
                     if (webSearchResponse.data.results) {
@@ -610,17 +627,20 @@ export function GenerateTab({ onOpenSettings, userProfilePicture }: { onOpenSett
                 ? `Context: ${combinedContext}\n\nQuestion: ${userInput}\n\nPlease provide a comprehensive answer based on the available information.`
                 : userInput;
 
-            console.log("Sending request to Groq with model:", modelVersion);
-            const groqResponse = await axios.post("/api/groq", {
+            console.log("Sending request to model:", modelVersion);
+            const response = await axios.post("/api/groq", {
                 prompt: promptWithContext,
                 model: modelVersion,
-                groqApiKey: groqApiKey,
+                apiKey: apiKey,
+                apiEndpoint: apiEndpoint,
+                provider: provider,
             }, { withCredentials: true });
 
-            if (groqResponse.data.text) {
+            if (response.data.text) {
                 const assistantMessage: Message = {
+                    id: `msg-${Date.now()}`,
                     role: "assistant",
-                    content: groqResponse.data.text,
+                    content: response.data.text,
                 };
                 setMessages((prev) => [...prev, assistantMessage]);
             }
@@ -629,6 +649,7 @@ export function GenerateTab({ onOpenSettings, userProfilePicture }: { onOpenSett
             setMessages((prev) => [
                 ...prev,
                 {
+                    id: `msg-${Date.now()}`,
                     role: "assistant",
                     content: `I'm sorry, I encountered an error: ${error.message || "Unknown error occurred"}. Please check the console for details and ensure all required API keys are properly set.`,
                 },
@@ -746,42 +767,273 @@ export function GenerateTab({ onOpenSettings, userProfilePicture }: { onOpenSett
     };
 
     // Effects
+    // useEffect to initialize apiSettings and settings from user object
     useEffect(() => {
-        const missingKeys = [];
-        const modelVersion = localStorage.getItem('MODEL_VERSION') || "groq/llama3-8b-8192";
+        if (user) {
+            console.log('GenerateTab: useEffect (user dependency) triggered. User:', user);
+            setApiSettings({
+                provider: user.provider || "",
+                apiEndpoint: user.apiEndpoint || "",
+                apiKey: user.apiKey || "",
+                modelVersion: user.modelVersion || "",
+            });
 
-        if (modelVersion.includes("groq")) {
-            if (!localStorage.getItem('OPENROUTER_API_KEY')) missingKeys.push("OpenRouter API Key");
-        } else if (modelVersion.includes("openrouter")) {
-            if (!localStorage.getItem('OPENROUTER_API_KEY')) missingKeys.push("OpenRouter API Key");
-        } else if (modelVersion.includes("ollama")) {
-            // Ollama typically runs locally and doesn't require an API key
-            // but if a custom endpoint is configured that requires auth, this would be checked here.
-        }
+            setSettings(prev => ({
+                ...prev,
+                modelVersion: user.modelVersion || "deepseek-r1-distill-llama-70b",
+            }));
 
-        if (missingKeys.length > 0) {
-            setMessages([
-                {
-                    role: "assistant",
-                    content: <>
-                        ⚠️ To use the selected model, the following API keys are missing: {missingKeys.join(", ")}.
-                        Please configure them in your <a href="#" onClick={(e) => { e.preventDefault(); onOpenSettings("api-settings", "model-settings"); }} className="underline text-blue-500 hover:text-blue-700">Profile Settings &gt; API Settings</a>.
-                        <br /><br />
-                        You can still use this interface, but some features might not work properly.
-                        <br /><br />
-                        <Button onClick={() => onOpenSettings("api-settings", "model-settings")}>Choose a Model & Provide Details</Button>
-                    </>,
-                },
-            ]);
-        } else {
-            setMessages([
-                {
-                    role: "assistant",
-                    content: "👋 Welcome! I'm here to help you develop a strong, consistent brand voice. Let's work together to define your brand's personality and tone.\n\nYou can start by describing your ideal brand voice, or upload examples of content that represents your desired tone. Simply drag and drop files here or use the input below.",
-                },
-            ]);
+            const predefinedProviders = ["OpenAI", "Groq", "OpenRouter", "Ollama"];
+            if (user.provider && !predefinedProviders.includes(user.provider)) {
+                setShowCustomProviderInput(true);
+            } else {
+                setShowCustomProviderInput(false);
+            }
         }
-    }, [onOpenSettings]);
+    }, [user, setApiSettings, setSettings, setShowCustomProviderInput]);
+
+    useEffect(() => {
+        const checkAndSetInitialMessage = () => {
+            const missingSettings = [];
+
+            if (!apiSettings.provider) missingSettings.push("Provider");
+            if (!apiSettings.apiEndpoint) missingSettings.push("API Endpoint");
+            if (!apiSettings.apiKey) missingSettings.push("API Key");
+            if (!apiSettings.modelVersion) missingSettings.push("Model Version");
+
+            if (missingSettings.length > 0) {
+                console.log('GenerateTab: Missing API settings detected:', missingSettings);
+                setMessages([
+                    {
+                        id: `msg-${Date.now()}`, // Add unique ID
+                        role: "assistant",
+                        content: (
+                            <div className="space-y-4 py-4">
+                                <p>⚠️ To use the selected model, the following API settings are missing: {missingSettings.join(", ")}.</p>
+                                <p>Please configure them below:</p>
+                                <Label htmlFor="provider" className="text-right">
+                                        Provider {saveStatus.provider === 'saved' && <Check className="inline-block w-4 h-4 ml-1 text-green-500" />}</Label>
+                                    <Select
+                                        value={apiSettings.provider}
+                                        onValueChange={(value) => {
+                                            setApiSettings(prev => ({ ...prev, provider: value }));
+                                            setShowCustomProviderInput(value === "Other");
+                                            handleFieldUpdate("provider", value);
+                                        }}
+                                    >
+                                        <SelectTrigger id="provider" className="col-span-3">
+                                            <SelectValue placeholder="Select a provider" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="OpenAI">OpenAI</SelectItem>
+                                            <SelectItem value="Groq">Groq</SelectItem>
+                                            <SelectItem value="OpenRouter">OpenRouter</SelectItem>
+                                            <SelectItem value="Ollama">Ollama</SelectItem>
+                                            <SelectItem value="Other">Other</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                {showCustomProviderInput && (
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="customProvider" className="text-right">
+                                            Custom Provider {saveStatus.provider === 'saved' && <Check className="inline-block w-4 h-4 ml-1 text-green-500" />}</Label>
+                                        <Input
+                                            id="customProvider"
+                                            value={apiSettings.provider !== "OpenAI" && apiSettings.provider !== "Groq" && apiSettings.provider !== "OpenRouter" && apiSettings.provider !== "Ollama" && apiSettings.provider !== "Other" ? apiSettings.provider : ""}
+                                            onChange={(e) => {
+                                                setApiSettings(prev => ({ ...prev, provider: e.target.value }));
+                                                handleFieldUpdate("provider", e.target.value);
+                                            }}
+                                            className="col-span-3"
+                                            placeholder="Enter custom provider name"
+                                        />
+                                    </div>
+                                )}
+                                <div className="grid grid-cols-4 items-center gap-4">
+                                    <Label htmlFor="apiEndpoint" className="text-right">
+                                        API Endpoint {saveStatus.apiEndpoint === 'saved' && <Check className="inline-block w-4 h-4 ml-1 text-green-500" />}</Label>
+                                    <Input
+                                        id="apiEndpoint"
+                                        value={apiSettings.apiEndpoint}
+                                        onChange={(e) => {
+                                            setApiSettings(prev => ({ ...prev, apiEndpoint: e.target.value }));
+                                            handleFieldUpdate("apiEndpoint", e.target.value);
+                                        }}
+                                        className="col-span-3"
+                                        placeholder="e.g., https://api.openai.com/v1, https://openrouter.ai/api/v1"
+                                    />
+                                </div>
+                                <div className="grid grid-cols-4 items-center gap-4">
+                                    <Label htmlFor="apiKey" className="text-right">
+                                        API Key {saveStatus.apiKey === 'saved' && <Check className="inline-block w-4 h-4 ml-1 text-green-500" />}</Label>
+                                    <Input
+                                        id="apiKey"
+                                        type="password"
+                                        value={apiSettings.apiKey}
+                                        onChange={(e) => {
+                                            setApiSettings(prev => ({ ...prev, apiKey: e.target.value }));
+                                            handleFieldUpdate("apiKey", e.target.value);
+                                        }}
+                                        className="col-span-3"
+                                        placeholder="Enter your API Key"
+                                    />
+                                </div>
+                                <div className="grid grid-cols-4 items-center gap-4">
+                                    <Label htmlFor="modelVersion" className="text-right">
+                                        Model Version {saveStatus.modelVersion === 'saved' && <Check className="inline-block w-4 h-4 ml-1 text-green-500" />}</Label>
+                                    <Input
+                                        id="modelVersion"
+                                        value={apiSettings.modelVersion}
+                                        onChange={(e) => {
+                                            setApiSettings(prev => ({ ...prev, modelVersion: e.target.value }));
+                                            handleFieldUpdate("modelVersion", e.target.value);
+                                        }}
+                                        className="col-span-3"
+                                        placeholder="e.g., groq/llama3-8b-8192 or openrouter/openai/gpt-4-turbo"
+                                    />
+                                </div>
+                            </div>
+                        ),
+                    },
+                ]);
+            } else {
+                console.log('GenerateTab: All API keys present.');
+                setMessages([
+                    {
+                        id: `msg-${Date.now()}`, // Add unique ID
+                        role: "assistant",
+                        content: "👋 Welcome! I'm here to help you develop a strong, consistent brand voice. Let's work together to define your brand's personality and tone.\n\nYou can start by describing your ideal brand voice, or upload examples of content that represents your desired tone. Simply drag and drop files here or use the input below.",
+                    },
+                ]);
+            }
+        };
+
+        checkAndSetInitialMessage();
+    }, [onOpenSettings, showCustomProviderInput, apiSettings.provider, apiSettings.apiEndpoint, apiSettings.apiKey, apiSettings.modelVersion, handleFieldUpdate, saveStatus.provider, saveStatus.apiEndpoint, saveStatus.apiKey, saveStatus.modelVersion]);
+
+
+
+    useEffect(() => {
+        // This effect runs when apiSettings or related props change,
+        // and is responsible for displaying the initial message.
+        const checkAndSetInitialMessage = () => {
+            const missingSettings = [];
+
+            if (!apiSettings.provider) missingSettings.push("Provider");
+            if (!apiSettings.apiEndpoint) missingSettings.push("API Endpoint");
+            if (!apiSettings.apiKey) missingSettings.push("API Key");
+            if (!apiSettings.modelVersion) missingSettings.push("Model Version");
+
+            if (missingSettings.length > 0) {
+                console.log('GenerateTab: Missing API settings detected:', missingSettings);
+                setMessages([
+                    {
+                        role: "assistant",
+                        content: (
+                            <div className="space-y-4 py-4">
+                                <p>⚠️ To use the selected model, the following API settings are missing: {missingSettings.join(", ")}.</p>
+                                <p>Please configure them below:</p>
+                                <Label htmlFor="provider" className="text-right">
+                                        Provider {saveStatus.provider === 'saved' && <Check className="inline-block w-4 h-4 ml-1 text-green-500" />}
+                                    </Label>
+                                    <Select
+                                        value={apiSettings.provider}
+                                        onValueChange={(value) => {
+                                            setApiSettings(prev => ({ ...prev, provider: value }));
+                                            setShowCustomProviderInput(value === "Other");
+                                            handleFieldUpdate("provider", value);
+                                        }}
+                                    >
+                                        <SelectTrigger id="provider" className="col-span-3">
+                                            <SelectValue placeholder="Select a provider" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="OpenAI">OpenAI</SelectItem>
+                                            <SelectItem value="Groq">Groq</SelectItem>
+                                            <SelectItem value="OpenRouter">OpenRouter</SelectItem>
+                                            <SelectItem value="Ollama">Ollama</SelectItem>
+                                            <SelectItem value="Other">Other</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                {showCustomProviderInput && (
+                                    <div className="grid grid-cols-4 items-center gap-4">
+                                        <Label htmlFor="customProvider" className="text-right">
+                                            Custom Provider {saveStatus.provider === 'saved' && <Check className="inline-block w-4 h-4 ml-1 text-green-500" />}
+                                        </Label>
+                                        <Input
+                                            id="customProvider"
+                                            value={apiSettings.provider !== "OpenAI" && apiSettings.provider !== "Groq" && apiSettings.provider !== "OpenRouter" && apiSettings.provider !== "Ollama" && apiSettings.provider !== "Other" ? apiSettings.provider : ""}
+                                            onChange={(e) => {
+                                                setApiSettings(prev => ({ ...prev, provider: e.target.value }));
+                                                handleFieldUpdate("provider", e.target.value);
+                                            }}
+                                            className="col-span-3"
+                                            placeholder="Enter custom provider name"
+                                        />
+                                    </div>
+                                )}
+                                <div className="grid grid-cols-4 items-center gap-4">
+                                    <Label htmlFor="apiEndpoint" className="text-right">
+                                        API Endpoint {saveStatus.apiEndpoint === 'saved' && <Check className="inline-block w-4 h-4 ml-1 text-green-500" />}
+                                    </Label>
+                                    <Input
+                                        id="apiEndpoint"
+                                        value={apiSettings.apiEndpoint}
+                                        onChange={(e) => {
+                                            setApiSettings(prev => ({ ...prev, apiEndpoint: e.target.value }));
+                                            handleFieldUpdate("apiEndpoint", e.target.value);
+                                        }}
+                                        className="col-span-3"
+                                        placeholder="e.g., https://api.openai.com/v1, https://openrouter.ai/api/v1"
+                                    />
+                                </div>
+                                <div className="grid grid-cols-4 items-center gap-4">
+                                    <Label htmlFor="apiKey" className="text-right">
+                                        API Key {saveStatus.apiKey === 'saved' && <Check className="inline-block w-4 h-4 ml-1 text-green-500" />}
+                                    </Label>
+                                    <Input
+                                        id="apiKey"
+                                        type="password"
+                                        value={apiSettings.apiKey}
+                                        onChange={(e) => {
+                                            setApiSettings(prev => ({ ...prev, apiKey: e.target.value }));
+                                            handleFieldUpdate("apiKey", e.target.value);
+                                        }}
+                                        className="col-span-3"
+                                        placeholder="Enter your API Key"
+                                    />
+                                </div>
+                                <div className="grid grid-cols-4 items-center gap-4">
+                                    <Label htmlFor="modelVersion" className="text-right">
+                                        Model Version {saveStatus.modelVersion === 'saved' && <Check className="inline-block w-4 h-4 ml-1 text-green-500" />}
+                                    </Label>
+                                    <Input
+                                        id="modelVersion"
+                                        value={apiSettings.modelVersion}
+                                        onChange={(e) => {
+                                            setApiSettings(prev => ({ ...prev, modelVersion: e.target.value }));
+                                            handleFieldUpdate("modelVersion", e.target.value);
+                                        }}
+                                        className="col-span-3"
+                                        placeholder="e.g., groq/llama3-8b-8192 or openrouter/openai/gpt-4-turbo"
+                                    />
+                                </div>
+                            </div>
+                        ),
+                    },
+                ]);
+            } else {
+                console.log('GenerateTab: All API keys present.');
+                setMessages([
+                    {
+                        role: "assistant",
+                        content: "👋 Welcome! I'm here to help you develop a strong, consistent brand voice. Let's work together to define your brand's personality and tone.\n\nYou can start by describing your ideal brand voice, or upload examples of content that represents your desired tone. Simply drag and drop files here or use the input below.",
+                    },
+                ]);
+            }
+        };
+
+        checkAndSetInitialMessage();
+    }, [onOpenSettings, showCustomProviderInput, apiSettings.provider, apiSettings.apiEndpoint, apiSettings.apiKey, apiSettings.modelVersion, handleFieldUpdate, saveStatus.provider, saveStatus.apiEndpoint, saveStatus.apiKey, saveStatus.modelVersion]);
 
     useEffect(() => {
         if (chatContainerRef.current) {
@@ -810,10 +1062,10 @@ export function GenerateTab({ onOpenSettings, userProfilePicture }: { onOpenSett
                 <div className="card messaging-area flex-1">
                     <div className="chat-area">
                         <div className="chat-messages" ref={chatContainerRef}>
-                            {messages.map((message, index) => (
-                                <div className={`message-container ${message.role === 'user' ? 'sent' : 'received'}`}>
+                            {messages.map((message) => (
+                                <div key={message.id} className={`message-container ${message.role === 'user' ? 'sent' : 'received'}`}>
                                     <div className="avatar">
-                                        <Image 
+                                        <Image
                                             src={message.role === 'user' ? (userProfilePicture || '/default-avatar.png') : '/favicon.ico'}
                                             alt={`${message.role} avatar`}
                                             width={40}
@@ -821,7 +1073,7 @@ export function GenerateTab({ onOpenSettings, userProfilePicture }: { onOpenSett
                                             className="rounded-full"
                                         />
                                     </div>
-                                    <div className={`message ${message.role === 'user' ? 'sent' : 'received'}`} key={index}>
+                                    <div className={`message ${message.role === 'user' ? 'sent' : 'received'}`}>
                                         {message.content}
                                     </div>
                                 </div>
