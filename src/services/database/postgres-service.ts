@@ -352,8 +352,6 @@ class PostgresService {
         CREATE TABLE IF NOT EXISTS users (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           email TEXT UNIQUE NOT NULL,
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          email TEXT UNIQUE NOT NULL,
           name TEXT,
           password_hash TEXT NOT NULL,
           profile_picture TEXT,
@@ -422,14 +420,14 @@ class PostgresService {
       await client.query(`
         CREATE TABLE IF NOT EXISTS social_accounts (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
           platform VARCHAR(50) NOT NULL,
           platform_user_id TEXT UNIQUE NOT NULL,
           username TEXT NOT NULL,
           access_token TEXT NOT NULL,
           refresh_token TEXT,
           expires_at TIMESTAMP WITH TIME ZONE,
-          business_id TEXT REFERENCES businesses(business_id) ON DELETE SET NULL, -- Link to businesses
+          business_id UUID REFERENCES businesses(id) ON DELETE SET NULL, -- Link to businesses (references businesses.id, not business_id)
           created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
           UNIQUE(platform, platform_user_id)
@@ -452,7 +450,7 @@ class PostgresService {
           title TEXT,
           content TEXT,
           user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-          business_id TEXT REFERENCES businesses(business_id) ON DELETE CASCADE,
+          business_id UUID REFERENCES businesses(id) ON DELETE CASCADE, -- Link to businesses (references businesses.id, not business_id)
           metadata JSONB,
           created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -502,7 +500,7 @@ class PostgresService {
               ALTER TABLE document_chunks 
               ADD CONSTRAINT fk_document_chunks_document_id 
               FOREIGN KEY (document_id) 
-              REFERENCES documents(document_id) 
+              REFERENCES documents(id) -- Reference documents.id (UUID) 
               ON DELETE CASCADE;
             EXCEPTION
               WHEN duplicate_object THEN

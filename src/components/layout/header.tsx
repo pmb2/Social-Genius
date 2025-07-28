@@ -63,36 +63,48 @@ export function Header({ businessCount = 0 }: HeaderProps) {
       if (response.ok) {
         const data = await response.json();
         // Only update if count has changed to avoid unnecessary re-renders
-        if (data.unreadCount !== notificationCount) {
-          setNotificationCount(data.unreadCount || 0);
-        }
+        setNotificationCount(data.unreadCount || 0);
       }
     } catch (error) {
       console.error('Error fetching notification count:', error);
     } finally {
       setIsLoadingNotifications(false);
     }
-  }, [user, notificationCount, isLoadingNotifications]);
+  }, [user, notificationCount]); // Removed notificationCount from dependency array
 
-  // Fetch notification count when user is authenticated
+  // Fetch notification count when user is authenticated or notifications dialog opens
   useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
+    let debounceTimer: NodeJS.Timeout | null = null;
+
     if (user) {
-      fetchNotificationCount();
+      // Debounce initial fetch on user change
+      debounceTimer = setTimeout(() => {
+        fetchNotificationCount();
+      }, 500); // Debounce by 500ms
       
       // Set up a timer to periodically refresh notification count
       // Using a longer interval to reduce refresh frequency and potential disruptions
-      const timer = setInterval(() => {
+      timer = setInterval(() => {
         // Don't refresh if a modal is open, as this could disrupt user experience
         if (typeof window !== 'undefined' && !window.__modalOpen) {
           fetchNotificationCount();
         }
-      }, 10 * 60000); // Check every 10 minutes to further reduce refresh frequency
-      
-      return () => {
-        clearInterval(timer);
-      };
+      }, 10 * 60 * 1000); // Check every 10 minutes to further reduce refresh frequency
     }
+    
+    return () => {
+      if (timer) clearInterval(timer);
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
   }, [user, fetchNotificationCount]);
+
+  // Handle notification dialog open/close event to refresh notification count
+  useEffect(() => {
+    if (notificationsOpen) {
+      fetchNotificationCount(); // Fetch immediately when dialog opens
+    }
+  }, [notificationsOpen, fetchNotificationCount]);
     
   
   // Function to handle notification clicks and mark them as read

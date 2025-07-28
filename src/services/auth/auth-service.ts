@@ -675,6 +675,7 @@ class AuthService {
         console.log('[AUTH-SERVICE] Creating user in database...');
         try {
           console.log('[AUTH-SERVICE] Before registerUser DB call for email:', email);
+          console.log('[AUTH-SERVICE] finalPasswordHash before DB call:', finalPasswordHash);
           const userId = await this.db.registerUser(email, finalPasswordHash, name);
           console.log('[AUTH-SERVICE] After registerUser DB call - userId:', userId);
           
@@ -687,6 +688,7 @@ class AuthService {
           try {
             console.log('[AUTH-SERVICE] Verifying user creation...');
             const newUser = await this.db.getUserByEmail(email);
+            console.log('[AUTH-SERVICE] newUser object after retrieval:', newUser);
             
             if (!newUser) {
               console.error('[AUTH-SERVICE] User verification failed - user not found after creation');
@@ -803,6 +805,8 @@ class AuthService {
         console.log('[AUTH-SERVICE] User not found with email:', email);
         return { success: false, error: 'Invalid credentials' };
       }
+      console.log('[AUTH-SERVICE] User object after retrieval in loginWithHash:', user);
+      console.log('[AUTH-SERVICE] User password_hash after retrieval in loginWithHash:', user.password_hash);
       
       console.log('[AUTH-SERVICE] User found:', { id: user.id, email: user.email, hasName: !!user.name });
       console.log('[AUTH-SERVICE] Stored password format check:');
