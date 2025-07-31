@@ -3,7 +3,7 @@
 import {createContext, useContext, useEffect, useState, useCallback, ReactNode} from 'react';
 
 type User = {
-    id: number;
+    id: string;
     email: string;
     name?: string;
     profilePicture?: string;
@@ -159,7 +159,7 @@ export function AuthProvider({children}: { children: ReactNode }) {
                 }
 
                 if (data.authenticated && data.user) {
-                    if (showDebug) console.log('Session is valid, user authenticated');
+                    if (showDebug) console.log('Session is valid, user authenticated', data.user);
 
                     // Important: Only update user state if it's different or null
                     // This prevents unnecessary re-renders

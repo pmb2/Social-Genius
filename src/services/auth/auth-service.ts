@@ -253,7 +253,7 @@ class AuthService {
   }
 
   // Verify a session
-  public async verifySession(userId: number, traceId?: string): Promise<any | null> {
+  public async verifySession(userId: string, traceId?: string): Promise<any | null> {
     // Generate a trace ID if one wasn't provided
     const sessionTraceId = traceId || `session-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const timestamp = new Date().toISOString();
@@ -485,7 +485,7 @@ class AuthService {
   }
 
   // Add business for user
-  public async addBusiness(userId: number, businessName: string): Promise<{ success: boolean, businessId?: string, error?: string }> {
+  public async addBusiness(userId: string, businessName: string): Promise<{ success: boolean, businessId?: string, error?: string }> {
     try {
       console.log(`AuthService: Adding business "${businessName}" for user ID ${userId}`);
       
@@ -514,7 +514,7 @@ class AuthService {
   }
 
   // Get businesses for user
-  public async getBusinesses(userId: number): Promise<any[]> {
+  public async getBusinesses(userId: string): Promise<any[]> {
     try {
       console.log(`[BUSINESS] AuthService: Fetching businesses for user ID ${userId}`);
       const businesses = await this.db.getBusinessesForUser(userId);
@@ -527,7 +527,7 @@ class AuthService {
   }
   
   // Delete a business for user
-  public async deleteBusiness(userId: number, businessId: string): Promise<{ success: boolean, error?: string }> {
+  public async deleteBusiness(userId: string, businessId: string): Promise<{ success: boolean, error?: string }> {
     try {
       const client = await this.db.getPool().connect();
       try {

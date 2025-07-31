@@ -49,7 +49,7 @@ export function Header({ businessCount = 0 }: HeaderProps) {
     }
     
     try {
-      console.log('Client-side document.cookie before fetching notification count:', document.cookie);
+      
       const response = await fetch('/api/notifications/count', {
         method: 'GET',
         headers: {
@@ -81,22 +81,14 @@ export function Header({ businessCount = 0 }: HeaderProps) {
       
       // Set up a timer to periodically refresh notification count
       // Using a longer interval to reduce refresh frequency and potential disruptions
-      const timer = setInterval(() => {
-        // Don't refresh if a modal is open, as this could disrupt user experience
-        if (typeof window !== 'undefined' && !window.__modalOpen) {
-          fetchNotificationCount();
-        }
-      }, 10 * 60000); // Check every 10 minutes to further reduce refresh frequency
       
-      return () => {
-        clearInterval(timer);
-      };
     }
   }, [user, fetchNotificationCount]);
     
   
   // Function to handle notification clicks and mark them as read
   const handleOpenNotifications = () => {
+    fetchNotificationCount();
     setNotificationsOpen(true);
   };
   

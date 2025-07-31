@@ -8,7 +8,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Create users table if it doesn't exist
 CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    userId UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     name TEXT,
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS businesses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     businessId UUID UNIQUE NOT NULL,
-    userId UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    userId UUID NOT NULL REFERENCES users(userId) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     status VARCHAR(50) DEFAULT 'pending',
     auth_status VARCHAR(50) DEFAULT 'pending',
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS businesses (
 
 CREATE TABLE socialAccounts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  userId UUID REFERENCES users(id) ON DELETE CASCADE,
+  userId UUID REFERENCES users(userId) ON DELETE CASCADE,
   businessId UUID NOT NULL UNIQUE,
   platform VARCHAR(32) NOT NULL CHECK (platform IN ('x', 'google', 'facebook', 'instagram', 'linkedin')),
   providerAccountId VARCHAR(128) NOT NULL,

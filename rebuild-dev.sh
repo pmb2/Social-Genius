@@ -62,21 +62,12 @@ docker ps -a | grep -E "social.*genius|pgadmin|postgres" | awk '{print $1}' | xa
 # Check for port conflicts and handle them intelligently
 echo -e "${YELLOW}Checking for port conflicts...${NC}"
 
-# Function to extract ports from docker-compose files
+# Function to extract ports from docker-compose files using yq
 extract_ports_from_compose() {
   local compose_file=$1
-  declare -A extracted_ports
-  
-  # Extract port mappings from docker-compose file
-  if [ -f "$compose_file" ]; then
-    # Use grep and awk to find port mappings
-    while IFS= read -r line; do
-      if [[ $line =~ ^[[:space:]]*-[[:space:]]*\"?([0-9]+):([0-9]+)\"?[[:space:]]*$ ]]; then
-        local host_port="${BASH_REMATCH[1]}"
-        local container_port="${BASH_REMATCH[2]}"
-        echo "$host_port"
-      fi
-    done < <(grep -E '^\s*-\s*"?[0-9]+:[0-9]+"?\s*$' "$compose_file")
+  local service_name=$2
+  if command -v yq &>/dev/null; then
+    yq ".services.${service_name}.ports[] | select(. != null) | .split(\":\")[0]" "$compose_file" 2>/dev/null
   fi
 }
 
@@ -88,44 +79,31 @@ declare -A PORT_TO_SERVICE=()
 for compose_file in "docker-compose.dev.yml" "docker-compose.yml" "docker-compose-fixed.yml"; do
   if [ -f "$compose_file" ]; then
     echo -e "${YELLOW}Extracting ports from $compose_file...${NC}"
-    
-    # Parse the file more robustly using a different approach
-    current_service=""
-    in_ports_section=false
-    while IFS= read -r line; do
-      # Remove leading whitespace for easier matching
-      trimmed_line=$(echo "$line" | sed 's/^[[:space:]]*//')
-      
-      # Detect service definitions (must start at beginning or with minimal indentation)
-      if [[ $line =~ ^[[:space:]]{0,2}([a-zA-Z0-9_-]+):[[:space:]]*$ ]]; then
-        potential_service="${BASH_REMATCH[1]}"
-        # Skip top-level keys like 'services', 'volumes', 'networks', 'ports'
-        if [[ ! "$potential_service" =~ ^(services|volumes|networks|version|ports|environment|build|depends_on|command|image|restart|healthcheck|extra_hosts)$ ]]; then
-          current_service="$potential_service"
-          in_ports_section=false
-          echo -e "${YELLOW}Detected service: $current_service${NC}"
-        fi
-      # Detect 'ports:' section under a service
-      elif [[ $line =~ ^[[:space:]]{2,6}ports:[[:space:]]*$ ]] && [ -n "$current_service" ]; then
-        in_ports_section=true
-        echo -e "${YELLOW}Found ports section for service: $current_service${NC}"
-      # Detect port mappings within ports section
-      elif [[ $line =~ ^[[:space:]]{4,8}-[[:space:]]*\"?([0-9]+):([0-9]+)\"?[[:space:]]*$ ]] && [ "$in_ports_section" = true ] && [ -n "$current_service" ]; then
-        host_port="${BASH_REMATCH[1]}"
-        container_port="${BASH_REMATCH[2]}"
-        SERVICE_PORTS["$current_service"]="$host_port"
-        if [ -n "$host_port" ]; then
-          PORT_TO_SERVICE["$host_port"]="$current_service"
-        fi
-        echo -e "${GREEN}Found port mapping: $current_service -> $host_port${NC}"
-      # Reset ports section if we encounter another top-level key
-      elif [[ $line =~ ^[[:space:]]{2,6}[a-zA-Z_-]+:[[:space:]]*$ ]] && [[ ! $line =~ ports: ]]; then
-        in_ports_section=false
-      fi
-    done < "$compose_file"
-    break  # Use the first available compose file
+    if command -v yq &>/dev/null; then
+      # Get all service names
+      services=$(yq ".services | keys | .[]" "$compose_file" 2>/dev/null)
+      for service in $services; do
+        # Get all ports for the current service
+        ports=$(extract_ports_from_compose "$compose_file" "$service")
+        for host_port in $ports; do
+          if [ -n "$host_port" ]; then
+            SERVICE_PORTS["$service"]="$host_port"
+            PORT_TO_SERVICE["$host_port"]="$service"
+            echo -e "${GREEN}Found port mapping: $service -> $host_port${NC}"
+            # Assuming one host port per service for simplicity in this script's logic
+            break
+          fi
+        done
+      done
+    else
+      echo -e "${RED}yq is not installed. Please install yq to enable robust port detection.${NC}"
+      echo -e "${YELLOW}Falling back to default ports.${NC}"
+      break # Exit loop if yq is not available
+    fi
+    break  # Use the first available compose file that has services
   fi
 done
+
 
 # Fallback ports if none detected
 if [ ${#SERVICE_PORTS[@]} -eq 0 ]; then
@@ -489,7 +467,7 @@ start_containers_with_retry() {
       echo -e "${GREEN}Containers started successfully!${NC}"
       return 0
     else
-      echo -e "${RED}Failed to start containers on attempt $((retry + 1)).${NC}"
+      echo -e "${RED}Failed to start containers on attempt $((retry + 1))).${NC}"
       
       # If this failed due to port conflicts, try to resolve them
       if docker-compose logs 2>&1 | grep -q "port is already allocated"; then
@@ -597,12 +575,12 @@ if [ "$RUNNING_CONTAINERS" -gt 0 ]; then
   
   # Print the actual ports being used
   echo -e "${GREEN}Services are running on the following ports:${NC}"
-  echo -e "${GREEN}Web app: http://localhost:${FINAL_PORTS[app]}${NC}"
-  echo -e "${GREEN}pgAdmin: http://localhost:${FINAL_PORTS[pgadmin]} (login with admin@socialgenius.com / admin)${NC}"
-  echo -e "${GREEN}Redis Commander: http://localhost:${FINAL_PORTS[redis-commander]}${NC}"
-  echo -e "${GREEN}Browser API: http://localhost:${FINAL_PORTS[browser-use-api]}${NC}"
-  echo -e "${GREEN}Redis: localhost:${FINAL_PORTS[redis]}${NC}"
-  echo -e "${GREEN}PostgreSQL: localhost:${FINAL_PORTS[postgres]}${NC}"
+  echo -e "${GREEN}  Web app: http://localhost:${FINAL_PORTS[app]}${NC}"
+  echo -e "${GREEN}  pgAdmin: http://localhost:${FINAL_PORTS[pgadmin]} (login with admin@socialgenius.com / admin)${NC}"
+  echo -e "${GREEN}  Redis Commander: http://localhost:${FINAL_PORTS[redis-commander]}${NC}"
+  echo -e "${GREEN}  Browser API: http://localhost:${FINAL_PORTS[browser-use-api]}${NC}"
+  echo -e "${GREEN}  Redis: localhost:${FINAL_PORTS[redis]}${NC}"
+  echo -e "${GREEN}  PostgreSQL: localhost:${FINAL_PORTS[postgres]}${NC}"
   
   # Check database connectivity
   echo -e "${YELLOW}Testing database connectivity...${NC}"

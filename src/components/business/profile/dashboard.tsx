@@ -350,6 +350,7 @@ export function BusinessProfileDashboard({ onBusinessCountChange }: BusinessProf
 
     const handleSkip = async (businessName: string) => {
         log(`Attempting to skip social login for business: ${businessName}`, 'info');
+        log(`User object at start of handleSkip: ${JSON.stringify(user)}`, 'info');
         if (!user || !user.id) {
             log('User ID not found or user not authenticated, cannot create business.', 'error');
             setModalError('User not authenticated. Please log in.');

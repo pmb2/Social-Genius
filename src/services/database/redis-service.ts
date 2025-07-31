@@ -68,7 +68,7 @@ export class RedisService {
     // Setup connection event handlers
     this.setupEventHandlers();
     
-    console.log(`[RedisService] Initialized with Redis URL: ${this.maskRedisUrl(REDIS_URL)}`);
+    
   }
   
   /**
@@ -76,13 +76,13 @@ export class RedisService {
    */
   private setupEventHandlers(): void {
     this.redis.on('connect', () => {
-      console.log('[RedisService] Connected to Redis');
+      
     });
     
     this.redis.on('ready', () => {
       this.isConnected = true;
       this.reconnecting = false;
-      console.log('[RedisService] Redis connection ready');
+      
     });
     
     this.redis.on('error', (err) => {
@@ -91,15 +91,12 @@ export class RedisService {
     });
     
     this.redis.on('reconnecting', () => {
-      if (!this.reconnecting) {
-        console.log('[RedisService] Reconnecting to Redis...');
-        this.reconnecting = true;
-      }
+      
     });
     
     this.redis.on('close', () => {
       this.isConnected = false;
-      console.log('[RedisService] Redis connection closed');
+      
     });
     
     // Handle process termination

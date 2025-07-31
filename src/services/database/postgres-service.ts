@@ -895,7 +895,7 @@ class PostgresService {
     console.log(`[BUSINESS] Fetching businesses for user ID: ${userId}`);
     try {
       const result = await this.pool.query(
-        `SELECT id, business_id as "businessId", name, status, created_at as "createdAt"
+        `SELECT id, "businessId", name, status, created_at as "createdAt"
          FROM businesses
          WHERE user_id = $1
          ORDER BY created_at DESC`,
@@ -1031,7 +1031,7 @@ class PostgresService {
     title: string,
     message: string,
     type: 'info' | 'success' | 'warning' | 'alert'
-  ): Promise<number> {
+  ): Promise<string> {
     try {
       // First check if the notifications table exists
       const tableCheckResult = await this.pool.query(
@@ -1177,7 +1177,7 @@ class PostgresService {
    * @param userId The user ID (for security)
    * @returns Whether the operation was successful
    */
-  public async markNotificationAsRead(notificationId: number, userId: string): Promise<boolean> {
+  public async markNotificationAsRead(notificationId: string, userId: string): Promise<boolean> {
     try {
       const result = await this.pool.query(
         `UPDATE notifications 
@@ -1222,7 +1222,7 @@ class PostgresService {
    * @param userId The user ID (for security)
    * @returns Whether the operation was successful
    */
-  public async deleteNotification(notificationId: number, userId: string): Promise<boolean> {
+  public async deleteNotification(notificationId: string, userId: string): Promise<boolean> {
     try {
       const result = await this.pool.query(
         `DELETE FROM notifications 

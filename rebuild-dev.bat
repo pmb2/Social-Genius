@@ -32,71 +32,199 @@ for /f "tokens=*" %%a in ('docker ps -a ^| findstr /R "social.*genius pgadmin po
 
 :: Check for port conflicts and handle them intelligently
 echo Checking for port conflicts...
-set "ORIGINAL_PORT_1=3001"
-set "ORIGINAL_PORT_2=5050"
-set "ORIGINAL_PORT_3=5432"
+set "ORIGINAL_PORT_APP=3001"
+set "ORIGINAL_PORT_PGADMIN=5050"
+set "ORIGINAL_PORT_POSTGRES=5432"
 
 :: Initialize the final ports with original values
-set "FINAL_PORT_1=%ORIGINAL_PORT_1%"
-set "FINAL_PORT_2=%ORIGINAL_PORT_2%"
-set "FINAL_PORT_3=%ORIGINAL_PORT_3%"
+set "FINAL_PORT_APP=%ORIGINAL_PORT_APP%"
+set "FINAL_PORT_PGADMIN=%ORIGINAL_PORT_PGADMIN%"
+set "FINAL_PORT_POSTGRES=%ORIGINAL_PORT_POSTGRES%"
 
-:: Check each port for conflicts
-for %%p in (3001 5050 5432) do (
-  echo Checking port %%p...
-  
-  :: Check if port is in use
-  set "PORT_IN_USE="
-  for /f "tokens=5" %%i in ('netstat -ano ^| findstr /R ":%%p "') do (
-    set "PORT_IN_USE=true"
-    
-    :: Check if it's our own docker container
-    for /f "tokens=*" %%c in ('docker ps -q --filter "name=%PROJECT_NAME%" --filter "publish=%%p"') do (
-      echo Port %%p is used by our own container. Stopping it...
-      docker stop %%c
-      set "PORT_IN_USE="
-    )
-    
-    if defined PORT_IN_USE (
-      echo Port %%p is used by another application. Finding alternative port...
-      
-      :: Find an alternative port
-      set "ALT_PORT=%%p"
-      set /a "ALT_PORT+=1"
-      
-      :check_alt_port_rebuild
-      set "ALT_PORT_IN_USE="
-      for /f "tokens=5" %%j in ('netstat -ano ^| findstr /R ":%ALT_PORT% "') do (
-        set "ALT_PORT_IN_USE=true"
-      )
-      
-      if defined ALT_PORT_IN_USE (
-        set /a "ALT_PORT+=1"
-        if !ALT_PORT! lss %%p+100 (
-          goto check_alt_port_rebuild
-        ) else (
-          echo Could not find a free port in range %%p-!ALT_PORT!. Please free up some ports.
-          exit /b 1
-        )
-      )
-      
-      echo Found alternative port: !ALT_PORT!
-      
-      :: Update the final port variable based on which original port we're checking
-      if %%p==3001 set "FINAL_PORT_1=!ALT_PORT!"
-      if %%p==5050 set "FINAL_PORT_2=!ALT_PORT!"
-      if %%p==5432 set "FINAL_PORT_3=!ALT_PORT!"
-    )
+:: Function to check if a port is in use
+:: Returns 0 if port is free, 1 if in use
+:IS_PORT_IN_USE
+set "PORT_TO_CHECK=%1"
+netstat -ano | findstr /R /C:":%PORT_TO_CHECK% " >nul
+if %ERRORLEVEL% equ 0 (
+  exit /b 1
+) else (
+  exit /b 0
+)
+
+:: Function to find an alternative port
+:: Sets the new port in the variable name passed as %2
+:FIND_ALTERNATIVE_PORT
+set "BASE_PORT=%1"
+set "VAR_NAME=%2"
+set "ALT_PORT=%BASE_PORT%"
+
+:FIND_ALT_PORT_LOOP
+call :IS_PORT_IN_USE %ALT_PORT%
+if %ERRORLEVEL% equ 0 (
+  :: Port is free
+  set "%VAR_NAME%=%ALT_PORT%"
+  exit /b 0
+) else (
+  :: Port is in use, try next
+  set /a "ALT_PORT+=1"
+  if !ALT_PORT! lss %BASE_PORT%+100 (
+    goto :FIND_ALT_PORT_LOOP
+  ) else (
+    echo Could not find a free port in range %BASE_PORT%-%ALT_PORT%. Please free up some ports.
+    exit /b 1
   )
 )
+
+:: Check and assign final ports for each service
+call :CHECK_AND_ASSIGN_PORT %ORIGINAL_PORT_APP% FINAL_PORT_APP APP
+call :CHECK_AND_ASSIGN_PORT %ORIGINAL_PORT_PGADMIN% FINAL_PORT_PGADMIN PGADMIN
+call :CHECK_AND_ASSIGN_PORT %ORIGINAL_PORT_POSTGRES% FINAL_PORT_POSTGRES POSTGRES
+
+:: Subroutine to check and assign port for a service
+:CHECK_AND_ASSIGN_PORT
+set "CURRENT_PORT=%1"
+set "FINAL_PORT_VAR_NAME=%2"
+set "SERVICE_NAME=%3"
+
+echo Checking port %CURRENT_PORT% for %SERVICE_NAME%...
+
+call :IS_PORT_IN_USE %CURRENT_PORT%
+if %ERRORLEVEL% equ 1 (
+  :: Port is in use. Check if it's a Docker container.
+  for /f "tokens=1" %%I in ('docker ps -q --filter "publish=%CURRENT_PORT%" --format "{{.ID}}"') do (
+    echo Port %CURRENT_PORT% is used by our own Docker container (ID: %%I). Stopping it...
+    docker stop %%I >nul
+  )
+  
+  :: Re-check after stopping Docker container
+  call :IS_PORT_IN_USE %CURRENT_PORT%
+  if %ERRORLEVEL% equ 1 (
+    echo Port %CURRENT_PORT% is still in use by another application. Finding alternative port...
+    call :FIND_ALTERNATIVE_PORT %CURRENT_PORT% %FINAL_PORT_VAR_NAME%
+    if %ERRORLEVEL% neq 0 exit /b 1
+    echo Found alternative port: !%FINAL_PORT_VAR_NAME%!
+  ) else (
+    set "%FINAL_PORT_VAR_NAME%=%CURRENT_PORT%"
+  )
+) else (
+  set "%FINAL_PORT_VAR_NAME%=%CURRENT_PORT%"
+)
+goto :EOF
+
+echo Using ports: app=%FINAL_PORT_APP%, pgadmin=%FINAL_PORT_PGADMIN%, postgres=%FINAL_PORT_POSTGRES%
+
+:: Function to check if a port is in use
+:: Returns 0 if port is free, 1 if in use
+:IS_PORT_IN_USE
+set "PORT_TO_CHECK=%1"
+netstat -ano | findstr /R /C:":%PORT_TO_CHECK% " >nul
+if %ERRORLEVEL% equ 0 (
+  exit /b 1
+) else (
+  exit /b 0
+)
+
+:: Function to find an alternative port
+:: Sets the new port in the variable name passed as %2
+:FIND_ALTERNATIVE_PORT
+set "BASE_PORT=%1"
+set "VAR_NAME=%2"
+set "ALT_PORT=%BASE_PORT%"
+
+:FIND_ALT_PORT_LOOP
+call :IS_PORT_IN_USE %ALT_PORT%
+if %ERRORLEVEL% equ 0 (
+  :: Port is free
+  set "%VAR_NAME%=%ALT_PORT%"
+  exit /b 0
+) else (
+  :: Port is in use, try next
+  set /a "ALT_PORT+=1"
+  if %ALT_PORT% lss %BASE_PORT%+100 (
+    goto :FIND_ALT_PORT_LOOP
+  ) else (
+    echo Could not find a free port in range %BASE_PORT%-%ALT_PORT%. Please free up some ports.
+    exit /b 1
+  )
+)
+
+:: Check and assign final ports for each service
+call :CHECK_AND_ASSIGN_PORT %ORIGINAL_PORT_APP% FINAL_PORT_APP APP
+call :CHECK_AND_ASSIGN_PORT %ORIGINAL_PORT_PGADMIN% FINAL_PORT_PGADMIN PGADMIN
+call :CHECK_AND_ASSIGN_PORT %ORIGINAL_PORT_POSTGRES% FINAL_PORT_POSTGRES POSTGRES
+
+:: Subroutine to check and assign port for a service
+:CHECK_AND_ASSIGN_PORT
+set "CURRENT_PORT=%1"
+set "FINAL_PORT_VAR_NAME=%2"
+set "SERVICE_NAME=%3"
+
+echo Checking port %CURRENT_PORT% for %SERVICE_NAME%...
+
+call :IS_PORT_IN_USE %CURRENT_PORT%
+if %ERRORLEVEL% equ 1 (
+  :: Port is in use. Check if it's a Docker container.
+  for /f "tokens=1" %%I in ('docker ps -q --filter "publish=%CURRENT_PORT%" --format "{{.ID}}"') do (
+    echo Port %CURRENT_PORT% is used by our own Docker container (ID: %%I). Stopping it...
+    docker stop %%I >nul
+  )
+  
+  :: Re-check after stopping Docker container
+  call :IS_PORT_IN_USE %CURRENT_PORT%
+  if %ERRORLEVEL% equ 1 (
+    echo Port %CURRENT_PORT% is still in use by another application. Finding alternative port...
+    call :FIND_ALTERNATIVE_PORT %CURRENT_PORT% %FINAL_PORT_VAR_NAME%
+    if %ERRORLEVEL% neq 0 exit /b 1
+    echo Found alternative port: !%FINAL_PORT_VAR_NAME%!
+  ) else (
+    set "%FINAL_PORT_VAR_NAME%=%CURRENT_PORT%"
+  )
+) else (
+  set "%FINAL_PORT_VAR_NAME%=%CURRENT_PORT%"
+)
+goto :EOF
+
+echo Using ports: app=%FINAL_PORT_APP%, pgadmin=%FINAL_PORT_PGADMIN%, postgres=%FINAL_PORT_POSTGRES%
+
+:: Subroutine to check and assign port for a service
+:CHECK_AND_ASSIGN_PORT
+set "CURRENT_PORT=%1"
+set "FINAL_PORT_VAR_NAME=%2"
+set "SERVICE_NAME=%3"
+
+echo Checking port %CURRENT_PORT% for %SERVICE_NAME%...
+
+call :IS_PORT_IN_USE %CURRENT_PORT%
+if %ERRORLEVEL% equ 1 (
+  :: Port is in use. Check if it's a Docker container.
+  for /f "tokens=1" %%I in ('docker ps -q --filter "publish=%CURRENT_PORT%" --format "{{.ID}}"') do (
+    echo Port %CURRENT_PORT% is used by our own Docker container (ID: %%I). Stopping it...
+    docker stop %%I >nul
+  )
+  
+  :: Re-check after stopping Docker container
+  call :IS_PORT_IN_USE %CURRENT_PORT%
+  if %ERRORLEVEL% equ 1 (
+    echo Port %CURRENT_PORT% is still in use by another application. Finding alternative port...
+    call :FIND_ALTERNATIVE_PORT %CURRENT_PORT% %FINAL_PORT_VAR_NAME%
+    if %ERRORLEVEL% neq 0 exit /b 1
+    echo Found alternative port: !%FINAL_PORT_VAR_NAME%!
+  ) else (
+    set "%FINAL_PORT_VAR_NAME%=%CURRENT_PORT%"
+  )
+) else (
+  set "%FINAL_PORT_VAR_NAME%=%CURRENT_PORT%"
+)
+goto :EOF
 
 echo Using ports: app=%FINAL_PORT_1%, pgadmin=%FINAL_PORT_2%, postgres=%FINAL_PORT_3%
 
 :: Create a temporary docker-compose override file if needed
 set "CREATE_OVERRIDE="
-if not "%FINAL_PORT_1%"=="%ORIGINAL_PORT_1%" set "CREATE_OVERRIDE=true"
-if not "%FINAL_PORT_2%"=="%ORIGINAL_PORT_2%" set "CREATE_OVERRIDE=true"
-if not "%FINAL_PORT_3%"=="%ORIGINAL_PORT_3%" set "CREATE_OVERRIDE=true"
+if not "%FINAL_PORT_APP%"=="%ORIGINAL_PORT_APP%" set "CREATE_OVERRIDE=true"
+if not "%FINAL_PORT_PGADMIN%"=="%ORIGINAL_PORT_PGADMIN%" set "CREATE_OVERRIDE=true"
+if not "%FINAL_PORT_POSTGRES%"=="%ORIGINAL_PORT_POSTGRES%" set "CREATE_OVERRIDE=true"
 
 if defined CREATE_OVERRIDE (
   echo Creating temporary docker-compose override for custom ports...
@@ -106,31 +234,39 @@ if defined CREATE_OVERRIDE (
     echo services:
   ) > docker-compose.override.yml
   
-  if not "%FINAL_PORT_1%"=="%ORIGINAL_PORT_1%" (
+  if not "%FINAL_PORT_APP%"=="%ORIGINAL_PORT_APP%" (
     (
       echo   app:
       echo     ports:
-      echo       - "%FINAL_PORT_1%:3000"
+      echo       - "%FINAL_PORT_APP%:3000"
     ) >> docker-compose.override.yml
   )
   
-  if not "%FINAL_PORT_2%"=="%ORIGINAL_PORT_2%" (
+  if not "%FINAL_PORT_PGADMIN%"=="%ORIGINAL_PORT_PGADMIN%" (
     (
       echo   pgadmin:
       echo     ports:
-      echo       - "%FINAL_PORT_2%:5050"
+      echo       - "%FINAL_PORT_PGADMIN%:5050"
     ) >> docker-compose.override.yml
   )
   
-  if not "%FINAL_PORT_3%"=="%ORIGINAL_PORT_3%" (
+  if not "%FINAL_PORT_POSTGRES%"=="%ORIGINAL_PORT_POSTGRES%" (
     (
       echo   postgres:
       echo     ports:
-      echo       - "%FINAL_PORT_3%:5432"
+      echo       - "%FINAL_PORT_POSTGRES%:5432"
     ) >> docker-compose.override.yml
   )
   
   echo Created docker-compose override file with custom ports.
+) else (
+  :: If no custom ports, ensure override file doesn't exist to avoid conflicts
+  if exist docker-compose.override.yml del docker-compose.override.yml
+  echo All ports are available, no override needed.
+) else (
+  :: If no custom ports, ensure override file doesn't exist to avoid conflicts
+  if exist docker-compose.override.yml del docker-compose.override.yml
+  echo All ports are available, no override needed.
 )
 
 :: Apply database connection fixes
