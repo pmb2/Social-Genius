@@ -133,6 +133,12 @@ export function GenerateTab({ onOpenSettings, userProfilePicture }: { onOpenSett
         useWebSearch: false,
         forceWebSearch: false,
     });
+    const [userApiSettings, setUserApiSettings] = useState({
+        apiProvider: "openai",
+        apiEndpoint: "",
+        apiKey: "",
+        modelVersion: "",
+    });
     const [alertMessage, setAlertMessage] = useState<string | null>(null);
     const [posts, setPosts] = useState<Post[]>([]);
     const [showWelcomeMessage, setShowWelcomeMessage] = useState(true);
@@ -523,22 +529,7 @@ export function GenerateTab({ onOpenSettings, userProfilePicture }: { onOpenSett
             let context = "";
             let docsRetrieved = false;
 
-            let groqApiKey = "";
-            let openrouterApiKey = "";
-            let modelVersion = "groq/llama3-8b-8192";
-
-            // Fetch model settings from the database
-            try {
-                const userSettingsResponse = await axios.get('/api/user-settings', { withCredentials: true });
-                if (userSettingsResponse.data.success) {
-                    const settings = userSettingsResponse.data.settings;
-                    groqApiKey = settings.groqApiKey || "";
-                    openrouterApiKey = settings.openrouterApiKey || "";
-                    modelVersion = settings.modelVersion || "groq/llama3-8b-8192";
-                }
-            } catch (err) {
-                console.error("Error fetching user settings:", err);
-            }
+            
 
             if (settings.ragEnabled && !settings.forceWebSearch) {
                 if (!localStorage.getItem('DATABASE_URL')) {
@@ -566,14 +557,14 @@ export function GenerateTab({ onOpenSettings, userProfilePicture }: { onOpenSett
             }
 
             if ((settings.useWebSearch && !docsRetrieved) || settings.forceWebSearch) {
-                if (!openrouterApiKey) {
-                    console.warn("OpenRouter API key missing in client, will try to use server-side key");
+                if (!userApiSettings.apiKey) {
+                    console.warn("API key missing in client, will try to use server-side key");
                 }
 
                 try {
                     const webSearchResponse = await axios.post("/api/web-search", {
                     query: userInput,
-                    exaApiKey: openrouterApiKey,
+                    exaApiKey: userApiSettings.apiKey,
                 }, { withCredentials: true });
 
                     if (webSearchResponse.data.results) {
@@ -610,11 +601,13 @@ export function GenerateTab({ onOpenSettings, userProfilePicture }: { onOpenSett
                 ? `Context: ${combinedContext}\n\nQuestion: ${userInput}\n\nPlease provide a comprehensive answer based on the available information.`
                 : userInput;
 
-            console.log("Sending request to Groq with model:", modelVersion);
+            console.log("Sending request to AI with model:", userApiSettings.modelVersion);
             const groqResponse = await axios.post("/api/groq", {
                 prompt: promptWithContext,
-                model: modelVersion,
-                groqApiKey: groqApiKey,
+                model: userApiSettings.modelVersion,
+                apiKey: userApiSettings.apiKey,
+                apiEndpoint: userApiSettings.apiEndpoint,
+                provider: userApiSettings.apiProvider,
             }, { withCredentials: true });
 
             if (groqResponse.data.text) {
@@ -745,31 +738,32 @@ export function GenerateTab({ onOpenSettings, userProfilePicture }: { onOpenSett
         }
     };
 
+        useEffect(() => {
+        const fetchUserSettings = async () => {
+            try {
+                const response = await axios.get('/api/user/settings');
+                if (response.data.success && response.data.settings) {
+                    setUserApiSettings(response.data.settings);
+                }
+            } catch (err) {
+                console.error('Error fetching user settings in GenerateTab:', err);
+            }
+        };
+        fetchUserSettings();
+    }, []);
+
     // Effects
     useEffect(() => {
-        const missingKeys = [];
-        const modelVersion = localStorage.getItem('MODEL_VERSION') || "groq/llama3-8b-8192";
-
-        if (modelVersion.includes("groq")) {
-            if (!localStorage.getItem('OPENROUTER_API_KEY')) missingKeys.push("OpenRouter API Key");
-        } else if (modelVersion.includes("openrouter")) {
-            if (!localStorage.getItem('OPENROUTER_API_KEY')) missingKeys.push("OpenRouter API Key");
-        } else if (modelVersion.includes("ollama")) {
-            // Ollama typically runs locally and doesn't require an API key
-            // but if a custom endpoint is configured that requires auth, this would be checked here.
-        }
-
-        if (missingKeys.length > 0) {
+        if (!userApiSettings.apiKey || !userApiSettings.modelVersion) {
             setMessages([
                 {
                     role: "assistant",
                     content: <>
-                        ⚠️ To use the selected model, the following API keys are missing: {missingKeys.join(", ")}.
-                        Please configure them in your <a href="#" onClick={(e) => { e.preventDefault(); onOpenSettings("api-settings", "model-settings"); }} className="underline text-blue-500 hover:text-blue-700">Profile Settings &gt; API Settings</a>.
+                        ⚠️ To use the AI features, please configure your API settings.
                         <br /><br />
-                        You can still use this interface, but some features might not work properly.
+                        You can do this in your <a href="#" onClick={(e) => { e.preventDefault(); onOpenSettings("api-settings", "model-settings"); }} className="underline text-blue-500 hover:text-blue-700">Profile Settings &gt; API Settings</a>.
                         <br /><br />
-                        <Button onClick={() => onOpenSettings("api-settings", "model-settings")}>Choose a Model & Provide Details</Button>
+                        <Button onClick={() => onOpenSettings("api-settings", "model-settings")}>Configure API Settings</Button>
                     </>,
                 },
             ]);
@@ -781,7 +775,7 @@ export function GenerateTab({ onOpenSettings, userProfilePicture }: { onOpenSett
                 },
             ]);
         }
-    }, [onOpenSettings]);
+    }, [onOpenSettings, userApiSettings]);
 
     useEffect(() => {
         if (chatContainerRef.current) {

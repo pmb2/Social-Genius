@@ -121,3 +121,23 @@ BEGIN
 END;
 $ LANGUAGE plpgsql;
 
+-- Create user_settings table
+CREATE TABLE IF NOT EXISTS user_settings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    userId UUID NOT NULL UNIQUE REFERENCES users(userId) ON DELETE CASCADE,
+    planId VARCHAR(255) NOT NULL DEFAULT 'basic',
+    apiProvider VARCHAR(255) NOT NULL DEFAULT 'openai',
+    apiEndpoint TEXT,
+    apiKey TEXT,
+    modelVersion VARCHAR(255),
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create trigger for user_settings table
+CREATE TRIGGER update_user_settings_updated_at
+    BEFORE UPDATE ON user_settings
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+

@@ -1503,6 +1503,58 @@ class PostgresService {
       }
     }
   }
+
+  public async getUserSettings(userId: string): Promise<any | null> {
+    try {
+      const result = await this.pool.query(
+        'SELECT * FROM user_settings WHERE userId = $1',
+        [userId]
+      );
+      
+      return result.rows.length > 0 ? result.rows[0] : null;
+    } catch (error) {
+      console.error('Error getting user settings:', error);
+      return null;
+    }
+  }
+
+  public async updateUserSettings(userId: string, updates: any): Promise<boolean> {
+    try {
+      const setClause = [];
+      const values = [];
+      let paramIndex = 1;
+
+      for (const key in updates) {
+        setClause.push(`${key} = ${paramIndex}`);
+        values.push(updates[key]);
+        paramIndex++;
+      }
+
+      if (setClause.length === 0) {
+        console.log('[PostgresService] No updates to perform for user settings.');
+        return true; // No updates to perform
+      }
+
+      // Add the updated_at timestamp
+      setClause.push(`updatedAt = CURRENT_TIMESTAMP`);
+      
+      // The userId is the last parameter
+      values.push(userId);
+
+      const queryText = `UPDATE user_settings SET ${setClause.join(', ')} WHERE userId = ${paramIndex} RETURNING id`;
+      console.log('[PostgresService] Executing updateUserSettings query:', queryText, 'with values:', values);
+
+      const result = await this.pool.query(
+        queryText,
+        values
+      );
+
+      return result.rowCount > 0;
+    } catch (error) {
+      console.error('Error updating user settings:', error);
+      return false;
+    }
+  }
 }
 
 export default PostgresService;

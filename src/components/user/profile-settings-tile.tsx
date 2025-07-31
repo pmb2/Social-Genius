@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,11 +34,11 @@ export default function ProfileSettingsTile({ isStandalone = false, onClose, ini
   const [error, setError] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [activeTab, setActiveTab] = useState(initialTab || "profile");
-  const [modelSettings, setModelSettings] = useState({ // Renamed from apiKeys to modelSettings
-    groqApiKey: "",
-    openrouterApiKey: "",
-    ollamaApiKey: "",
-    modelVersion: "groq/llama3-8b-8192",
+  const [modelSettings, setModelSettings] = useState({
+    apiProvider: "openai",
+    apiEndpoint: "",
+    apiKey: "",
+    modelVersion: "",
   });
 
   useEffect(() => {
@@ -55,6 +55,18 @@ export default function ProfileSettingsTile({ isStandalone = false, onClose, ini
   }, [user]);
 
   useEffect(() => {
+    if (!user) return;
+
+    const handler = setTimeout(() => {
+      handleSaveModelSettings();
+    }, 500); // Debounce for 500ms
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [modelSettings, user]);
+
+  useEffect(() => {
     if (initialHighlight) {
       const element = document.getElementById(initialHighlight);
       if (element) {
@@ -63,23 +75,13 @@ export default function ProfileSettingsTile({ isStandalone = false, onClose, ini
     }
   }, [initialHighlight]);
 
-  const fetchModelSettings = async () => {
-    try {
-      const response = await axios.get('/api/user-settings', { withCredentials: true }); // New API endpoint
-      if (response.data.success) {
-        setModelSettings(response.data.settings);
-      }
-    } catch (err) {
-      console.error('Error fetching model settings:', err);
-      toast.error('Failed to load model settings.');
-    }
-  };
+  const handleSaveModelSettings = useCallback(async () => {
+    if (!user) return; // Only save if user is authenticated
 
-  const handleSaveModelSettings = async () => { // Renamed function
     setSaving(true);
     setError(null);
     try {
-      const response = await axios.post('/api/user-settings', modelSettings, { withCredentials: true }); // New API endpoint
+      const response = await axios.put('/api/user/settings', { updates: modelSettings });
       if (response.data.success) {
         toast.success('Model settings saved successfully!');
       } else {
@@ -92,6 +94,18 @@ export default function ProfileSettingsTile({ isStandalone = false, onClose, ini
       toast.error('Failed to save model settings.');
     } finally {
       setSaving(false);
+    }
+  }, [modelSettings, user]);
+
+  const fetchModelSettings = async () => {
+    try {
+      const response = await axios.get('/api/user/settings');
+      if (response.data.success && response.data.settings) {
+        setModelSettings(response.data.settings);
+      }
+    } catch (err) {
+      console.error('Error fetching model settings:', err);
+      toast.error('Failed to load model settings.');
     }
   };
 
@@ -340,6 +354,65 @@ export default function ProfileSettingsTile({ isStandalone = false, onClose, ini
             <TabsContent value="api-settings">
               <div className="space-y-4 py-4">
                 <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="apiProvider" className="text-right">
+                    Provider
+                  </Label>
+                  <select
+                    id="apiProvider"
+                    value={modelSettings.apiProvider}
+                    onChange={(e) => setModelSettings(prev => ({ ...prev, apiProvider: e.target.value }))}
+                    className="col-span-3"
+                  >
+                    <option value="openai">OpenAI</option>
+                    <option value="groq">Groq</option>
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+
+                {modelSettings.apiProvider === 'other' && (
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="otherProvider" className="text-right">
+                      Other Provider
+                    </Label>
+                    <Input
+                      id="otherProvider"
+                      value={modelSettings.apiProvider}
+                      onChange={(e) => setModelSettings(prev => ({ ...prev, apiProvider: e.target.value }))}
+                      className="col-span-3"
+                      placeholder="Enter provider name"
+                    />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="apiEndpoint" className="text-right">
+                    API Endpoint
+                  </Label>
+                  <Input
+                    id="apiEndpoint"
+                    value={modelSettings.apiEndpoint}
+                    onChange={(e) => setModelSettings(prev => ({ ...prev, apiEndpoint: e.target.value }))}
+                    className="col-span-3"
+                    placeholder="Enter API endpoint"
+                  />
+                </div>
+
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="apiKey" className="text-right">
+                    API Key
+                  </Label>
+                  <Input
+                    id="apiKey"
+                    type="password"
+                    value={modelSettings.apiKey}
+                    onChange={(e) => setModelSettings(prev => ({ ...prev, apiKey: e.target.value }))}
+                    className="col-span-3"
+                    placeholder="Enter your API Key"
+                  />
+                </div>
+
+                <div className="grid grid-cols-4 items-center gap-4">
                   <Label htmlFor="modelVersion" className="text-right">
                     Model Version
                   </Label>
@@ -348,60 +421,11 @@ export default function ProfileSettingsTile({ isStandalone = false, onClose, ini
                     value={modelSettings.modelVersion}
                     onChange={(e) => setModelSettings(prev => ({ ...prev, modelVersion: e.target.value }))}
                     className="col-span-3"
-                    placeholder="e.g., groq/llama3-8b-8192 or openrouter/openai/gpt-4-turbo"
-                  />
-                </div>
-
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="groq-api-key" className="text-right">
-                    Groq API Key
-                  </Label>
-                  <Input
-                    id="groq-api-key"
-                    value={modelSettings.groqApiKey}
-                    onChange={(e) => setModelSettings(prev => ({ ...prev, groqApiKey: e.target.value }))}
-                    className="col-span-3"
-                    placeholder="Enter your Groq API Key"
-                  />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="openrouter-api-key" className="text-right">
-                    OpenRouter API Key
-                  </Label>
-                  <Input
-                    id="openrouter-api-key"
-                    value={modelSettings.openrouterApiKey}
-                    onChange={(e) => setModelSettings(prev => ({ ...prev, openrouterApiKey: e.target.value }))}
-                    className="col-span-3"
-                    placeholder="Enter your OpenRouter API Key"
-                  />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="ollama-api-key" className="text-right">
-                    Ollama API Key (Optional)
-                  </Label>
-                  <Input
-                    id="ollama-api-key"
-                    value={modelSettings.ollamaApiKey}
-                    onChange={(e) => setModelSettings(prev => ({ ...prev, ollamaApiKey: e.target.value }))}
-                    className="col-span-3"
-                    placeholder="Enter your Ollama API Key (if applicable)"
+                    placeholder="e.g., gpt-4, llama3-8b-8192"
                   />
                 </div>
               </div>
-              <div className="flex justify-end space-x-2 pt-4">
-                <Button onClick={handleSaveModelSettings} disabled={saving} className="bg-gradient-to-r from-blue-500 to-purple-600">
-                  {saving ? (
-                    <>
-                      <span className="animate-spin mr-2">⟳</span> Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Check className="mr-2 h-4 w-4" /> Save Model Settings
-                    </>
-                  )}
-                </Button>
-              </div>
+              
             </TabsContent>
           </Tabs>
         </div>
@@ -488,7 +512,13 @@ export default function ProfileSettingsTile({ isStandalone = false, onClose, ini
       </Card>
 
       {/* Profile Settings Modal */}
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+      <Dialog open={isModalOpen} onOpenChange={(open) => {
+        if (!open) {
+          // Modal is closing, trigger save
+          handleSaveModelSettings();
+        }
+        setIsModalOpen(open);
+      }}>
         <DialogContent className="max-w-md p-0 overflow-visible">
           <DialogTitle className="sr-only">Profile Settings</DialogTitle>
           
