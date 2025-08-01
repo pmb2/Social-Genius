@@ -1,3 +1,22 @@
+# Project Context for Agent OS
+
+## Agent OS Configuration
+This project uses Agent OS for structured development.
+
+## Key Directories
+- `.agent-os/product/` - Product documentation and roadmap
+- `.agent-os/specs/` - Feature specifications and tasks
+- `~/.agent-os/standards/` - Global coding standards
+
+## Available Commands
+- `/plan-product` - Initialize product planning
+- `/create-spec` - Create feature specifications
+- `/execute-tasks` - Execute development tasks
+- `/analyze-product` - Analyze existing codebase
+
+## Current Product Context
+{!cat .agent-os/product/mission.md || echo "No product mission defined. Use /plan-product to initialize."}
+
 # Gemini Model Workflow Instructions
 
 This document outlines the operational workflow for the Gemini model when assisting with software engineering tasks. The process emphasizes thorough research, meticulous planning, continuous documentation, and post-completion knowledge transfer, enhanced by powerful MCP server integrations.

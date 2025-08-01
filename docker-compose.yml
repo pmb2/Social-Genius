@@ -66,36 +66,7 @@ services:
     networks:
       - social_genius_network
       
-  # Browser-Use API Service for automation - Commented out as we now use API integration
-  # browser-use-api:
-  #   build:
-  #     context: ./src/api/browser-use
-  #     dockerfile: Dockerfile
-  #   extra_hosts:
-  #     - "host.docker.internal:host-gateway"
-  #   container_name: social-genius-browser-api
-  #   volumes:
-  #     - ./src/api/browser-use/screenshots:/app/screenshots
-  #   environment:
-  #     - PORT=5055
-  #     - HOST=0.0.0.0
-  #     - MAX_CONCURRENT_BROWSERS=10
-  #     - SCREENSHOT_PATH=/app/screenshots
-  #     - REDIS_URL=redis://host.docker.internal:6380
-  #   ports:
-  #     - "5055:5055"
-  #   restart: unless-stopped
-  #   depends_on:
-  #     redis:
-  #       condition: service_healthy
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:5055/health"]
-  #     interval: 30s
-  #     timeout: 5s
-  #     retries: 3
-  #     start_period: 10s
-  #   networks:
-  #     - social_genius_network
+  
       
   # Redis for session sharing and caching
   redis:

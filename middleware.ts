@@ -57,7 +57,7 @@ export async function middleware(request: NextRequest) {
     response = NextResponse.next();
   } else {
     // If there's no session and it's not a public route, redirect to auth page
-    if (!session.isLoggedIn) {
+    if (!token) {
       const url = new URL('/auth', request.url);
       url.searchParams.set('callbackUrl', pathname);
       url.searchParams.set('reason', 'no_session');

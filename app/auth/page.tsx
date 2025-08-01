@@ -5,9 +5,9 @@ import Image from "next/image";
 import Link from "next/link";
 import {Linkedin, Instagram, Facebook, ChevronRight} from "lucide-react";
 import {useRouter} from 'next/navigation';
-import {useAuth} from '@/lib/auth/context';
 import { getXOAuthUrl } from '@/lib/auth/x-oauth';
 import SignInModal from '@/components/SignInModal';
+import { signIn } from 'next-auth/react';
 
 // X (Twitter) Logo Component
 const XLogo = ({ className = "w-5 h-5" }) => (
@@ -71,10 +71,14 @@ export default function AuthPage() {
         setIsLoading(true);
 
         try {
-            const result = await login(email, password);
+            const result = await signIn('credentials', {
+                email,
+                password,
+                redirect: false,
+            });
 
-            if (!result.success) {
-                setError(result.error || 'Login failed');
+            if (result?.error) {
+                setError(result.error);
                 setIsLoading(false);
             } else {
                 // Login successful - use window.location for a hard redirect instead of Next.js router
@@ -113,17 +117,32 @@ export default function AuthPage() {
         setIsLoading(true);
 
         try {
-            // Use our custom auth context for registration
-            const result = await register(email, password, fullName);
+            const response = await fetch('/api/auth/register-nextauth', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password, name: fullName }),
+            });
+            const data = await response.json();
 
-            if (result.success) {
-                // Registration successful - redirect to dashboard directly
-                // The auth context already does auto-login in the register function
-                console.log('Registration successful - redirecting to dashboard');
-                router.push('/dashboard');
+            if (data.success) {
+                console.log('Registration successful - now logging in...');
+                const result = await signIn('credentials', {
+                    email,
+                    password,
+                    redirect: false,
+                });
+
+                if (result?.error) {
+                    setError(result.error);
+                    setIsLoading(false);
+                } else {
+                    console.log("Login successful after registration - redirecting to dashboard in 1000ms...");
+                    setTimeout(() => {
+                        window.location.href = '/dashboard';
+                    }, 1000);
+                }
             } else {
-                // Registration failed
-                setError(result.error || 'Registration failed. Please try again.');
+                setError(data.error || 'Registration failed. Please try again.');
                 setIsLoading(false);
             }
         } catch (error) {

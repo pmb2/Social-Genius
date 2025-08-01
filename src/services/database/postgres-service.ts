@@ -9,8 +9,8 @@ import { OpenAIEmbeddings } from '@langchain/openai';
  * Interface for a social media account linked to a user.
  */
 export interface SocialAccount {
-  id: string; // Changed to string for UUID
-  user_id: string; // Changed to string for UUID
+  id: string;
+  user_id: string;
   platform: 'twitter' | 'facebook' | 'instagram' | 'linkedin';
   platform_user_id: string;
   username: string;
@@ -352,8 +352,6 @@ class PostgresService {
         CREATE TABLE IF NOT EXISTS users (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           email TEXT UNIQUE NOT NULL,
-          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          email TEXT UNIQUE NOT NULL,
           name TEXT,
           password_hash TEXT NOT NULL,
           profile_picture TEXT,
@@ -422,7 +420,7 @@ class PostgresService {
       await client.query(`
         CREATE TABLE IF NOT EXISTS social_accounts (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
           platform VARCHAR(50) NOT NULL,
           platform_user_id TEXT UNIQUE NOT NULL,
           username TEXT NOT NULL,
@@ -563,6 +561,24 @@ class PostgresService {
     } catch (error) {
       await client.query('ROLLBACK');
       console.error('Error creating notifications table:', error.message);
+    }
+
+    // 9. Create user_settings table (depends on users)
+    try {
+      console.log('Creating user_settings table...');
+      await client.query('BEGIN');
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS user_settings (
+          user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+          settings JSONB NOT NULL DEFAULT '{}',
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error creating user_settings table:', error.message);
     }
     
     // Add indexes one by one, each in their own transaction
@@ -1234,6 +1250,45 @@ class PostgresService {
       return result.rowCount > 0;
     } catch (error) {
       console.error('Error deleting notification:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get user settings
+   */
+  public async getUserSettings(userId: string): Promise<any | null> {
+    try {
+      const result = await this.pool.query(
+        'SELECT settings FROM user_settings WHERE user_id = $1',
+        [userId]
+      );
+      
+      return result.rows.length > 0 ? result.rows[0].settings : null;
+    } catch (error) {
+      console.error('Error getting user settings:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Update user settings
+   */
+  public async updateUserSettings(userId: string, updates: any): Promise<boolean> {
+    try {
+      const result = await this.pool.query(
+        `INSERT INTO user_settings (user_id, settings)
+         VALUES ($1, $2)
+         ON CONFLICT (user_id) DO UPDATE SET
+           settings = user_settings.settings || EXCLUDED.settings,
+           updated_at = CURRENT_TIMESTAMP
+         RETURNING user_id`,
+        [userId, updates]
+      );
+      
+      return result.rowCount > 0;
+    } catch (error) {
+      console.error('Error updating user settings:', error);
       return false;
     }
   }

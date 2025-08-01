@@ -251,7 +251,7 @@ for service in "${!SERVICE_PORTS[@]}"; do
       echo -e "${YELLOW}Found processes using port $original_port: $PIDS${NC}"
       echo "$PIDS" | xargs -r kill -9 2>/dev/null || true
       sleep 1
-    }
+    fi
   fi
   
   # Stop any Docker containers using this port

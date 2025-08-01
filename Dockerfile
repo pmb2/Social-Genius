@@ -5,49 +5,11 @@ FROM base AS deps
 WORKDIR /app
 
 # Install dependencies required for Playwright and PostgreSQL
-RUN apt-get update && apt-get install -y \
-    libglib2.0-0 \
-    libnss3 \
-    libnspr4 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libdbus-1-3 \
-    libxcb1 \
-    libxkbcommon0 \
-    libx11-6 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libpango-1.0-0 \
-    libcairo2 \
-    libasound2 \
-    libatspi2.0-0 \
-    fonts-liberation \
-    wget \
-    xvfb \
-    zip \
-    unzip \
-    libc6-dev \
-    libpq-dev \
-    postgresql-client \
-    build-essential \
-    python3 \
-    make \
-    g++
+RUN apt-get update && apt-get install -y     libpq-dev     postgresql-client     build-essential     python3     make     g++   && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
 COPY package.json package-lock.json ./
 RUN npm ci
-RUN npm install @radix-ui/react-dropdown-menu
-
-# Install Playwright browsers
-RUN npx playwright install chromium
-RUN npx playwright install-deps chromium
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -88,35 +50,10 @@ WORKDIR /app
 ENV NODE_ENV production
 
 # Copy Playwright binaries and dependencies from deps stage
-COPY --from=deps /root/.cache/ms-playwright /root/.cache/ms-playwright
+
 
 # Install runtime dependencies including PostgreSQL client libraries
-RUN apt-get update && apt-get install -y \
-    libglib2.0-0 \
-    libnss3 \
-    libnspr4 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libdbus-1-3 \
-    libxcb1 \
-    libxkbcommon0 \
-    libx11-6 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libpango-1.0-0 \
-    libcairo2 \
-    libasound2 \
-    libatspi2.0-0 \
-    fonts-liberation \
-    libpq5 \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y     libpq5     && apt-get clean     && rm -rf /var/lib/apt/lists/*
 
 # Copy pg-patch
 COPY --from=builder /app/fix-pg-pool.cjs ./
@@ -135,13 +72,13 @@ COPY --from=builder /app/.next/static ./.next/static
 RUN mkdir -p /tmp && chmod 777 /tmp
 
 # Create directory for browser cookies
-RUN mkdir -p /app/browser_cookies && chmod 777 /app/browser_cookies
+
 
 # Set path to playwright browsers
-ENV PLAYWRIGHT_BROWSERS_PATH=/root/.cache/ms-playwright
+
 
 # Modify permissions for Playwright browser directories
-RUN chmod -R 755 /root/.cache/ms-playwright
+
 
 # Run the application with patched PostgreSQL modules
 EXPOSE 3000
